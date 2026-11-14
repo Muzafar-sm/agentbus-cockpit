@@ -94,6 +94,45 @@ describe('the turn header', () => {
     expect(body('#p-head .colhead-title')).toMatch(/display:\s*flex/);
     expect(body('#p-head .colhead-title > *')).toMatch(/flex:\s*none/);
     expect(body('#p-head .colhead-title > .ph-t')).toMatch(/min-width:\s*0.*text-overflow:\s*ellipsis/);
-    expect(tsx['../components/RightPanel.tsx']).toMatch(/<span className="ph-t">[\s\S]*?<\/span>\s*<span className="ch-sub">/);
+    // "Turn 1 of 2" first, then the prompt, which is the part that is cut.
+    expect(tsx['../components/RightPanel.tsx']).toMatch(/<span className="ph-n">[\s\S]*?<\/span>\s*<span className="ch-sub ph-t">/);
+  });
+});
+
+describe('the rename pencil', () => {
+  it('is always shown, quiet, the same on the session card and in the header', () => {
+    const all = rules(css);
+    const pencil = all.filter(([sel]) => /\.(s|c)-rename\b/.test(sel));
+    // Never hidden until hover.
+    expect(pencil.filter(([, body]) => /opacity:\s*0\b|visibility:\s*hidden|display:\s*none/.test(body))).toEqual([]);
+    expect(all.find(([sel]) => sel === '.s-rename, .c-rename')?.[1]).toMatch(/color:\s*var\(--ink3\)/);
+  });
+});
+
+describe('one button', () => {
+  it('defines .btn once, and no dialog builds its own shell', () => {
+    expect(rules(css).filter(([sel]) => sel === '.btn')).toHaveLength(1);
+    // Every dialog is Dialog.tsx: no other file draws a modal back or an Esc listener of its own.
+    const own = Object.entries(tsx)
+      .filter(([f, src]) => !f.endsWith('/Dialog.tsx') && /className="modal-back"/.test(src))
+      .map(([f]) => f);
+    expect(own).toEqual([]);
+  });
+
+  it('shows no placeholder for what does not work yet', () => {
+    const found = Object.entries(tsx)
+      .filter(([, src]) => /coming soon|Coming next|Not available yet/i.test(src))
+      .map(([f]) => f);
+    expect(found).toEqual([]);
+  });
+});
+
+describe('an opened table row', () => {
+  it('fills its row and never widens the table: its detail scrolls inside', () => {
+    const all = rules(css);
+    expect(all.find(([sel]) => sel === '.ev-in')?.[1]).toMatch(/width:\s*0;\s*min-width:\s*100%/);
+    expect(all.find(([sel]) => sel === '.ev-in .term')?.[1]).toMatch(/overflow:\s*auto/);
+    // Events and Model calls both wrap their opened detail.
+    expect(tsx['../components/RightPanel.tsx'].match(/className="ev-in"/g)).toHaveLength(2);
   });
 });

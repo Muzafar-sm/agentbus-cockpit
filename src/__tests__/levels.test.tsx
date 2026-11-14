@@ -84,7 +84,7 @@ describe('selection levels', () => {
     const marks = r.container.querySelectorAll('#convo .lvl-sel');
     expect(marks).toHaveLength(1);
     expect(marks[0]).toBe(r.container.querySelectorAll('#convo .tb')[1]);
-    expect(r.container.querySelector('#p-head .colhead-title')!.textContent).toContain('turn 2 of 2');
+    expect(r.container.querySelector('#p-head .colhead-title')!.textContent).toContain('Turn 2 of 2');
     r.unmount();
   });
 
@@ -181,7 +181,7 @@ describe('selection levels', () => {
     // A turn opens it again.
     await click(a.turnBlock(1));
     expect(a.open()).toBe(true);
-    expect(a.head()).toContain('turn 1 of 2');
+    expect(a.head()).toContain('Turn 1 of 2');
     await click(a.q('#p-head .p-close'));
     expect(a.open()).toBe(false);
     a.r.unmount();
@@ -287,7 +287,7 @@ describe('the session panel', () => {
     // A row goes to that turn.
     await click(rows[1]);
     expect(a.marks()[0]).toBe(a.turnBlock(2));
-    expect(a.head()).toContain('turn 2 of 2');
+    expect(a.head()).toContain('Turn 2 of 2');
     a.r.unmount();
   });
 });
@@ -295,32 +295,33 @@ describe('the session panel', () => {
 describe('the turn panel', () => {
   it('keeps its tabs, with Result first holding the final answer', async () => {
     const a = await app();
-    expect(a.tabs()).toEqual(['Result', 'Prompt', 'Events', 'Model calls', 'Tools', 'Skills', 'MCP']);
+    // Only tabs that work: no Skills placeholder.
+    expect(a.tabs()).toEqual(['Result', 'Prompt', 'Events', 'Model calls', 'Tools', 'AgentBus tools']);
     // It opens on Result.
     expect(a.q('#d-tabs .tab.on')!.textContent).toBe('Result');
     expect(a.q('#d-body')!.textContent).toContain('Both files are package declarations.');
     a.r.unmount();
   });
 
-  it('opens every tab with one summary line', async () => {
+  it('opens a tab with one summary line only for totals its list does not show', async () => {
     const a = await app();
-    const sums: string[] = [];
+    const sums: (string | null)[] = [];
     for (const t of a.qa('#d-tabs .tab')) {
       await click(t);
       const lines = a.qa('#d-body .tab-sum');
-      expect(lines).toHaveLength(1);
-      expect(a.q('#d-body')!.firstElementChild).toBe(lines[0]);
-      sums.push(lines[0].textContent!);
+      expect(lines.length).toBeLessThanOrEqual(1);
+      if (lines[0]) expect(a.q('#d-body')!.firstElementChild).toBe(lines[0]);
+      sums.push(lines[0]?.textContent ?? null);
     }
-    expect(sums.slice(0, 5)).toEqual([
-      'finished · 2 model calls · 2 tool calls',
-      '4 words',
-      '10 events · click a row to open it',
-      '2 calls · claude-sonnet-5 · click a call to open it',
-      '2 tool calls · click a card to open it',
-    ]);
-    expect(sums[5]).toMatch(/^Coming next · /);
-    expect(sums[6]).toBe('Off · no AgentBus tools in this turn');
+    expect(sums[0]).toBe('finished · 2 model calls · 2 tool calls');
+    expect(sums[1]).toBe('4 words');
+    expect(sums[2]).toBe('10 events');
+    expect(sums[3]).toMatch(/^2 calls · claude-sonnet-5 · ≥?\$\d/);
+    expect(sums[4]).toBe('2 tool calls');
+    // The AgentBus tools tab is its own list: no line repeats it.
+    expect(sums[5]).toBeNull();
+    // No line explains how to use a tab.
+    expect(sums.join(' ')).not.toMatch(/click|Coming|the Tools tab/);
     a.r.unmount();
   });
 
@@ -358,8 +359,8 @@ describe('the model call panel', () => {
     expect(strip).toContain('Cache900 read / 300 write');
     expect(strip).toContain('2.1s');
     expect(strip).toContain('Stoptool_use');
-    expect(a.tabs()).toEqual(['Sent', 'Reply', 'Context']);
-    expect(a.q('#d-tabs .tab.on')!.textContent).toBe('Sent');
+    expect(a.tabs()).toEqual(['Request', 'Reply', 'Context']);
+    expect(a.q('#d-tabs .tab.on')!.textContent).toBe('Request');
 
     // Reply: the text and the tool calls it asked for.
     await click(a.qa('#d-tabs .tab').find((t) => t.textContent === 'Reply'));
@@ -368,7 +369,7 @@ describe('the model call panel', () => {
     const asked = a.qa('#d-body .asked tbody tr').map((tr) => tr.querySelector('code')!.textContent);
     expect(asked).toEqual(['Read', 'Bash']);
 
-    await click(a.qa('#d-tabs .tab').find((t) => t.textContent === 'Sent'));
+    await click(a.qa('#d-tabs .tab').find((t) => t.textContent === 'Request'));
     expect(body()).toContain('claude-sonnet-5');
     expect(body()).toContain('3 tools offered');
     expect(body()).toContain('Read, Bash, Edit');
@@ -535,7 +536,7 @@ describe('the turn panel keeps its open row across levels', () => {
     await click(a.crumb('Session'));
     expect(a.head()).toMatch(/^Session/);
     await click(a.turnBlock(1));
-    expect(a.head()).toContain('turn 1 of 2');
+    expect(a.head()).toContain('Turn 1 of 2');
     expect(a.qa('#d-body tr.ev-open')).toHaveLength(1);
     // A collapsed row stays collapsed.
     await click(a.q('#d-body tr.ev.sel'));

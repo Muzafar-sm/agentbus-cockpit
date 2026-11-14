@@ -78,7 +78,7 @@ describe('the message box', () => {
     const row = form.querySelector(':scope > .box-row')!;
     expect(row).not.toBeNull();
     expect(row.previousElementSibling!.id).toBe('input');
-    expect(row.querySelector('.next-agent-at')!.nextElementSibling!.className).toBe('go-split');
+    expect(row.querySelector('.next-agent-at')!.nextElementSibling!.className).toBe('go');
     r.unmount();
   });
 });

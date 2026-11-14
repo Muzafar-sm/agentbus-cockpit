@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ConnectView, SubscriptionList } from '../types';
+import { harnessName, PRODUCT } from '../words';
+import { Button, buttonClass } from './Controls';
+import { Notice } from './Notice';
 
 // The Connect step of a subscription, in an agent's form and in Settings:
-// control adds the person's own subscription to the model calls of every
+// AgentBus adds the person's own subscription to the model calls of every
 // turn, on one machine (agentbus up) as on every runner; none of them uses a
 // sign-in of its own. The person connects it once, here, with the harness's
-// own login, run on control.
+// own login, run by AgentBus.
 //
 // One layout for every harness, in four states: not connected, connecting
 // (a button to the sign-in page, a one-time code to enter there, or a field
@@ -34,6 +37,28 @@ export interface SubscriptionApi {
 export const pollMs = 1000;
 
 const day = (iso?: string) => (iso ? iso.slice(0, 10) : '');
+
+// The words of a login that ended without saying why.
+const ENDED = 'The sign-in ended without connecting.';
+
+// The head of a sign-in or key card: its name and state on the left, its
+// actions on the right, on one row. The state is coloured only by status.
+export const CardHead: React.FC<{ name: string; ok: boolean; state: string; detail?: string; children?: React.ReactNode }> = ({
+  name,
+  ok,
+  state,
+  detail,
+  children,
+}) => (
+  <div className="cs-head">
+    <span className="cs-name">
+      <b>{name}</b>
+      <span className={`cs-status ${ok ? 'ok' : 'warn'}`}>{state}</span>
+      {detail && <span className="cs-until">{detail}</span>}
+    </span>
+    <span className="cs-acts">{children}</span>
+  </div>
+);
 
 export type ConnectPhase = 'not-connected' | 'connecting' | 'connected' | 'failed';
 
@@ -135,7 +160,7 @@ export const ConnectStep: React.FC<{ harness: string; api: SubscriptionApi }> = 
             setView(null);
             fresh();
             if (v.state === 'failed' && !v.cancelled) {
-              setFailed(v.error || 'the login ended without connecting');
+              setFailed(v.error || ENDED);
               setRejected(!!v.rejected);
             } else if (v.state !== 'failed') setConnected(true);
             reload();
@@ -161,7 +186,7 @@ export const ConnectStep: React.FC<{ harness: string; api: SubscriptionApi }> = 
   if (list === undefined && listError) {
     return (
       <div className="connect-step" data-harness={harness}>
-        <div className="form-error">{listError}</div>
+        <Notice kind="error">{listError}</Notice>
       </div>
     );
   }
@@ -170,7 +195,7 @@ export const ConnectStep: React.FC<{ harness: string; api: SubscriptionApi }> = 
   if (!sub) {
     return (
       <div className="connect-step" data-harness={harness}>
-        <span className="nd-note">This subscription cannot be connected on control yet.</span>
+        <span className="nd-note">{PRODUCT} cannot connect this sign-in.</span>
       </div>
     );
   }
@@ -187,7 +212,7 @@ export const ConnectStep: React.FC<{ harness: string; api: SubscriptionApi }> = 
             : sub.connected
               ? 'connected'
               : 'not-connected';
-  const why = failed ?? (sub.expired ? sub.error || 'the sign-in expired' : '');
+  const why = failed ?? (sub.expired ? sub.error || 'The sign-in expired.' : '');
   const until = sub.renews ? 'renews automatically' : sub.expires_at ? `until ${day(sub.expires_at)}` : '';
 
   const connect = () => {
@@ -206,7 +231,7 @@ export const ConnectStep: React.FC<{ harness: string; api: SubscriptionApi }> = 
         startingRef.current = false;
         setStarting(false);
         if (v.state === 'running') setView(v);
-        else if (v.state === 'failed') setFailed(v.error || 'the login ended without connecting');
+        else if (v.state === 'failed') setFailed(v.error || ENDED);
         else {
           setConnected(true);
           reload();
@@ -286,25 +311,31 @@ export const ConnectStep: React.FC<{ harness: string; api: SubscriptionApi }> = 
 
   return (
     <div className="connect-step" data-harness={harness} data-phase={phase}>
-      <div className="cs-head">
-        <span>{harness}</span>
-        <span className={`cs-status ${phase === 'connected' ? 'ok' : 'off'}`}>{status}</span>
-        {phase === 'connected' && until && <span className="cs-until">{until}</span>}
+      <CardHead
+        name={harnessName(harness)}
+        ok={phase === 'connected'}
+        state={status}
+        detail={phase === 'connected' && until ? until : undefined}
+      >
         {phase === 'connecting' && api.cancel ? (
-          <button type="button" className="btn btn-secondary btn-sm cs-btn cs-cancel" onClick={cancel} disabled={cancelling || starting}>
-            {cancelling ? 'Cancelling' : 'Cancel'}
-          </button>
+          <Button kind="secondary" small className="cs-cancel" onClick={cancel} disabled={cancelling || starting}>
+            {cancelling ? 'Cancelling…' : 'Cancel'}
+          </Button>
         ) : (
-          <button type="button" className="btn btn-secondary btn-sm cs-btn cs-connect" onClick={connect} disabled={phase === 'connecting'}>
+          <Button kind="secondary" small className="cs-connect" onClick={connect} disabled={phase === 'connecting'}>
             {label}
-          </button>
+          </Button>
         )}
-      </div>
-      {phase === 'failed' && <div className="form-error cs-why">{why}</div>}
+      </CardHead>
+      {phase === 'failed' && (
+        <Notice kind="error" className="cs-why">
+          {why}
+        </Notice>
+      )}
       {phase === 'connecting' && (
         <div className="cs-login">
           {link ? (
-            <a className="btn btn-primary btn-sm cs-btn cs-open" href={link} target="_blank" rel="noreferrer noopener">
+            <a className={buttonClass('primary', true, 'cs-open')} href={link} target="_blank" rel="noreferrer noopener">
               Open sign-in page
             </a>
           ) : (
@@ -335,20 +366,16 @@ export const ConnectStep: React.FC<{ harness: string; api: SubscriptionApi }> = 
                     if (e.key === 'Enter') send(e);
                   }}
                 />
-                <button type="button" className="btn btn-secondary btn-sm cs-btn" onClick={send} disabled={!code.trim() || closed}>
-                  {sending ? 'Sending' : 'Send'}
-                </button>
+                <Button kind="secondary" small className="cs-send" onClick={send} disabled={!code.trim() || closed}>
+                  {sending ? 'Sending…' : 'Send'}
+                </Button>
               </div>
-              {sendError && <div className="form-error">{sendError}</div>}
+              {sendError && <Notice kind="error">{sendError}</Notice>}
             </div>
           )}
         </div>
       )}
-      <span className="nd-note">
-        Every turn uses this sign-in, on this machine and on your runners. Connect it once here. The token stays on
-        control and is never shown.
-      </span>
-      {listError && <div className="form-error">{listError}</div>}
+      {listError && <Notice kind="error">{listError}</Notice>}
     </div>
   );
 };

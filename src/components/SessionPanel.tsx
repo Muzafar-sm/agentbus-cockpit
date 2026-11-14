@@ -8,6 +8,7 @@ import { ApiTurn } from '../data/jobs';
 import { SessionTurns } from './Jobs';
 import { reviewUI } from '../features';
 import { folderLabel, sessionFolderRef, useFolders } from '../data/folders';
+import { Session } from '../words';
 
 interface SessionPanelProps {
   session: SessionDetail;
@@ -38,7 +39,7 @@ export const SessionPanel: React.FC<SessionPanelProps> = ({
   return (
     <section id="right">
       <PanelHead up={[]} onClose={onClose}>
-        Session
+        {Session}
         <span className="ch-sub">
           {turns.length} {turns.length === 1 ? 'turn' : 'turns'}
         </span>

@@ -55,10 +55,11 @@ describe('Feedback box', () => {
     const box = await openBox();
     expect(box.textContent).toContain("What's missing or broken?");
     expect(box.querySelector('input[name="email"]')).not.toBeNull();
-    expect(box.textContent).toContain('Tell me when hosted version is ready');
-    expect(box.querySelector('.fb-what')!.textContent).toBe('This sends your message to the Lorebug team.');
-    expect(box.querySelector('button.fb-close')!.textContent).toBe('Close');
-    expect(box.textContent).not.toContain('Cancel');
+    expect(box.textContent).toContain('Tell me when the hosted version is ready');
+    expect(box.querySelector('.fb-what')!.textContent).toBe('This sends your message to the AgentBus team.');
+    expect(box.textContent).not.toContain('Lorebug');
+    // The one word every dialog uses to leave without acting.
+    expect(box.querySelector('button.dlg-cancel')!.textContent).toBe('Cancel');
     // Nothing to send yet.
     expect((box.querySelector('button.fb-send') as HTMLButtonElement).disabled).toBe(true);
   });
@@ -102,7 +103,7 @@ describe('Feedback box', () => {
     expect((box.querySelector('input[name="email"]') as HTMLInputElement).disabled).toBe(true);
     expect((box.querySelector('button[role="switch"][name="wants_hosted"]') as HTMLButtonElement).disabled).toBe(true);
     // Close still closes it.
-    await click(box.querySelector('button.fb-close'));
+    await click(box.querySelector('button.dlg-cancel'));
     expect(document.querySelector('[aria-label="Feedback"]')).toBeNull();
   });
 
@@ -118,7 +119,7 @@ describe('Feedback box', () => {
     expect((box.querySelector('textarea[name="message"]') as HTMLTextAreaElement).disabled).toBe(true);
     expect((box.querySelector('input[name="email"]') as HTMLInputElement).disabled).toBe(true);
     expect((box.querySelector('button[role="switch"][name="wants_hosted"]') as HTMLButtonElement).disabled).toBe(true);
-    expect((box.querySelector('button.fb-close') as HTMLButtonElement).disabled).toBe(false);
+    expect((box.querySelector('button.dlg-cancel') as HTMLButtonElement).disabled).toBe(false);
     await act(async () => answer(new Response(null, { status: 204 })));
     await flush();
     expect(box.querySelector('.fb-done')!.textContent).toBe('Sent. Thank you.');
@@ -158,7 +159,7 @@ describe('Feedback box', () => {
     expect(text.disabled).toBe(false);
     expect((box.querySelector('input[name="email"]') as HTMLInputElement).disabled).toBe(false);
     expect(box.querySelector('.fb-done')).toBeNull();
-    expect(box.querySelector('button.fb-close')!.textContent).toBe('Close');
+    expect(box.querySelector('button.dlg-cancel')!.textContent).toBe('Cancel');
     expect(document.querySelectorAll('[role="dialog"]').length).toBe(1);
 
     // The email is fixed and the message sent again.
@@ -202,12 +203,12 @@ describe('Feedback box', () => {
     expect(seen).toBe(true);
   });
 
-  it('Close closes it without sending', async () => {
+  it('Cancel closes it without sending', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const box = await openBox();
     await fill(box);
-    await click(box.querySelector('button.fb-close'));
+    await click(box.querySelector('button.dlg-cancel'));
     expect(document.querySelector('[aria-label="Feedback"]')).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });

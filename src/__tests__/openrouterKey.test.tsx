@@ -54,7 +54,8 @@ describe('OpenRouterKey', () => {
     // Laid out as a subscription's row: one action, no field until it is pressed.
     expect(field(container)).toBeNull();
     expect(container.querySelector('.or-set')?.textContent).toBe('Set key');
-    expect(container.querySelector('.connect-step > .nd-note')?.textContent).toContain('never shown');
+    // One line says what uses the key; where it is kept is said once, in Settings.
+    expect(container.querySelector('.connect-step > .nd-note')?.textContent).toBe('Used by agents on OpenRouter.');
     await click(container.querySelector('.or-set'));
     expect(container.querySelector('.or-set')).toBeNull();
     const input = field(container)!;
@@ -103,6 +104,10 @@ describe('OpenRouterKey', () => {
     expect(field(container)).toBeNull();
 
     await click(container.querySelector('.or-remove'));
+
+    // Remove asks first.
+
+    await click(container.querySelector('.confirm-go'));
     await flush();
     expect(f.api.removeKey).toHaveBeenCalledTimes(1);
     expect(container.querySelector('.cs-status')?.textContent).toBe('not set');
@@ -138,6 +143,8 @@ describe('OpenRouterKey', () => {
       });
       if (startSet) {
         await click(container.querySelector('.or-remove'));
+        // Remove asks first.
+        await click(container.querySelector('.confirm-go'));
       } else {
         await click(container.querySelector('.or-set'));
         await type(field(container)!, FAKE_KEY);
@@ -189,7 +196,7 @@ describe('The OpenRouter agent form', () => {
     await click(container.querySelector('[data-access="openrouter"]'));
     await flush();
     expect(row(container)).not.toBeNull();
-    expect(container.textContent).toContain('set once in Settings');
+    expect(container.textContent).toContain('AgentBus adds your OpenRouter key to each call.');
     expect(container.querySelector('details.ad-advanced')).toBeNull();
     expect(container.querySelector('input[name="key_env"]')).toBeNull();
     expect(container.textContent).not.toContain('Advanced');

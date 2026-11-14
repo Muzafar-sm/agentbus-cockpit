@@ -82,7 +82,7 @@ describe('live status on screen', () => {
       await flush();
     };
     await pushUntil((e) => e.kind === 'model.requested');
-    expect(text(r, '#convo .tb .m-live')).toBe('Waiting on the model · call 3 · 2s');
+    expect(text(r, '#convo .tb .m-live')).toBe('waiting on the model · call 3 · 2s');
     expect(cards().map((c) => c[2])).toEqual(['ok · 0s', 'ok', 'ok']);
     expect(text(r, '#d-body .tgroup-t')).toBe('2 tools from call 2 · 3s');
 

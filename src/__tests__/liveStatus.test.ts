@@ -38,20 +38,20 @@ describe('liveStatus, claude turn A (Read, then Edit + Bash from one reply)', ()
     // 0.0 turn.started; 3.07 call 1; 6.59 reply + Read; 6.68 Read done, call 2;
     // 11.25 reply + Edit + Bash; 14.65 both done, call 3; 17.52 reply,
     // turn.completed; 18.16 session.closed exit 0.
-    expect(at(T, 2).line).toBe('Starting claude · 2s');
+    expect(at(T, 2).line).toBe('starting Claude Code · 2s');
     expect(at(T, 2).state).toBe('starting');
-    expect(at(T, 5).line).toBe('Waiting on the model · call 1 · 1s');
-    expect(at(T, 6.6).line).toBe('Reading hello.py · 0s');
-    expect(at(T, 9).line).toBe('Waiting on the model · call 2 · 2s');
+    expect(at(T, 5).line).toBe('waiting on the model · call 1 · 1s');
+    expect(at(T, 6.6).line).toBe('reading hello.py · 0s');
+    expect(at(T, 9).line).toBe('waiting on the model · call 2 · 2s');
     expect(at(T, 13).line).toBe('2 tools running · 1s');
-    expect(at(T, 16).line).toBe('Waiting on the model · call 3 · 1s');
+    expect(at(T, 16).line).toBe('waiting on the model · call 3 · 1s');
     expect(at(T, 16).call).toBe(3);
-    expect(at(T, 17.8).line).toBe('Finishing · 0s');
+    expect(at(T, 17.8).line).toBe('finishing · 0s');
     expect(at(T, 17.8).running).toBe(true);
     const end = at(T, 30);
     expect(end.state).toBe('finished');
     expect(end.running).toBe(false);
-    expect(end.line).toBe('Finished · 18s · $0.28');
+    expect(end.line).toBe('finished · 18.2s · $0.28');
   });
 
   it('counts cost once per call, with the last call as the delta', () => {
@@ -94,13 +94,13 @@ describe('liveStatus, claude turn B (Bash exits 1)', () => {
   const T = TURNS.claudeB;
   it('names the command while it runs, and the exit after', () => {
     // 1.95 call 1; 6.17 Bash; 13.29 Bash result (tool_error, Exit code 1).
-    expect(at(T, 9).line).toBe('Running sleep 6; ls no_such_file · 2s');
+    expect(at(T, 9).line).toBe('running sleep 6; ls no_such_file · 2s');
     const [g] = toolGroups(turnDetail(of(T)));
     const run = g.tools[0];
     expect(run.result).toEqual({ text: 'exit 1', failed: true, exitCode: 1, why: 'ls: no_such_file: No such file or directory' });
     expect((run.endedMs! - run.startedMs) / 1000).toBeCloseTo(7.1, 1);
     // The agent itself ends well: the turn finished.
-    expect(at(T, 40).line).toBe('Finished · 21s · $0.26');
+    expect(at(T, 40).line).toBe('finished · 21.3s · $0.26');
   });
 });
 
@@ -109,10 +109,10 @@ describe('liveStatus, codex turn B (exec script, exit 1 inside its output)', () 
   it('shows the script as code and reads the exit code from its output', () => {
     // 2.88 call 1; 6.64 exec; 12.95 exec result, call 2; 17.27 reply and
     // turn.completed; 20.36 session.closed.
-    expect(at(T, 1).line).toBe('Starting codex · 1s');
-    expect(at(T, 8).line).toBe('Running exec · 1s');
-    expect(at(T, 14).line).toBe('Waiting on the model · call 2 · 1s');
-    expect(at(T, 19).line).toBe('Finishing · 1s');
+    expect(at(T, 1).line).toBe('starting Codex · 1s');
+    expect(at(T, 8).line).toBe('running exec · 1s');
+    expect(at(T, 14).line).toBe('waiting on the model · call 2 · 1s');
+    expect(at(T, 19).line).toBe('finishing · 1s');
     const [g] = toolGroups(turnDetail(of(T)));
     const card = g.tools[0];
     expect(card.label).toBe('exec');
@@ -127,8 +127,8 @@ describe('liveStatus, codex turn A (two scripts, every step exit 0)', () => {
     const groups = toolGroups(turnDetail(of(T)));
     expect(groups.map((g) => g.tools[0].result?.text)).toEqual(['ok', 'ok']);
     // turn.completed 17.92, session.closed 30.02: codex ends slowly.
-    expect(at(T, 25).line).toBe('Finishing · 7s');
-    expect(at(T, 40).line).toBe('Finished · 30s · $0.02');
+    expect(at(T, 25).line).toBe('finishing · 7s');
+    expect(at(T, 40).line).toBe('finished · 30.0s · $0.02');
   });
 });
 
@@ -152,10 +152,10 @@ describe('codexExits', () => {
     expect(codexExits('a { b } c {"exit_code": 3')).toEqual([]);
     expect(codexExits('no json here')).toEqual([]);
   });
-  it('falls back to "done" when no exit code can be read', () => {
+  it('falls back to "ok" when no exit code can be read', () => {
     const req = { id: 'r', kind: 'tool.requested', time: '', session: 's', tool_name: 'exec', tool_input: 'x' } as CockpitEvent;
     const done = { id: 'd', kind: 'tool.completed', time: '', session: 's', tool_output: 'Script completed\nOutput:\nhello' } as CockpitEvent;
-    expect(toolResult(req, done)).toEqual({ text: 'done', failed: false });
+    expect(toolResult(req, done)).toEqual({ text: 'ok', failed: false });
   });
 });
 
@@ -172,11 +172,11 @@ describe('liveStatus, how a run ends', () => {
   it('stopped', () => {
     const s = liveStatus(base([{ kind: 'session.closed', time: '2026-11-07T10:00:09Z', exit_code: 143, stopped: true }]), now);
     expect(s.state).toBe('stopped');
-    expect(s.line).toBe('Stopped · 9s');
+    expect(s.line).toBe('stopped · 9.0s');
   });
   it('failed on its exit code, or on a failed call', () => {
     expect(liveStatus(base([{ kind: 'session.closed', time: '2026-11-07T10:00:14Z', exit_code: 2 }]), now).line).toBe(
-      'Failed · the agent exited 2 · 14s'
+      'failed · the agent exited 2 · 14.0s'
     );
     const s = liveStatus(
       base([
@@ -185,18 +185,18 @@ describe('liveStatus, how a run ends', () => {
       ]),
       now
     );
-    expect(s.line).toBe('Failed · call 1 returned 529 · 6s');
+    expect(s.line).toBe('failed · call 1 returned 529 · 6.0s');
   });
   it('a probe call is never a step', () => {
     const s = liveStatus(base([{ kind: 'model.requested', time: '2026-11-07T10:00:04Z', exchange: 'p', probe: true }]), Date.parse('2026-11-07T10:00:05Z'));
-    expect(s.line).toBe('Waiting on the model · call 1 · 2s');
+    expect(s.line).toBe('waiting on the model · call 1 · 2s');
   });
   it('a turn no run started ends at its turn.completed', () => {
     const events = [
       { id: 'a', kind: 'turn.started', time: '2026-11-07T10:00:00Z', session: 's', turn: 't' },
       { id: 'b', kind: 'turn.completed', time: '2026-11-07T10:00:04Z', session: 's', turn: 't' },
     ] as CockpitEvent[];
-    expect(liveStatus(events, now).line).toBe('Finished · 4s');
+    expect(liveStatus(events, now).line).toBe('finished · 4.0s');
   });
 });
 

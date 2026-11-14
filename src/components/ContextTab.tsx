@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LOADING } from '../words';
 import { Block, blocksOf, layoutContext, leafTools, MessageRow, PieceRow, ReplayGroup, splitReplayed, sum, Sum, toolCount, turnInfo } from '../data/context';
 import { AddedPiece, addedLabel } from '../data/turns';
 import { CallContext, ContextPiece, TurnDetail } from '../types';
@@ -154,7 +155,7 @@ const NeedText: React.FC<{ ask: boolean; need: () => void; full: Read; size?: nu
     if (ask) need();
   }, [ask, need]);
   if (full.error) return <p className="bad ctx-err">The text could not be read: {full.error}</p>;
-  if (full.loading || ask) return <p className="dim">Reading the text…</p>;
+  if (full.loading || ask) return <p className="dim">{LOADING}</p>;
   return (
     <button className="ctx-more" onClick={need}>
       Read the text{size !== undefined ? ` (${bytes(size)} for the whole call)` : ''}
@@ -332,7 +333,7 @@ export const ContextTab: React.FC<ContextTabProps> = ({ turn, exchange, load, re
   if (!load) return <p className="dim">This source keeps no request bodies. The live service serves them.</p>;
   if (!exchange) return <p className="dim">This call names no exchange, so its request cannot be read.</p>;
   if (light.error) return <p className="bad ctx-err">The request could not be read: {light.error}</p>;
-  if (!shown || !layout) return <p className="dim">Reading the request…</p>;
+  if (!shown || !layout) return <p className="dim">{LOADING}</p>;
 
   const piece = (i: number) => shown.pieces[i];
   // A row the person opened reads the text; one open by default waits for a
@@ -350,7 +351,7 @@ export const ContextTab: React.FC<ContextTabProps> = ({ turn, exchange, load, re
     groups && groups.key === groupKey
       ? groups.groups
       : replayedRows.length > 0
-        ? [{ kind: 'earlier', from: 0, to: replayedRows.length, why: 'Reading the turns it came from…' }]
+        ? [{ kind: 'earlier', from: 0, to: replayedRows.length, why: LOADING }]
         : [];
   const otherFields = shown.request ? Object.keys(shown.request) : [];
 
@@ -414,7 +415,7 @@ export const ContextTab: React.FC<ContextTabProps> = ({ turn, exchange, load, re
             Read the text ({bytes(shown.size)})
           </button>
         )}
-        {full.loading && <span className="dim">reading the text…</span>}
+        {full.loading && <span className="dim">{LOADING}</span>}
       </div>
       {full.error && <p className="bad ctx-err">The text could not be read: {full.error}</p>}
       {continuity === 'resume' && (

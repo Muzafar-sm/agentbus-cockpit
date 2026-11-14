@@ -12,17 +12,15 @@ export const McpTab: React.FC<McpTabProps> = ({ box, running }) => {
   if (!box) {
     return (
       <p className="empty mcp-off">
-        {running ? 'No tool list served to this turn yet.' : 'AgentBus tools are off for this turn ([agent_api] tools).'}
+        {running ? 'No AgentBus tools yet.' : 'AgentBus tools are off. Settings › Permissions › AgentBus tools turns them on.'}
       </p>
     );
   }
   return (
     <div className="mcp">
       <div className="sub-h">AgentBus tools</div>
-      {!box.listed && (
-        <p className="dim mcp-note">This turn has no tools.listed in the record: these are the tools its calls show.</p>
-      )}
-      {box.agentbus.length ? <Tools tools={box.agentbus} server={box.server} /> : <p className="dim">None served.</p>}
+      {!box.listed && <p className="dim mcp-note">No tool list in the record. These are the tools its calls used.</p>}
+      {box.agentbus.length ? <Tools tools={box.agentbus} server={box.server} /> : <p className="dim">No AgentBus tools yet.</p>}
 
       <div className="sub-h">Hidden by AgentBus</div>
       {box.hidden.length ? (
@@ -41,7 +39,7 @@ export const McpTab: React.FC<McpTabProps> = ({ box, running }) => {
         </table>
         </div>
       ) : (
-        <p className="dim">{box.listed ? 'None: this harness keeps all its own tools.' : 'Not in the record.'}</p>
+        <p className="dim">{box.listed ? 'No tools hidden. The harness keeps all its own.' : 'No list in the record.'}</p>
       )}
 
       {box.other.map((s) => (

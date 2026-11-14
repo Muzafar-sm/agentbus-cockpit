@@ -450,7 +450,7 @@ describe('the switch window', () => {
       expect((q('#input') as HTMLTextAreaElement).disabled).toBe(false);
       if (level === 'turn') {
         expect(q('#right .colhead-title')?.textContent).toContain(a ? 'alpha prompt' : 'beta prompt');
-        expect(q('#right .colhead-title')?.textContent).toContain(a ? 'turn 1 of 1' : 'turn 1 of 2');
+        expect(q('#right .colhead-title')?.textContent).toContain(a ? 'Turn 1 of 1' : 'Turn 1 of 2');
         expect(q('#d-head .strip')?.textContent).toContain(a ? '$0.20' : '$2.00');
       } else {
         expect(q('#right .colhead-title')?.textContent).toBe(a ? 'Session1 turn' : 'Session2 turns');

@@ -112,7 +112,7 @@ describe('RightPanel ledger rows', () => {
 });
 
 describe('ConvoColumn', () => {
-  it('#2 matches tool results by tool_id and shows error, done or no result in the Tools tab', async () => {
+  it('#2 matches tool results by tool_id and shows failed, ok or no result in the Tools tab', async () => {
     const session = await sessionFrom(toolSession(), 'c1');
     const r = await render(<RightPanel turn={session.turnsList[0]} totalTurns={1} />);
     await click(Array.from(r.container.querySelectorAll('#d-tabs .tab')).find((b) => b.textContent === 'Tools'));
@@ -122,8 +122,8 @@ describe('ConvoColumn', () => {
     };
     // Alpha has tool_error; Beta has no error flag, so it is only "done";
     // Gamma never returned, and the turn is not live.
-    expect(status('Alpha')).toBe('error');
-    expect(status('Beta')).toBe('done');
+    expect(status('Alpha')).toBe('failed');
+    expect(status('Beta')).toBe('ok');
     expect(status('Gamma')).toBe('no result');
     // The three came from one reply: one line for the group.
     expect(r.container.querySelector('#d-body .tgroup-t')!.textContent).toBe('3 tools from call 1 · they finish together');
@@ -288,7 +288,7 @@ describe('RightPanel model calls', () => {
     const r = await panel((t) => t.detail!.modelCalls[0].requested.id);
     await click(tab(r, 'Model calls'));
     const head = r.container.querySelector('#d-body .tab-sum')!.textContent;
-    expect(head).toBe('3 calls · claude-sonnet-5, claude-haiku-5-5 · click a call to open it');
+    expect(head).toBe('3 calls · claude-sonnet-5, claude-haiku-5-5 · ≥$0.31');
     expect(head).not.toContain('Haiku 5.5');
     r.unmount();
   });

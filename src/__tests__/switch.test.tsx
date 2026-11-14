@@ -147,7 +147,7 @@ describe('switching agent per message', () => {
     });
     await flush();
     await act(async () => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
     });
     await waitFor(() => (r.container.querySelector('#c-reply .next-agent') as HTMLButtonElement).value === 'codex', 'the new list');
     expect((await optionsOf(r.container, 'next_agent')).length).toBe(2);
@@ -250,19 +250,13 @@ describe('switching agent per message', () => {
   });
 });
 
-describe('the Send menu', () => {
-  it('offers Send and a Fork that is shown but not built yet', async () => {
+describe('Send', () => {
+  it('is one button, with no menu offering what is not built (Fork)', async () => {
     const { src } = source(mixed());
     const r = await render(<App dataSource={src} />);
-    await waitFor(() => r.container.querySelector('#c-reply .send-mode') !== null, 'the send menu');
-    const menu = r.container.querySelector('#c-reply .send-mode') as HTMLButtonElement;
-    expect(menu.value).toBe('send');
-    await click(menu);
-    const opts = [...document.querySelectorAll('[role="listbox"] [role="option"]')] as HTMLButtonElement[];
-    expect(opts.map((o) => o.getAttribute('data-value'))).toEqual(['send', 'fork']);
-    expect(opts[1].disabled).toBe(true);
-    expect(opts[1].textContent).toContain('coming soon');
-    await click(menu);
+    await waitFor(() => r.container.querySelector('#c-reply .go') !== null, 'Send');
+    expect(r.container.querySelector('#c-reply .send-mode')).toBeNull();
+    expect(r.container.querySelector('#c-reply')!.textContent).not.toMatch(/Fork|coming soon/);
     r.unmount();
   });
 });

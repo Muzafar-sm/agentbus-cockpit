@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ApplyPreview, ApplyState, TurnDiff } from '../types';
 import { PanelHead } from './PanelHead';
+import { Button } from './Controls';
+import { Loading, Notice } from './Notice';
+import { SESSION } from '../words';
 
 // A file as a turn's diff or the apply preview lists it. The preview counts
 // its lines; a turn's diff is counted here.
@@ -130,13 +133,15 @@ export const TurnChangesTab: React.FC<{ turnId: string; loadDiff: () => Promise<
   }, [turnId]);
   const d = diff?.turn === turnId ? diff.d : null;
   const err = error?.turn === turnId ? error.msg : null;
-  if (err) return <div className="form-error">{err}</div>;
-  if (!d) return <p className="dim">Reading…</p>;
+  if (err) return <Notice kind="error">{err}</Notice>;
+  if (!d) return <Loading />;
   const f = d.files;
   if (turnTooBig(f, tooBig)) {
     return (
       <div className="turn-changes">
-        <div className="form-error too-big">{TOO_BIG}</div>
+        <Notice kind="warn" className="too-big">
+          {TOO_BIG}
+        </Notice>
       </div>
     );
   }
@@ -251,13 +256,15 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
       </PanelHead>
       <div id="d-body">
         {tooBig ? (
-          <div className="form-error too-big">{TOO_BIG}</div>
+          <Notice kind="warn" className="too-big">
+            {TOO_BIG}
+          </Notice>
         ) : (
           <>
-            {error && <div className="form-error">{error}</div>}
-            {!preview && !error && <p className="dim">Reading…</p>}
+            {error && <Notice kind="error">{error}</Notice>}
+            {!preview && !error && <Loading />}
             {applied ? (
-              <p className="nd-note ok" role="status">Applied. Your folder matches this conversation.</p>
+              <p className="nd-note ok" role="status">Applied. Your folder matches this {SESSION}.</p>
             ) : (
               preview && (
                 <>
@@ -266,12 +273,12 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
                     <span className="sep"> · </span>
                     {has
                       ? 'would be written to your folder, each against what it holds now'
-                      : preview.why || 'your folder matches this conversation'}
+                      : preview.why || `your folder matches this ${SESSION}`}
                   </div>
                   {conflicted && (
-                    <div className="form-error ap-conflicts">
+                    <Notice kind="warn" className="ap-conflicts">
                       <b>{files(conflicts.length)} would be refused.</b> You changed{' '}
-                      {conflicts.length === 1 ? 'this file' : 'these files'} in your folder since this conversation copied it:
+                      {conflicts.length === 1 ? 'this file' : 'these files'} in your folder since this {SESSION} copied it:
                       <ul className="ch-conflicts">
                         {conflicts.map((c) => (
                           <li key={c.path}>
@@ -279,7 +286,7 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
                           </li>
                         ))}
                       </ul>
-                    </div>
+                    </Notice>
                   )}
                   {has && (
                     <FileList files={preview.files} truncated={preview.truncated} diffsCut={preview.diffs_cut} conflicts={conflictOf} />
@@ -288,7 +295,7 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
               )
             )}
             {refused && (
-              <div className="form-error">
+              <Notice kind="error">
                 {refused.error || 'The apply was refused.'}
                 {refused.conflicts && refused.conflicts.length > 0 && (
                   <ul className="ch-conflicts">
@@ -299,14 +306,14 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
                     ))}
                   </ul>
                 )}
-              </div>
+              </Notice>
             )}
-            {applyError && <div className="form-error">{applyError}</div>}
+            {applyError && <Notice kind="error">{applyError}</Notice>}
             {apply && !applied && has && (
               <div className="ap-actions">
-                <button type="button" className="btn btn-primary" disabled={!canApply} onClick={doApply}>
+                <Button kind="primary" disabled={!canApply} onClick={doApply}>
                   {pending ? 'Applying…' : 'Apply to my folder'}
-                </button>
+                </Button>
               </div>
             )}
           </>

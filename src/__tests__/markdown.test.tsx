@@ -250,15 +250,16 @@ describe('Markdown in the chat and raw in the turn panel', () => {
     r.unmount();
   });
 
-  it('the turn panel shows the recorded reply raw', async () => {
+  it('the turn panel\'s Result tab formats the reply as the chat does', async () => {
     const s = await session();
     const turn = s.turnsList[0];
     const r = await render(<RightPanel turn={turn} totalTurns={1} selection={null} onSelectEvent={() => {}} />);
-    const body = r.container.querySelector('#d-body')!;
-    expect(body.querySelector('strong, pre, table, .md-code')).toBeNull();
-    expect(body.querySelector('.reply')!.textContent).toBe(reply.replace(/\n\n/g, ''));
-    expect(body.textContent).toContain('**Done.**');
-    expect(body.textContent).toContain('```text');
+    const result = r.container.querySelector('#d-body .md-reply')!;
+    expect(result.querySelector('strong')!.textContent).toBe('Done.');
+    expect(result.querySelector('pre > code')!.textContent).toBe('/Users/test/a.txt');
+    expect(result.querySelector('table')).not.toBeNull();
+    expect(result.textContent).not.toContain('**Done.**');
+    expect(result.textContent).not.toContain('```');
     r.unmount();
   });
 });

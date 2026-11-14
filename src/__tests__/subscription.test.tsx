@@ -265,11 +265,12 @@ describe('ConnectStep', () => {
     await act(async () => release({ harness: 'claude', state: 'running', output: ['https://claude.example/a'], paste: true }));
   });
 
-  it('says a harness without a login cannot be connected on control', async () => {
+  it('says a harness without a login cannot be connected', async () => {
     const api = fakeApi();
     const { container } = await render(<ConnectStep harness="codex" api={api} />);
     await flush();
-    expect(container.textContent).toContain('cannot be connected on control yet');
+    expect(container.textContent).toContain('AgentBus cannot connect this sign-in.');
+    expect(container.textContent).not.toMatch(/\bcontrol\b/);
   });
 
   // A code the login did not take ends the connect at once, as rejected,

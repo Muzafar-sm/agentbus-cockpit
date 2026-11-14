@@ -133,9 +133,11 @@ describe('Served by agentbus', () => {
     expect(window.location.pathname).toBe('/settings');
     expect(window.location.search).toBe('');
     expect(r.container.querySelector('form.connect')).not.toBeNull();
-    expect(r.container.querySelector('.connect-error')?.textContent).toBe(SIGN_IN_EXPIRED);
+    // Its command shows as code, never with backticks.
+    expect(r.container.querySelector('.connect-error')?.textContent).toBe(SIGN_IN_EXPIRED.replace(/`/g, ''));
+    expect(r.container.querySelector('.connect-error code')?.textContent).toBe('agentbus up');
     expect((r.container.querySelector('input[name="address"]') as HTMLInputElement).value).toBe(window.location.origin);
-    expect(r.container.querySelector('.connect-hint')?.textContent).toContain('start it again');
+    expect(r.container.querySelector('.connect-hint')?.textContent).toContain('For a new sign-in link, start agentbus up again.');
     expect(sessionStorage.getItem('agentbus.token')).toBeNull();
     r.unmount();
   });
@@ -164,7 +166,9 @@ describe('From the dev server', () => {
     expect(svc.calls).toHaveLength(0);
     expect(window.location.search).toBe(`?t=${CODE}`);
     expect((r.container.querySelector('input[name="address"]') as HTMLInputElement).value).toBe('http://127.0.0.1:8787');
-    expect(r.container.querySelector('.connect-hint')).toBeNull();
+    // The same one line on where the token comes from, without the served words.
+    expect(r.container.querySelector('.connect-hint')?.textContent).toContain('~/.local/share/agentbus/token');
+    expect(r.container.querySelector('.connect-hint')?.textContent).not.toContain('For a new sign-in link');
     r.unmount();
   });
 });

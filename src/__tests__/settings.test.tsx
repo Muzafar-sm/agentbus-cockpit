@@ -164,7 +164,7 @@ describe('the Settings page', () => {
     const steps = [...container.querySelectorAll('.connect-step')];
     expect(steps.map((s) => s.getAttribute('data-harness'))).toEqual(['claude', 'codex']);
     expect(steps.map((s) => s.getAttribute('data-phase'))).toEqual(['connected', 'not-connected']);
-    expect(container.textContent).toContain('Every turn uses the subscription connected here');
+    expect(container.textContent).toContain('Every turn uses the sign-ins and keys set here');
     // Advanced stays last.
     const parts = [...container.querySelectorAll('.pg-list [data-part]')].map((x) => x.getAttribute('data-part'));
     expect(parts.slice(-2)).toEqual(['subscriptions', 'advanced']);
@@ -189,7 +189,7 @@ describe('the Settings page', () => {
     const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
     await flush();
     expect(container.textContent).not.toContain('Last changed');
-    expect(container.textContent).toContain('Agents');
+    expect(container.textContent).toContain('Permissions');
   });
 
   it('has a plain control for every setting, in groups, and no Grants', async () => {
@@ -197,18 +197,18 @@ describe('the Settings page', () => {
     const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
     await flush();
     const parts = [...container.querySelectorAll('.pg-list [data-part]')].map((x) => x.getAttribute('data-part'));
-    expect(parts).toEqual(['workspace', 'config', 'agents', 'isolation', 'limits', 'instructions', 'advanced']);
+    expect(parts).toEqual(['workspace', 'config', 'permissions', 'isolation', 'limits', 'instructions', 'advanced']);
     // Each group by its short name and one-line subtitle.
     const heads = [...container.querySelectorAll('.pg-list [data-part]')].map((x) => [x.querySelector('.pr-n')!.textContent, x.querySelector('.pr-m2')!.textContent]);
     expect(heads.slice(0, 5)).toEqual([
-      ['Workspace', 'Each conversation works in its own copy of your folder'],
-      ['Config', 'Your settings, skills, MCP servers and logins each conversation gets'],
-      ['Agents', 'What agents may do through AgentBus'],
+      ['Workspace', "Each session's copy of your folder"],
+      ['Config', 'Settings, skills and MCP servers each session gets'],
+      ['Permissions', 'What agents may do through AgentBus'],
       ['Isolation', 'Sandbox, network and commands'],
       ['Limits', 'How much agents may ask for'],
     ]);
     // No OS differences anywhere on the page.
-    for (const g of ['workspace', 'config', 'agents', 'isolation', 'limits']) {
+    for (const g of ['workspace', 'config', 'permissions', 'isolation', 'limits']) {
       await pick(container, `[data-part="${g}"]`);
       expect(container.textContent).not.toMatch(/macOS|Linux|Mac\b/);
     }
@@ -223,7 +223,7 @@ describe('the Settings page', () => {
     const groups: Record<string, string[]> = {
       workspace: ['share_read_only', 'read_folders'],
       config: ['home_files'],
-      agents: ['agent_api.tools', 'subagents', 'agent_api.apply'],
+      permissions: ['agent_api.tools', 'subagents', 'agent_api.apply'],
       isolation: ['sandbox.mode', 'network.contain', 'network.allow', 'allow', 'forbid'],
       limits: ['limits.max_depth', 'limits.max_jobs_per_turn', 'limits.max_jobs_per_tree', 'limits.max_cost_usd_per_tree'],
     };
@@ -238,17 +238,17 @@ describe('the Settings page', () => {
       }
     }
     // The values read are the controls' values.
-    await pick(container, '[data-part="agents"]');
+    await pick(container, '[data-part="permissions"]');
     expect(sw(container, 'agent_api.tools').getAttribute('aria-checked')).toBe('true');
     expect(sw(container, 'subagents').getAttribute('aria-checked')).toBe('false');
-    expect(container.textContent).toContain('agy cannot turn its own subagents off, so this does not apply to agy.');
+    expect(container.textContent).toContain('Antigravity cannot turn its own subagents off, so this does not apply to it.');
     await pick(container, '[data-part="workspace"]');
     expect(container.textContent).toContain('Not copied, read-only, such as node_modules.');
     expect(container.querySelector('[aria-label="Folder"]')).toBeNull();
     expect(container.querySelector('[aria-label="Copy method"]')).toBeNull();
     await pick(container, '[data-part="isolation"]');
     expect([...container.querySelectorAll('.pg-main .pg-ctl-h')].map((x) => x.textContent)).toEqual(['Network', 'Commands']);
-    expect(container.textContent).toContain('A wall around each conversation: its folder, its home, and the network only through AgentBus.');
+    expect(container.textContent).toContain('A wall around each session: its folder, its home, and the network only through AgentBus.');
     expect((container.querySelector('textarea[name="forbid"]') as HTMLTextAreaElement).value).toBe('git push');
     await pick(container, '[data-part="limits"]');
     expect((container.querySelector('input[name="limits.max_depth"]') as HTMLInputElement).value).toBe('2');
@@ -261,9 +261,9 @@ describe('the Settings page', () => {
     const { api, state } = fakeApi();
     const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
     await flush();
-    await pick(container, '[data-part="agents"]');
+    await pick(container, '[data-part="permissions"]');
     await click(sw(container, 'subagents'));
-    await click(button(container, 'Save agents'));
+    await click(button(container, 'Save permissions'));
     await flush();
     expect(api.patchPolicy).toHaveBeenCalledTimes(1);
     expect(api.patchPolicy.mock.calls[0]).toEqual([{ subagents: true }, '"3"']);
@@ -324,7 +324,7 @@ describe('the Settings page', () => {
     await flush();
     await pick(container, '[data-part="config"]');
     expect(container.querySelector('[data-key="home_files"] .pg-ctl-n')!.textContent).toBe('Copied from your home');
-    expect(container.textContent).toContain("Copied into each conversation's own home at each turn. Sign-ins are never copied; AgentBus holds them.");
+    expect(container.textContent).toContain("Copied into each session's home at each turn. Sign-ins are never copied.");
     // A source without the route offers no button.
     expect(button(container, 'Use my config')).toBeUndefined();
     await setValue(container.querySelector('textarea[name="home_files"]'), '~/.aws/config\n\n~/.gitconfig');
@@ -342,9 +342,9 @@ describe('the Settings page', () => {
     const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
     await flush();
     state.info.version = 9; // changed elsewhere
-    await pick(container, '[data-part="agents"]');
+    await pick(container, '[data-part="permissions"]');
     await click(sw(container, 'agent_api.apply'));
-    await click(button(container, 'Save agents'));
+    await click(button(container, 'Save permissions'));
     await flush();
     expect(container.textContent).toContain('Changed elsewhere since this page read it.');
     expect(state.policy.agent_api?.apply).toBe(false);
@@ -380,9 +380,9 @@ describe('the Settings page', () => {
     await setValue(container.querySelector('textarea[name="instructions"]'), 'Draft, not saved.');
     await pick(container, '[data-part="isolation"]');
     await setValue(container.querySelector('textarea[name="allow"]'), 'go test');
-    await pick(container, '[data-part="agents"]');
+    await pick(container, '[data-part="permissions"]');
     await click(sw(container, 'agent_api.apply'));
-    await click(button(container, 'Save agents'));
+    await click(button(container, 'Save permissions'));
     await flush();
     expect(state.policy.agent_api?.apply).toBe(true);
     await pick(container, '[data-part="instructions"]');
@@ -401,17 +401,17 @@ describe('the Settings page', () => {
     await flush();
     const dirty = () => [...container.querySelectorAll('.pg-list [data-part]')].filter((x) => x.querySelector('.pr-dirty')).map((x) => x.getAttribute('data-part'));
     expect(dirty()).toEqual([]);
-    await pick(container, '[data-part="agents"]');
-    expect(button(container, 'Save agents')!.disabled).toBe(true);
+    await pick(container, '[data-part="permissions"]');
+    expect(button(container, 'Save permissions')!.disabled).toBe(true);
     expect(container.querySelector('.pg-dirty')).toBeNull();
     await click(sw(container, 'agent_api.apply'));
-    expect(dirty()).toEqual(['agents']);
+    expect(dirty()).toEqual(['permissions']);
     expect(container.querySelector('.pg-main .pg-dirty')!.textContent).toBe('Unsaved changes');
-    expect(button(container, 'Save agents')!.disabled).toBe(false);
+    expect(button(container, 'Save permissions')!.disabled).toBe(false);
     // Put back as it was: nothing to save again.
     await click(sw(container, 'agent_api.apply'));
     expect(dirty()).toEqual([]);
-    expect(button(container, 'Save agents')!.disabled).toBe(true);
+    expect(button(container, 'Save permissions')!.disabled).toBe(true);
     await pick(container, '[data-part="instructions"]');
     expect(button(container, 'Save instructions')!.disabled).toBe(true);
     await setValue(container.querySelector('textarea[name="instructions"]'), 'New words.');
@@ -432,7 +432,7 @@ describe('the Settings page', () => {
     };
     const { container } = await render(<Pages />);
     await flush();
-    await pick(container, '[data-part="agents"]');
+    await pick(container, '[data-part="permissions"]');
     const ask = () => document.querySelector('[role="alertdialog"]');
     // A link's click, as a browser sends it: cancelable, so the page keeps it.
     const back = () =>
@@ -445,10 +445,10 @@ describe('the Settings page', () => {
     window.dispatchEvent(unload);
     expect(unload.defaultPrevented).toBe(true);
     await back();
-    expect(ask()!.textContent).toContain('Your changes to Agents are not saved.');
-    await click([...ask()!.querySelectorAll('button')].find((x) => x.textContent === 'Stay')!);
+    expect(ask()!.textContent).toContain('Your changes to Permissions are not saved.');
+    await click([...ask()!.querySelectorAll('button')].find((x) => x.textContent === 'Cancel')!);
     expect(ask()).toBeNull();
-    // Escape is Stay too.
+    // Escape is Cancel too.
     await back();
     await act(async () => {
       ask()!.querySelector('button')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -482,7 +482,7 @@ describe('the Settings page', () => {
     };
     const { container } = await render(<Pages />);
     await flush();
-    await pick(container, '[data-part="agents"]');
+    await pick(container, '[data-part="permissions"]');
     await click(sw(container, 'agent_api.apply'));
     // The read after the write waits until released.
     let release!: () => void;
@@ -491,7 +491,7 @@ describe('the Settings page', () => {
       await held;
       return { value: structuredClone(state.policy), etag: `"${state.info.version}"` };
     });
-    await click(button(container, 'Save agents'));
+    await click(button(container, 'Save permissions'));
     await act(async () => {
       container.querySelector('.page-back')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
     });
@@ -724,7 +724,7 @@ describe('the Settings page in the app', () => {
     await flush();
     await flush();
     expect(r.container.querySelector('#page[aria-label="Settings"]')).not.toBeNull();
-    expect(r.container.textContent).toContain('Agents');
+    expect(r.container.textContent).toContain('Permissions');
   });
 
   it('shows the cockpit at /settings when the source keeps no settings', async () => {

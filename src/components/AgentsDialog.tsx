@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { Combo, Seg, Select } from "./Controls";
+import { Button, Combo, Seg, Select } from "./Controls";
+import { Dialog, DialogActions } from "./Dialog";
+import { Loading, Notice } from "./Notice";
+import { harnessName, PRODUCT } from "../words";
 import { AccessOption, AgentFields, Harness, ModelList, SavedAgent } from "../types";
 import { ConnectStep, SubscriptionApi } from "./ConnectStep";
 import { APIKey, OpenRouterKey, vendorKeys } from "./OpenRouterKey";
@@ -7,8 +10,9 @@ import { APIKey, OpenRouterKey, vendorKeys } from "./OpenRouterKey";
 // The "+ Agent" form, and the same form to edit a saved agent: Harness,
 // then Access (only what that harness offers), then Model (what that harness
 // and access offer; any id for OpenRouter), then Name (filled from harness
-// and model until the person types one), then the extras, shown and
-// disabled. An agent says nothing about where it runs. The agents themselves
+// and model until the person types one). Only what works is offered: a
+// harness or an access the service marks not available is left out. An
+// agent says nothing about where it runs. The agents themselves
 // are listed in the left column (AgentsColumn), which edits and removes them.
 
 interface AgentsDialogProps {
@@ -42,7 +46,7 @@ export const accessText = (a: { access: string; key_env?: string }): string =>
 
 export function agentLine(a: SavedAgent, harnesses?: Harness[]): string {
   const h = harnesses?.find((x) => x.name === a.harness);
-  return `${h?.label ?? a.harness} · ${a.model || "default model"} · ${accessText(a)}`;
+  return `${harnessName(a.harness, h?.label)} · ${a.model || "default model"} · ${accessText(a)}`;
 }
 
 interface FormState {
@@ -61,7 +65,7 @@ const accessesOf = (h?: Harness): AccessOption[] => h?.access ?? [];
 const firstAccess = (h?: Harness) => accessesOf(h).find((x) => !x.disabled);
 
 function autoName(f: FormState, harnesses: Harness[]): string {
-  const label = harnesses.find((h) => h.name === f.harness)?.label ?? f.harness;
+  const label = harnessName(f.harness, harnesses.find((h) => h.name === f.harness)?.label);
   return f.model ? `${label} · ${f.model}` : label;
 }
 
@@ -130,14 +134,6 @@ const when = (iso: string) => {
   return today ? d.toLocaleTimeString(undefined, { timeStyle: "short" }) : d.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
 };
 
-const Off: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <label className="f-off">
-    <span>{label}</span>
-    <Select label={label} value="v" options={[{ value: "v", label: value }]} onChange={() => undefined} disabled />
-    <span className="nd-note">Not available yet.</span>
-  </label>
-);
-
 export const AgentsDialog: React.FC<AgentsDialogProps> = ({
   loadHarnesses,
   createAgent,
@@ -172,16 +168,6 @@ export const AgentsDialog: React.FC<AgentsDialogProps> = ({
     // The form is made once, for the agent the dialog opened on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadHarnesses]);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // While a save is in flight nothing closes: its answer would land on
-      // whatever came next.
-      if (e.key !== "Escape" || busy) return;
-      onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, busy]);
 
   // The list of models for the form's harness and access, read when either
   // changes; a typed name is still taken, and none is the tool's default.
@@ -214,6 +200,8 @@ export const AgentsDialog: React.FC<AgentsDialogProps> = ({
 
   const hs = harnesses ?? [];
   const harness = form ? hs.find((h) => h.name === form.harness) : undefined;
+  // Its name on screen: the service's label, else the product name.
+  const hName = form ? harnessName(form.harness, harness?.label) : "";
   const access = form
     ? accessesOf(harness).find((x) => x.kind === form.access)
     : undefined;
@@ -292,19 +280,19 @@ export const AgentsDialog: React.FC<AgentsDialogProps> = ({
   const openRouter = form?.access === "openrouter";
   const apiKey = form?.access === "api";
 
+  // While a save is in flight nothing closes: its answer would land on
+  // whatever came next.
   return (
-    <div
-      className="modal-back"
-      onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}
+    <Dialog
+      title={editing ? `Edit ${edit?.name}` : "New agent"}
+      label={editing ? "Edit agent" : "New agent"}
+      className="agents-dialog"
+      onClose={onClose}
+      busy={busy}
     >
-      <div
-        className="new-dialog agents-dialog"
-        role="dialog"
-        aria-label={editing ? "Edit agent" : "New agent"}
-      >
-        <div className="nd-title">{editing ? `Edit ${edit?.name}` : "New agent"}</div>
-        {loadError && <div className="form-error">{loadError}</div>}
-        {!form && !loadError && <div className="nd-note">Looking…</div>}
+        {loadError && <Notice kind="error">{loadError}</Notice>}
+        {!form && !loadError && <Loading />}
+        {!form && loadError && <DialogActions />}
         {form && (
           <form className="agent-form" onSubmit={save}>
             {/* While a save is in flight nothing in the form changes: the
@@ -316,24 +304,20 @@ export const AgentsDialog: React.FC<AgentsDialogProps> = ({
                   label="Harness"
                   dataKey="harness"
                   value={form.harness}
-                  options={hs.map((h) => ({
-                    value: h.name,
-                    label: h.label ?? h.name,
-                    disabled: !usable(h),
-                    title: h.disabled
-                      ? "Not available yet"
-                      : !h.found
-                        ? "Not installed where the service runs"
-                        : undefined,
-                  }))}
+                  options={hs
+                    .filter((h) => !h.disabled || h.name === form.harness)
+                    .map((h) => ({
+                      value: h.name,
+                      label: harnessName(h.name, h.label),
+                      disabled: !usable(h),
+                      title: !h.found ? `Not installed where ${PRODUCT} runs` : undefined,
+                    }))}
                   onChange={(v) => update({ harness: v })}
                 />
                 <span className="nd-note">
-                  It decides the loop, the tools and how the agent reaches a
-                  model.
-                  {harness &&
-                    !harness.found &&
-                    " It is not installed where the service runs."}
+                  {harness && !harness.found
+                    ? `Not installed where ${PRODUCT} runs.`
+                    : "The agent's loop and tools."}
                 </span>
               </label>
               <label>
@@ -342,21 +326,22 @@ export const AgentsDialog: React.FC<AgentsDialogProps> = ({
                   label="Access"
                   dataKey="access"
                   value={form.access}
-                  options={accessesOf(harness).map((x) => ({
-                    value: x.kind,
-                    // Settings says whose API key; here the choice is only "API key".
-                    label: x.kind === "api" ? "API key" : x.label,
-                    disabled: !!x.disabled,
-                    title: x.disabled ? "Not available yet" : undefined,
-                  }))}
+                  options={accessesOf(harness)
+                    .filter((x) => !x.disabled || x.kind === form.access)
+                    .map((x) => ({
+                      value: x.kind,
+                      // Settings says whose API key; here the choice is only "API key".
+                      label: x.kind === "api" ? "API key" : x.label,
+                      disabled: !!x.disabled,
+                    }))}
                   onChange={(v) => update({ access: v })}
                 />
                 <span className="nd-note">
                   {openRouter
-                    ? "Control adds your OpenRouter key, set once in Settings, Subscriptions. No runner or agent ever holds it."
+                    ? `${PRODUCT} adds your OpenRouter key to each call.`
                     : apiKey
-                      ? `Control adds your ${vendorKeys[access?.key_name ?? ""]?.label ?? access?.label ?? "API key"}, set once in Settings, Subscriptions. No runner or agent ever holds it.`
-                      : `Uses the ${access?.label ?? "harness sign-in"}.`}
+                      ? `${PRODUCT} adds your ${vendorKeys[access?.key_name ?? ""]?.label ?? access?.label ?? "API key"} to each call.`
+                      : `${PRODUCT} adds your ${hName} sign-in to each call.`}
                 </span>
               </label>
               {subscriptions && form.access === "subscription" && form.harness && (
@@ -377,7 +362,7 @@ export const AgentsDialog: React.FC<AgentsDialogProps> = ({
                     placeholder={
                       access.kind === "openrouter"
                         ? "an OpenRouter model id"
-                        : `empty: ${harness?.label ?? form.harness}'s default`
+                        : `empty: ${hName}'s default`
                     }
                     suggestions={offered}
                     labels={modelLabels}
@@ -398,36 +383,31 @@ export const AgentsDialog: React.FC<AgentsDialogProps> = ({
                   />
                 )}
                 {loadModels && access?.any_model && (
-                  <span className="nd-note ad-models" data-source={listed?.source ?? ""} title={listed ? `From ${sourceText(listed.source, harness?.label ?? form.harness, apiKey ? access?.key_name : undefined)}` : undefined}>
+                  <span className="nd-note ad-models" data-source={listed?.source ?? ""} title={listed ? `From ${sourceText(listed.source, hName, apiKey ? access?.key_name : undefined)}` : undefined}>
                     {modelsBusy
-                      ? "Reading the models this access can use…"
+                      ? "Loading…"
                       : modelsError
                         ? modelsError
                         : listed && listed.models.length === 0 && listed.source !== "fixed"
-                          ? `No list of ${harness?.label ?? form.harness}'s models yet. Type a model id above.`
+                          ? `No list of ${hName}'s models yet. Type a model id above.`
                           : listed?.error
                           ? listed.error
                           : listed
                             ? `${listed.models.length} ${listed.models.length === 1 ? "model" : "models"}${listed.fetched_at ? ` · updated ${when(listed.fetched_at)}` : ""}`
                             : ""}{" "}
                     {listed && listed.source !== "fixed" && (
-                      <button type="button" className="btn btn-secondary btn-sm ad-models-refresh" onClick={() => readModels(true)} disabled={modelsBusy}>
+                      <Button kind="secondary" small className="ad-models-refresh" onClick={() => readModels(true)} disabled={modelsBusy}>
                         Refresh
-                      </button>
+                      </Button>
                     )}
                   </span>
                 )}
                 <span className="nd-note">
                   {access?.kind !== "openrouter" && access?.any_model ? (
-                    <>
-                      Empty uses {harness?.label ?? form.harness}&apos;s own
-                      default. A name your account does not offer fails the
-                      turn with the vendor&apos;s words.
-                    </>
+                    <>Empty uses {hName}&apos;s default.</>
                   ) : (
                     <>
-                      Only what {harness?.label ?? form.harness} offers for this
-                      access
+                      What {hName} offers here
                       {access?.any_model ? ", or any OpenRouter model id" : ""}.
                     </>
                   )}
@@ -446,32 +426,15 @@ export const AgentsDialog: React.FC<AgentsDialogProps> = ({
                   autoComplete="off"
                 />
               </label>
-              <Off label="Models this agent can use" value="None" />
-              <Off label="MCP servers" value="Harness default" />
-              <Off label="Skills" value="Harness default" />
-              <Off label="Instruction files" value="Harness default" />
-              <Off label="Programs that run on it" value="None" />
-              {error && <div className="form-error">{error}</div>}
-              <div className="nd-actions">
-                <button
-                  type="submit"
-                  className="btn btn-primary connect-go"
-                  disabled={busy || !form.harness || !form.access}
-                >
-                  {editing ? "Save" : "Create agent"}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary nd-cancel"
-                  onClick={onClose}
-                >
-                  Cancel
-                </button>
-              </div>
+              {error && <Notice kind="error">{error}</Notice>}
+              <DialogActions>
+                <Button kind="primary" type="submit" className="ad-save" disabled={busy || !form.harness || !form.access}>
+                  {busy ? "Saving…" : editing ? "Save" : "Create agent"}
+                </Button>
+              </DialogActions>
             </fieldset>
           </form>
         )}
-      </div>
-    </div>
+    </Dialog>
   );
 };

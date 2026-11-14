@@ -12,6 +12,10 @@ import { PencilIcon, TitleEdit } from './TitleEdit';
 import { LockIcon } from './Icons';
 import { ShellEntry } from './ShellEntry';
 import { Button, Select, Switch } from './Controls';
+import { ConfirmDialog } from './Dialog';
+import { Notice } from './Notice';
+import { PRODUCT, SESSION, STATE } from '../words';
+import { formatDuration } from '../utils/format';
 import { commandsAfter } from '../data/shell';
 import { BackButton } from './BackButton';
 import { TOO_BIG } from './Changes';
@@ -103,8 +107,7 @@ interface ConvoColumnProps {
 }
 
 // What closing removes, and what it keeps.
-export const CLOSE_NOTE =
-  "Closing removes this conversation's copy of your folder and its home. Your folder stays as it is. The conversation takes no more messages.";
+export const CLOSE_NOTE = `The ${SESSION} takes no more messages and its copy of your folder is removed. Your folder stays as it is.`;
 export const CLOSE_RUNNING = 'A turn is still running. Stop it or wait for it to end, then close.';
 
 // The name of the agent that ran a turn: its saved agent's, else its
@@ -155,31 +158,30 @@ const OriginLine: React.FC<{ turn: Turn; agents?: SavedAgent[]; onOpenSession?: 
     o.session && onOpenSession ? (
       <>
         {' · '}
-        <a
-          href="#"
+        <Button
+          kind="link"
           className="origin-link"
           onClick={(e) => {
-            e.preventDefault();
             e.stopPropagation();
             onOpenSession(o.session!);
           }}
         >
           {label}
-        </a>
+        </Button>
       </>
     ) : null;
   if (o.kind === 'result') {
     return (
       <div className="m-origin">
         {o.turnKind === 'review' ? 'Review result from ' : 'Result from '}
-        <b>{agentNameOf(o.agent, agents)}</b>, delivered by AgentBus, not typed by you
-        {link('open its session')}
+        <b>{agentNameOf(o.agent, agents)}</b>, sent by {PRODUCT}
+        {link(`open its ${SESSION}`)}
       </div>
     );
   }
   return (
     <div className="m-origin">
-      Asked by another agent{link('open the session that asked')}
+      Asked by another agent{link(`open its ${SESSION}`)}
     </div>
   );
 };
@@ -236,9 +238,9 @@ export function cannotContinue(turns: Turn[]): string {
   if (turns.length > 0 && turns.every((t) => !t.agent)) return 'Started in a terminal. Continue it there.';
   if (turns.length === 1 && turns[0].state === 'failed') {
     const err = turns[0].error?.trim().replace(/\.$/, '');
-    return `The first turn did not start${err ? `: ${err}` : ''}. Start a new conversation.`;
+    return `The first turn did not start${err ? `: ${err}` : ''}. Start a new ${SESSION}.`;
   }
-  return 'This conversation cannot take another message. Start a new one.';
+  return `This ${SESSION} cannot take another message. Start a new one.`;
 }
 
 export const ConvoColumn: React.FC<ConvoColumnProps> = ({
@@ -282,19 +284,15 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   const [draft, setDraft] = useState('');
   // The header's name is being edited.
   const [renaming, setRenaming] = useState(false);
-  // The close confirmation: open, and while closing, and why it was refused.
-  const [closeAsk, setCloseAsk] = useState<{ busy: boolean; error: string | null } | null>(null);
+  // The close confirmation is open.
+  const [closeAsk, setCloseAsk] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const doClose = async () => {
+  // Resolves to nothing once closed, or to why it was not.
+  const doClose = async (): Promise<string | void> => {
     if (!onCloseSession) return;
-    setCloseAsk({ busy: true, error: null });
-    try {
-      const r = await onCloseSession(session.id);
-      setCloseAsk(r === 'running' ? { busy: false, error: CLOSE_RUNNING } : null);
-    } catch (err) {
-      setCloseAsk({ busy: false, error: (err as Error).message });
-    }
+    const r = await onCloseSession(session.id);
+    if (r === 'running') return CLOSE_RUNNING;
   };
   const doExport = async () => {
     if (!onExport || exporting) return;
@@ -383,7 +381,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   // never blocks Send. Only a session the service cannot continue does.
   const active = pending.filter((p) => p.state !== 'failed').length;
   const turnRunning = active > 0 || lastState === 'running' || !!open;
-  const why = closed ? 'This conversation is closed; start a new one.' : !turnRunning && !resumable ? cannotContinue(session.turnsList) : null;
+  const why = closed ? `This ${SESSION} is closed. Start a new one.` : !turnRunning && !resumable ? cannotContinue(session.turnsList) : null;
   const canSend = !!onSend && why === null;
   // While the last turn runs, Send turns into Stop. Only a turn a run started
   // (it names its agent) can be stopped: the service refuses any other. A
@@ -507,24 +505,26 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
       </div>
       {p.state === 'failed' ? (
         <div className="tb-foot">
-          <span className="form-error">{p.error}</span>
-          <button type="button" className="pend-back" onClick={() => takeBack(p)}>
+          <Notice kind="error" inline>
+            {p.error}
+          </Notice>
+          <Button kind="link" className="pend-back" onClick={() => takeBack(p)}>
             Edit
-          </button>
-          <button type="button" className="pend-dismiss" onClick={() => dismiss(p)}>
+          </Button>
+          <Button kind="link" className="pend-dismiss" onClick={() => dismiss(p)}>
             Dismiss
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="tb-foot">
           <span className="tb-state">
             {p.state === 'sending'
-              ? 'sending'
+              ? STATE.sending
               : p.state === 'queued'
                 ? p.ahead
-                  ? `queued · runs after ${p.ahead === 1 ? 'the running turn' : `${p.ahead} turns`}`
-                  : 'queued · waiting for a runner'
-                : 'waiting for the agent'}
+                  ? `${STATE.queued} · runs after ${p.ahead === 1 ? 'the running turn' : `${p.ahead} turns`}`
+                  : `${STATE.queued} · waiting for a runner`
+                : `${STATE.waiting} for the agent`}
           </span>
         </div>
       )}
@@ -574,25 +574,26 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                   </span>
                 )}
                 {onExport && (
-                  <button
-                    type="button"
-                    className="link-btn c-export"
-                    title="Save this conversation's events as one .jsonl file"
+                  <Button
+                    kind="link"
+                    className="c-export"
+                    title={`Save this ${SESSION}'s events as one .jsonl file`}
                     disabled={exporting}
                     onClick={doExport}
                   >
                     {exporting ? 'Exporting…' : 'Export'}
-                  </button>
+                  </Button>
                 )}
                 {onCloseSession && !closed && (
-                  <Button kind="quiet" small className="c-close" onClick={() => setCloseAsk({ busy: false, error: null })}>
+                  <Button kind="quiet" small className="c-close" onClick={() => setCloseAsk(true)}>
                     Close
                   </Button>
                 )}
                 {closed && (
-                  <Button kind="quiet" small className="c-closed" disabled title="This conversation is closed">
-                    <LockIcon /> Closed
-                  </Button>
+                  // A state, not an action: the lock and the word, as the session card shows it.
+                  <span className="c-closed" title={`This ${SESSION} is closed`}>
+                    <LockIcon /> closed
+                  </span>
                 )}
               </div>
             )}
@@ -600,36 +601,20 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
         )}
       </header>
       {closeAsk && onCloseSession && (
-        <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && !closeAsk.busy && setCloseAsk(null)}>
-          <div
-            className="new-dialog close-ask"
-            role="alertdialog"
-            aria-label="Close this conversation"
-            onKeyDown={(e) => e.key === 'Escape' && !closeAsk.busy && setCloseAsk(null)}
-          >
-            <div className="nd-title">Close this conversation?</div>
-            <div className="nd-note">{CLOSE_NOTE}</div>
-            {unapplied > 0 && (
-              <div className="form-error close-unapplied">
-                {unapplied} {unapplied === 1 ? 'file' : 'files'} changed here {unapplied === 1 ? 'is' : 'are'} not in your folder yet.
-                Apply what you want to keep first.
-              </div>
-            )}
-            {closeAsk.error && (
-              <div className="form-error close-refused" role="alert">
-                {closeAsk.error}
-              </div>
-            )}
-            <div className="nd-actions">
-              <Button kind="primary" className="close-keep" onClick={() => setCloseAsk(null)} disabled={closeAsk.busy} autoFocus>
-                Keep it open
-              </Button>
-              <Button kind="secondary" className="close-go" onClick={doClose} disabled={closeAsk.busy}>
-                {closeAsk.busy ? 'Closing…' : 'Close conversation'}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          className="close-ask"
+          title={`Close this ${SESSION}?`}
+          line={CLOSE_NOTE}
+          warn={
+            unapplied > 0
+              ? `${unapplied} ${unapplied === 1 ? 'file' : 'files'} changed here ${unapplied === 1 ? 'is' : 'are'} not in your folder yet. Apply what you want to keep first.`
+              : undefined
+          }
+          action={`Close ${SESSION}`}
+          busyAction="Closing…"
+          onConfirm={doClose}
+          onClose={() => setCloseAsk(false)}
+        />
       )}
 
       <div id="c-msgs">
@@ -714,7 +699,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                       ) : (
                         <span className="live-line run">
                           <i className="spin run-spin" aria-hidden />
-                          <span className="live-text">Running</span>
+                          <span className="live-text">{STATE.running}</span>
                         </span>
                       )}
                     </div>
@@ -728,9 +713,9 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                   )}
 
                   {notes.replayErrors.map((msg, i) => (
-                    <div key={i} className="form-error turn-error">
+                    <Notice key={i} kind="error" className="turn-error">
                       The earlier turns could not be replayed: {msg}
-                    </div>
+                    </Notice>
                   ))}
 
                   <div className="tb-foot">
@@ -739,7 +724,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                         className={`tb-state ${turnStateClass(turn)}`}
                         title={turn.state === 'failed' && turn.error ? turn.error : undefined}
                       >
-                        {turn.state === 'running' && stopping?.has(turn.id) ? 'stopping…' : replyIn ? 'finishing' : stateLabel(turn)}
+                        {turn.state === 'running' && stopping?.has(turn.id) ? STATE.stopping : replyIn ? STATE.finishing : stateLabel(turn)}
                         {turn.state === 'failed' && !turn.stopped && turn.error ? ` · ${turn.error}` : ''}
                       </span>
                     )}
@@ -749,7 +734,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                           <code className="tb-folder">{turnFolder(turn)}</code> ·{' '}
                         </>
                       ) : null}
-                      {turn.durationMs !== undefined ? `${Math.round(turn.durationMs / 1000)}s · ` : ''}
+                      {turn.durationMs !== undefined ? `${formatDuration(turn.durationMs)} · ` : ''}
                       {formatTokens(turn.usage)} tokens
                       {formatCost(turn.costUsd) ? (
                         <>
@@ -784,9 +769,9 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
             <span className="ab-text">
               {applyBar.count} {applyBar.count === 1 ? 'file' : 'files'} changed, not applied
             </span>
-            <button type="button" className="ab-review" onClick={applyBar.onReview}>
-              Review ▸
-            </button>
+            <Button kind="link" className="ab-review" onClick={applyBar.onReview}>
+              Changes ▸
+            </Button>
           </div>
         )}
         <form className={`box${showPick ? ' with-pick' : ''}${closed ? ' closed' : ''}`} onSubmit={send}>
@@ -807,9 +792,9 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
           />
           <div className="box-row">
             {showPick && pickList.length === 0 && (
-              <button type="button" className="next-agent add-first btn btn-quiet" onClick={onAddAgent} disabled={!onAddAgent}>
+              <Button kind="quiet" className="next-agent add-first" onClick={onAddAgent} disabled={!onAddAgent}>
                 Add an agent first
-              </button>
+              </Button>
             )}
             {showPick && pickList.length > 0 && (
               <span className="next-agent-at">
@@ -834,28 +819,14 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                 {lastStopping ? 'Stopping…' : 'Stop'}
               </button>
             ) : (
-              <span className="go-split">
-                <button type="submit" className="go" disabled={!canSend || needsAgent || draft.trim() === ''}>
-                  {sendLabel}
-                </button>
-                {/* How to send. Fork (run in parallel from the same point) is
-                    shown but not built yet. */}
-                <Select
-                  name="send_mode"
-                  className="send-mode"
-                  variant="icon"
-                  label="How to send"
-                  title="How to send"
-                  value="send"
-                  disabled={!canSend}
-                  align="right"
-                  options={[
-                    { value: 'send', label: sendLabel === 'Queue' ? 'Queue: run after the running turn' : 'Send' },
-                    { value: 'fork', label: 'Fork: run in parallel from here', hint: 'coming soon', disabled: true },
-                  ]}
-                  onChange={() => undefined}
-                />
-              </span>
+              <button
+                type="submit"
+                className="go"
+                title={sendLabel === 'Queue' ? 'Runs after the running turn' : undefined}
+                disabled={!canSend || needsAgent || draft.trim() === ''}
+              >
+                {sendLabel}
+              </button>
             )}
           </div>
         </form>
@@ -864,11 +835,18 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
             {why ? (
               <span className="reply-why">{why}</span>
             ) : (
-              <Switch className="reply-ro" name="read_only" label="Read only" on={readOnly} onChange={setReadOnly} />
+              <Switch
+                className="reply-ro"
+                name="read_only"
+                label="Read only"
+                title="The agent cannot change files"
+                on={readOnly}
+                onChange={setReadOnly}
+              />
             )}
           </div>
         )}
-        {sendError && <div className="form-error">{sendError}</div>}
+        {sendError && <Notice kind="error">{sendError}</Notice>}
       </div>
     </main>
   );

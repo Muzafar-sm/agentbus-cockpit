@@ -18,9 +18,12 @@ import { setLeaveGuard } from "../page";
 import { ConnectStep, SubscriptionApi } from "./ConnectStep";
 import { APIKey, OpenRouterKey } from "./OpenRouterKey";
 import { SubscriptionList } from "../types";
+import { ConfirmDialog } from "./Dialog";
+import { Loading, Notice } from "./Notice";
+import { KEPT, LOADING, PRODUCT } from "../words";
 
-// The Settings page (/settings): control's settings, one global set for every machine.
-// Every setting of the policy is a plain control, in groups (Workspace, Config, Agents, Isolation, Limits); then the instructions every turn gets, the subscriptions, and the whole policy as JSON (Advanced). Each
+// The Settings page (/settings): AgentBus's settings, one global set for every machine.
+// Every setting of the policy is a plain control, in groups (Workspace, Config, Permissions, Isolation, Limits); then the instructions every turn gets, the subscriptions, and the whole policy as JSON (Advanced). Each
 // part saves on its own, with the version it read; a change made elsewhere in between is refused, and the page
 // reads everything again.
 //
@@ -53,7 +56,6 @@ type Kind =
   | { t: "switch" }
   | { t: "onoff" } // a string key that is "on" or "off", as a switch
   | { t: "seg"; options: [string, string][] }
-  | { t: "folder" } // isolation: "none" is your folder, any other value a copy made that way
   | { t: "list"; placeholder: string; mono?: boolean }
   | { t: "number"; whole: boolean };
 
@@ -66,7 +68,7 @@ interface Control {
   head?: string; // a small heading above it, where a group holds two kinds
 }
 
-type GroupId = "workspace" | "config" | "agents" | "isolation" | "limits";
+type GroupId = "workspace" | "config" | "permissions" | "isolation" | "limits";
 type Part = GroupId | "instructions" | "subscriptions" | "advanced";
 
 interface Group {
@@ -77,19 +79,16 @@ interface Group {
   side: string[];
 }
 
-// The ways a copy of your folder is made; "none" is your folder itself.
-const COPY_METHODS: [string, string][] = [["auto", "Auto"], ["overlay", "Overlay"], ["copy", "Copy"], ["git", "Git worktree"]];
-
 const GROUPS: Group[] = [
   {
     id: "workspace",
     name: "Workspace",
-    sub: "Each conversation works in its own copy of your folder",
+    sub: "Each session's copy of your folder",
     controls: [
       { key: "share_read_only", name: "Shared folders", kind: { t: "list", placeholder: "node_modules", mono: true },
         line: "Not copied, read-only, such as node_modules. A turn cannot write there." },
       { key: "read_folders", name: "Read folders", kind: { t: "list", placeholder: "~/notes", mono: true },
-        line: "Folders claude may read beyond its own, one per line." },
+        line: "Folders Claude Code may read beyond its own, one per line." },
     ],
     side: [
       "You apply what you want to keep. Your folder is not changed until then.",
@@ -99,7 +98,7 @@ const GROUPS: Group[] = [
   {
     id: "config",
     name: "Config",
-    sub: "Your settings, skills, MCP servers and logins each conversation gets",
+    sub: "Settings, skills and MCP servers each session gets",
     controls: [
       { key: "home_files", name: "Copied from your home", kind: { t: "list", placeholder: "~/.aws/config", mono: true },
         line: "Files and folders from your home, one per line, such as ~/.aws/config." },
@@ -112,15 +111,15 @@ const GROUPS: Group[] = [
     ],
   },
   {
-    id: "agents",
-    name: "Agents",
+    id: "permissions",
+    name: "Permissions",
     sub: "What agents may do through AgentBus",
     controls: [
       { key: "agent_api.tools", name: "AgentBus tools", kind: { t: "switch" },
         line: "Agents get AgentBus's own tools to ask other agents, review and read turns." },
       { key: "subagents", name: "Subagents", kind: { t: "switch" },
         line: "Agents may start their own hidden subagents. Off, they ask through AgentBus, where the work is recorded.",
-        more: "agy cannot turn its own subagents off, so this does not apply to agy." },
+        more: "Antigravity cannot turn its own subagents off, so this does not apply to it." },
       { key: "agent_api.apply", name: "Agents may apply", kind: { t: "switch" },
         line: "An agent may apply a turn's changes to your folder. You always may." },
     ],
@@ -135,15 +134,15 @@ const GROUPS: Group[] = [
     sub: "Sandbox, network and commands",
     controls: [
       { key: "sandbox.mode", name: "Sandbox", kind: { t: "onoff" },
-        line: "A wall around each conversation: its folder, its home, and the network only through AgentBus." },
+        line: "A wall around each session: its folder, its home, and the network only through AgentBus." },
       { key: "network.contain", name: "Contain", head: "Network", kind: { t: "onoff" },
-        line: "Agents reach only their runner, control and the hosts below." },
+        line: "Agents reach only their runner, AgentBus and the hosts below." },
       { key: "network.allow", name: "Allow hosts", kind: { t: "list", placeholder: "github.com", mono: true },
         line: "Hosts a contained agent may reach, one per line. *.example.com takes every name under it." },
       { key: "allow", name: "Allow", head: "Commands", kind: { t: "list", placeholder: "go test", mono: true },
-        line: "Commands claude may run, one per line. Others are refused." },
+        line: "Commands Claude Code may run, one per line. Others are refused." },
       { key: "forbid", name: "Forbid", kind: { t: "list", placeholder: "git push", mono: true },
-        line: "Commands claude and codex may never run, one per line." },
+        line: "Commands Claude Code and Codex may never run, one per line." },
     ],
     side: [
       "A machine that cannot build the sandbox refuses the turn, and says why.",
@@ -155,13 +154,13 @@ const GROUPS: Group[] = [
     name: "Limits",
     sub: "How much agents may ask for",
     controls: [
-      { key: "limits.max_depth", name: "Max depth", kind: { t: "number", whole: true },
+      { key: "limits.max_depth", name: "Depth", kind: { t: "number", whole: true },
         line: "Levels of asking below your own turn." },
-      { key: "limits.max_jobs_per_turn", name: "Jobs per turn", kind: { t: "number", whole: true },
+      { key: "limits.max_jobs_per_turn", name: "Turns per request", kind: { t: "number", whole: true },
         line: "Turns and reviews one turn may ask for." },
-      { key: "limits.max_jobs_per_tree", name: "Jobs per tree", kind: { t: "number", whole: true },
+      { key: "limits.max_jobs_per_tree", name: "Turns per request tree", kind: { t: "number", whole: true },
         line: "Turns and reviews all the work from one of your turns may ask for." },
-      { key: "limits.max_cost_usd_per_tree", name: "Cost per tree (USD)", kind: { t: "number", whole: false },
+      { key: "limits.max_cost_usd_per_tree", name: "Cost per request tree (USD)", kind: { t: "number", whole: false },
         line: "What all the work from one of your turns may cost before asking stops. 0 is off." },
     ],
     side: ["A request tree is your turn and all the work asked for from it, at any depth.", "A limit reached refuses the request and says which."],
@@ -185,7 +184,6 @@ function draftOf(c: Control, v: unknown): string | boolean {
     case "number":
       return typeof v === "number" ? String(v) : "";
     case "seg":
-    case "folder":
       return typeof v === "string" ? v : "";
   }
 }
@@ -200,7 +198,6 @@ function valueOf(c: Control, d: string | boolean): { v: unknown } | { error: str
     case "list":
       return { v: lines(String(d)) };
     case "seg":
-    case "folder":
       return { v: d };
     case "number": {
       const t = String(d).trim();
@@ -300,17 +297,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
 
   const note = (part: string) =>
     message?.part === part && (
-      <div className={message.ok ? "nd-note ok" : "form-error"}>
-        {message.text}
-        {!message.ok && (
-          <>
-            {" "}
-            <button type="button" className="link-btn" onClick={load}>
-              Read again
-            </button>
-          </>
-        )}
-      </div>
+      message.ok ? (
+        <div className="nd-note ok">{message.text}</div>
+      ) : (
+        <Notice kind="error">
+          {message.text}{" "}
+          <Button kind="link" onClick={load}>
+            Read again
+          </Button>
+        </Notice>
+      )
     );
 
   const flatRead = loaded ? flatPolicy(loaded.policy.value) : {};
@@ -380,7 +376,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
   // The left column: the parts, each saved on its own. Advanced is last.
   const parts: [Part, string, string][] = GROUPS.map((g) => [g.id, g.name, g.sub]);
   parts.push(["instructions", "Instructions", "What every turn is told"]);
-  if (subscriptions) parts.push(["subscriptions", "Subscriptions", "The sign-in every turn uses"]);
+  if (subscriptions) parts.push(["subscriptions", "Subscriptions", "Sign-ins and API keys every turn uses"]);
   parts.push(["advanced", "Advanced", "The whole policy, as JSON"]);
   const unsaved = parts.filter(([k]) => dirty[k]).map(([, n]) => n);
 
@@ -430,7 +426,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
   const saveBtn = (label: string, onClick: () => void, can = true) => (
     <span className="pg-save-at">
       {dirty[part] && <span className="pg-dirty">Unsaved changes</span>}
-      <Button kind="quiet" className="pg-save" disabled={!ready || !!busy || !dirty[part] || !can} onClick={onClick}>
+      <Button kind="primary" className="pg-save" disabled={!ready || !!busy || !dirty[part] || !can} onClick={onClick}>
         {busy === part ? "Saving…" : label}
       </Button>
     </span>
@@ -440,27 +436,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
   const status = (
     <>
       {loadError && (
-        <div className="form-error">
+        <Notice kind="error">
           {loadError}{" "}
-          <button type="button" className="link-btn" onClick={load}>
+          <Button kind="link" onClick={load}>
             Read again
-          </button>
-        </div>
+          </Button>
+        </Notice>
       )}
-      {!loaded && !loadError && <div className="nd-note">Reading…</div>}
+      {!loaded && !loadError && <Loading />}
     </>
   );
 
   const set = (key: string, v: string | boolean) => setDraft((cur) => ({ ...cur, [key]: v }));
-
-  // The copy method last picked, so A copy after Your folder comes back to
-  // it; before any pick, the one read, else Auto.
-  const lastCopy = useRef<string | null>(null);
-  const copyMethod = () => {
-    if (lastCopy.current) return lastCopy.current;
-    const r = flatRead.isolation;
-    return typeof r === "string" && r !== "none" && r !== "" ? r : "auto";
-  };
 
   // Use my config: the usual config paths found on the folder's machine,
   // added to the list as unsaved changes. What it last said, beside it.
@@ -513,38 +500,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
           />
         );
         break;
-      case "folder": {
-        const v = String(d ?? "");
-        const mine = v === "none";
-        input = (
-          <>
-            <Seg
-              label={c.name}
-              value={v === "" ? "" : mine ? "none" : "copy"}
-              options={[
-                { value: "copy", label: "A copy of your folder" },
-                { value: "none", label: "Your folder" },
-              ]}
-              onChange={(x) => set(c.key, x === "none" ? "none" : copyMethod())}
-            />
-            {!mine && v !== "" && (
-              <span className="pg-detail" data-copy-method>
-                <span className="pg-note">How the copy is made. Auto makes the fastest copy this machine can.</span>
-                <Seg
-                  label="Copy method"
-                  value={v}
-                  options={COPY_METHODS.map(([value, label]) => ({ value, label }))}
-                  onChange={(x) => {
-                    lastCopy.current = x;
-                    set(c.key, x);
-                  }}
-                />
-              </span>
-            )}
-          </>
-        );
-        break;
-      }
       case "list":
         input = (
           <textarea
@@ -581,9 +536,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
         {home && api.findConfig && (
           <span className="pg-find">
             <Button kind="secondary" small className="pg-find-btn" disabled={finding} onClick={useMyConfig}>
-              {finding ? "Looking…" : "Use my config"}
+              {finding ? LOADING : "Use my config"}
             </Button>
-            {found && <span className={found.ok ? "nd-note" : "form-error"} data-found>{found.text}</span>}
+            {found &&
+              (found.ok ? (
+                <span className="nd-note" data-found>
+                  {found.text}
+                </span>
+              ) : (
+                <Notice kind="error" inline>
+                  <span data-found>{found.text}</span>
+                </Notice>
+              ))}
             {found?.over?.map((t) => (
               <span className="pg-why" data-over key={t}>
                 {t}
@@ -596,9 +560,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
         {c.more && <span className="nd-note">{c.more}</span>}
         {input}
         {home && (
-          <span className="nd-note">Copied into each conversation's own home at each turn. Sign-ins are never copied; AgentBus holds them.</span>
+          <span className="nd-note">Copied into each session&apos;s home at each turn. Sign-ins are never copied.</span>
         )}
-        {error && <span className="form-error">{error}</span>}
+        {error && (
+          <Notice kind="error" inline>
+            {error}
+          </Notice>
+        )}
         {c.key === "sandbox.mode" && sandbox && !sandbox.can && (
           <p className="pg-why" data-sandbox-why>
             {d === true ? "On, but no machine can build it now, so its turns are refused. " : "Not offered. "}
@@ -644,7 +612,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
               {t}
             </p>
           ))}
-          <p className="f-note first">The same on every machine. The next turn runs under what you save. Only what you change is saved.</p>
+          <p className="f-note first">The next turn runs under what you save.</p>
         </div>
       </>
     );
@@ -661,15 +629,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
       <>
         {head("How it applies")}
         <div className="colbody pg-body">
+          <p className="pg-note">Every turn uses the sign-ins and keys set here, on this machine and on your runners.</p>
           <p className="pg-note">
-            Every turn uses the subscription connected here, on this machine and on your runners. A tool&apos;s own
-            sign-in on a machine is not used.
+            {PRODUCT} adds them to each call. No runner or agent holds them. {KEPT.replace("It stays", "Each stays")}
           </p>
-          <p className="pg-note">
-            OpenRouter agents use the OpenRouter key set here. Control adds it to each call; no runner or agent ever
-            holds it, and it is never shown again.
-          </p>
-          <p className="f-note first">A turn whose tool is not connected is refused, and says so.</p>
+          <p className="pg-note">A tool&apos;s own sign-in on a machine is not used.</p>
+          <p className="f-note first">A turn whose sign-in or key is missing is refused, and says so.</p>
         </div>
       </>
     );
@@ -776,34 +741,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
   }
 
   const leaveAsk = asking && (
-    <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && setAsking(null)}>
-      <div
-        className="new-dialog leave-ask"
-        role="alertdialog"
-        aria-label="Unsaved changes"
-        onKeyDown={(e) => e.key === "Escape" && setAsking(null)}
-      >
-        <div className="nd-title">Unsaved changes</div>
-        <div className="nd-note">Your changes to {unsaved.join(" and ").replace(/ and (?=.* and )/g, ", ")} are not saved. Leave and lose them?</div>
-        <div className="nd-actions">
-          <Button kind="primary" className="leave-stay" onClick={() => setAsking(null)} autoFocus>
-            Stay
-          </Button>
-          <Button
-            kind="secondary"
-            className="leave-go"
-            onClick={() => {
-              const leave = asking;
-              setAsking(null);
-              setLeaveGuard(null);
-              leave();
-            }}
-          >
-            Leave without saving
-          </Button>
-        </div>
-      </div>
-    </div>
+    <ConfirmDialog
+      className="leave-ask"
+      title="Unsaved changes"
+      line={`Your changes to ${unsaved.join(" and ").replace(/ and (?=.* and )/g, ", ")} are not saved. Leave and lose them?`}
+      action="Leave without saving"
+      busyAction="Leaving…"
+      onConfirm={async () => {
+        const leave = asking;
+        setLeaveGuard(null);
+        leave();
+      }}
+      onClose={() => setAsking(null)}
+    />
   );
 
   return (
@@ -856,8 +806,8 @@ const SubscriptionsPart: React.FC<{ api: SubscriptionApi }> = ({ api }) => {
       alive = false;
     };
   }, [api]);
-  if (error) return <div className="form-error">{error}</div>;
-  if (list === undefined) return <div className="nd-note">Reading…</div>;
+  if (error) return <Notice kind="error">{error}</Notice>;
+  if (list === undefined) return <Loading />;
   if (list === null) return <div className="nd-note">This service keeps no subscriptions.</div>;
   return (
     <div className="subs-list">

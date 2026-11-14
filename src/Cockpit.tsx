@@ -160,8 +160,8 @@ export const Cockpit: React.FC = () => {
     setError(null);
   };
 
-  // A label for the foot of the Agents column.
-  const label = live ? `agentbus at ${live.address.replace(/^https?:\/\//, '')}` : 'Recorded data';
+  // Where the AgentBus card's data comes from: its address, or the recording.
+  const label = live ? live.address.replace(/^https?:\/\//, '') : 'Recorded data';
 
   if (!dataSource) {
     return (

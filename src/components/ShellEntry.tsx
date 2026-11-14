@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { ShellRun } from '../types';
+import { formatDuration } from '../utils/format';
+import { Notice } from './Notice';
 
 // Output longer than this many lines is folded: the first lines show, and a
 // button shows the rest.
@@ -10,9 +12,6 @@ function clock(t: string): string {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-function seconds(ms: number): string {
-  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
-}
 
 // One "!" command from before AgentBus 0.5 in the conversation, read-only:
 // the line, then its state. ran: how it ended, its output (folded when long)
@@ -38,7 +37,7 @@ export const ShellEntry: React.FC<{ run: ShellRun }> = ({ run }) => {
         {run.state === 'failed' && <span className="sh-exit bad">did not run</span>}
         {done && (
           <span className="sh-meta dim">
-            {seconds(done.durationMs)} · {clock(done.time)}
+            {formatDuration(done.durationMs)} · {clock(done.time)}
           </span>
         )}
       </div>
@@ -51,7 +50,9 @@ export const ShellEntry: React.FC<{ run: ShellRun }> = ({ run }) => {
       {done?.truncated && <div className="sh-note dim">Output cut at 64 KiB of {done.outputBytes} bytes.</div>}
       {why && (
         <div className="tb-foot">
-          <span className="form-error">{why}</span>
+          <Notice kind="error" inline>
+            {why}
+          </Notice>
         </div>
       )}
     </div>

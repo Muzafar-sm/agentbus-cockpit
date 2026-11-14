@@ -5,7 +5,7 @@
    the message box away. #app gets overflow-x: auto below 1200px, so anything
    wider than the screen shows as a sideways scroll and is not cut off. */
 
-.col-back, .agents-menu, .agents-scrim { display: none; }
+.col-back, .agents-menu, .agents-scrim, .panel-scrim { display: none; }
 
 /* 900-1200px: the turn panel opens over the conversation from the right. */
 @media (min-width: 901px) and (max-width: 1200px) {
@@ -16,6 +16,7 @@
     width: min(46rem, calc(100% - 4rem));
     box-shadow: -0.875rem 0 2rem rgba(20,20,20,.14);
   }
+  #app.panel > .panel-scrim { display: block; position: absolute; inset: 0; z-index: 49; background: rgba(20,20,20,.18); }
 }
 
 /* Under 1200px a table in the turn panel scrolls sideways in its own box. */
@@ -52,6 +53,9 @@
   #c-head, #p-head { padding: 0 0.75rem; gap: 0.5rem; }
   #p-head { height: auto; }
   #p-head .colhead-title { height: auto; align-items: center; }
+  /* The back button and "Turn 1 of 2" alone: the crumbs and the prompt are
+     what the back button and the panel body already say. */
+  #p-head .crumb, #p-head .crumb-sep, #p-head .ch-sub { display: none; }
 
   /* Tap targets at least 40px high. */
   #app button, #app .tb.pick, #app [role="button"], #app [role="tab"] { min-height: 40px; }
@@ -63,4 +67,5 @@
   #c-reply { padding: 0.5rem 0.75rem 0.75rem; }
   #right #d-head, #right #d-body { padding-left: 0.75rem; padding-right: 0.75rem; }
   #right #d-tabs { padding: 0 0.5rem; overflow-x: auto; }
+  #right #d-tabs .tab { flex: none; white-space: nowrap; }
 }

@@ -2,6 +2,7 @@ import React from 'react';
 import { Level } from '../types';
 import { BackButton } from './BackButton';
 import { CloseIcon } from './Icons';
+import { Session } from '../words';
 
 // The right panel's header: the levels above the shown one as quiet links,
 // then the shown level's own title. "Session › Turn 1 › Call 2 of 7". The ×
@@ -14,7 +15,7 @@ export const PanelHead: React.FC<{
 }> = ({ up, onLevel, onClose, children }) => (
   <header id="p-head" className="colhead">
     {/* On a narrow screen the panel is a column of its own, and back is its close. */}
-    {onClose && <BackButton label="Chat" onClick={onClose} />}
+    {onClose && <BackButton label={Session} onClick={onClose} />}
     <div className="colhead-title">
       {up.map((u) => (
         <React.Fragment key={u.level}>

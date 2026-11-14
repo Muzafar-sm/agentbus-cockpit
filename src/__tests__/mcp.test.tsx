@@ -168,16 +168,13 @@ describe('the MCP tab', () => {
   const tab = (c: HTMLElement, label: string) =>
     Array.from(c.querySelectorAll('#d-tabs .tab')).find((b) => b.textContent === label)!;
 
-  it('groups the tools, and the header line opens it', async () => {
+  it('groups the tools, with no header link and no summary line repeating the list', async () => {
     const r = await render(<RightPanel turn={turnOf(claudeTurn(), 't1')} totalTurns={1} />);
-    const line = r.container.querySelector('#d-head .turn-tools')!;
-    expect(line.textContent).toBe('11 AgentBus tools · 2 used · 4 hidden');
-    await click(line);
-    expect(tab(r.container, 'MCP').className).toContain('on');
+    expect(r.container.querySelector('#d-head .turn-tools')).toBeNull();
+    await click(tab(r.container, 'AgentBus tools'));
+    expect(tab(r.container, 'AgentBus tools').className).toContain('on');
     const body = r.container.querySelector('#d-body')!;
-    expect(body.querySelector('.tab-sum')!.textContent).toBe(
-      '11 AgentBus tools · 2 used · 4 hidden · what the turn could call; the Tools tab shows each call',
-    );
+    expect(body.querySelector('.tab-sum')).toBeNull();
     const heads = Array.from(body.querySelectorAll('.sub-h')).map((h) => h.textContent);
     expect(heads).toEqual(['AgentBus tools', 'Hidden by AgentBus']);
     const rows = Array.from(body.querySelectorAll('.mcp-t tr')).map((tr) => tr.textContent);
@@ -195,9 +192,9 @@ describe('the MCP tab', () => {
     ];
     const r = await render(<RightPanel turn={turnOf(events, 't5')} totalTurns={1} />);
     expect(r.container.querySelector('#d-head .turn-tools')).toBeNull();
-    await click(tab(r.container, 'MCP'));
+    await click(tab(r.container, 'AgentBus tools'));
     expect(r.container.querySelector('#d-body')!.textContent).toContain(
-      'AgentBus tools are off for this turn ([agent_api] tools).',
+      'AgentBus tools are off. Settings › Permissions › AgentBus tools turns them on.',
     );
     r.unmount();
   });

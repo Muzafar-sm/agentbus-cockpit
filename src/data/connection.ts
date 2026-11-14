@@ -89,7 +89,7 @@ export async function checkConnection(c: Connection, pageOrigin: string): Promis
   const timedOut = new Promise<string>((resolve) => {
     timer = setTimeout(() => {
       controller.abort();
-      resolve(`agentbus at ${c.address} did not answer within ${CHECK_TIMEOUT_MS / 1000} seconds`);
+      resolve(`AgentBus at ${c.address} did not answer within ${CHECK_TIMEOUT_MS / 1000} seconds.`);
     }, CHECK_TIMEOUT_MS);
   });
   try {
@@ -109,13 +109,13 @@ async function check(c: Connection, pageOrigin: string, signal: AbortSignal): Pr
   } catch {
     // A refused connection and a missing CORS header look the same from here.
     // Plain `agentbus up` allows every origin; -origin locks it to one.
-    return `cannot reach agentbus at ${c.address}; start it with \`agentbus up\` (if it runs with -origin, that must be ${pageOrigin})`;
+    return `Cannot reach AgentBus at ${c.address}. Start it with \`agentbus up\`. If it runs with \`-origin\`, that must be ${pageOrigin}.`;
   }
-  if (res.status === 401) return 'the token was refused';
-  if (!res.ok) return `agentbus at ${c.address} answered ${res.status}`;
+  if (res.status === 401) return 'The token was refused.';
+  if (!res.ok) return `AgentBus at ${c.address} answered ${res.status}.`;
   // A 200 from something else (a web page on that port) is not agentbus.
   const body: unknown = await res.json().catch(() => null);
-  if (!isSnapshot(body)) return `agentbus at ${c.address} did not answer like agentbus`;
+  if (!isSnapshot(body)) return `${c.address} did not answer like AgentBus.`;
   return null;
 }
 
@@ -156,7 +156,7 @@ export function takeSignInCode(loc: Location = window.location, hist: History = 
 }
 
 export const SIGN_IN_EXPIRED =
-  'the sign-in link was already used or has expired; start `agentbus up` again for a new one';
+  'The sign-in link was already used or has expired. Start `agentbus up` again for a new one.';
 
 // Trades the code for the token, once (POST /api/v0/signin). Returns the
 // token, or a plain sentence saying what went wrong.
@@ -175,14 +175,14 @@ export async function exchangeSignInCode(
       signal: controller.signal,
     });
   } catch {
-    return { error: `cannot reach agentbus at ${address}; is \`agentbus up\` still running?` };
+    return { error: `Cannot reach AgentBus at ${address}. Is \`agentbus up\` still running?` };
   } finally {
     clearTimeout(timer);
   }
   if (res.status === 401) return { error: SIGN_IN_EXPIRED };
-  if (!res.ok) return { error: `agentbus at ${address} answered ${res.status} to the sign-in link` };
+  if (!res.ok) return { error: `AgentBus at ${address} answered ${res.status} to the sign-in link.` };
   const body: unknown = await res.json().catch(() => null);
   const token = typeof body === 'object' && body !== null ? (body as Record<string, unknown>).token : undefined;
-  if (typeof token !== 'string' || token === '') return { error: `agentbus at ${address} did not answer like agentbus` };
+  if (typeof token !== 'string' || token === '') return { error: `${address} did not answer like AgentBus.` };
   return { token };
 }

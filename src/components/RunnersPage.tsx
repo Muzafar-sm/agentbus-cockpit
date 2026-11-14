@@ -4,6 +4,10 @@ import { PendingMachine, RunnerInfo, SandboxInfo } from '../types';
 import { formatAgo } from '../utils/format';
 import { ColHead, PageFrame } from './PageFrame';
 import { RunnersList, RunnersState } from './RunnersList';
+import { Button } from './Controls';
+import { ConfirmDialog } from './Dialog';
+import { Notice } from './Notice';
+import { harnessName, LOADING, PRODUCT, STATE } from '../words';
 
 // What the person decides on the page: approve a waiting machine with the
 // code it shows, refuse it, or remove an offline runner. Each rejects with
@@ -50,14 +54,14 @@ export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pendin
       list={
         <>
           {waiting.length > 0 && <PendingList pending={waiting} selected={shownPending?.id} onSelect={setPicked} />}
-          {runners === undefined && !error && <p className="empty runners-none">Reading…</p>}
+          {runners === undefined && !error && <p className="empty runners-none">{LOADING}</p>}
           {runners === null && <p className="empty runners-none">This service keeps no runners.</p>}
           <RunnersList runners={runners} error={error} selected={shown?.id} onSelect={setPicked} />
         </>
       }
       foot={
         <>
-          <code>agentbus login</code> with this control's address adds a machine. It waits here for approval.
+          <code>agentbus login</code> on a machine adds it. It waits here for approval.
         </>
       }
       main={
@@ -107,12 +111,12 @@ const PendingList: React.FC<{ pending: PendingMachine[]; selected?: string; onSe
         >
           <span className="pr-n">
             <span>
-              <i className="rn-dot pending" aria-label="waiting" />
+              <i className="rn-dot pending" aria-label={STATE.waiting} />
               {p.name}
             </span>
           </span>
           <span className="pr-m2">
-            waiting
+            {STATE.waiting}
             <Sep />
             asked {formatAgo(p.asked) || 'now'}
           </span>
@@ -151,8 +155,7 @@ const PendingDetail: React.FC<{ p: PendingMachine; actions?: RunnerActions; onDo
       />
       <div className="colbody pg-body">
         <p className="pg-note">
-          This machine ran <code>agentbus login</code> and takes no work until you approve it. Anyone who can reach this
-          control can ask, so check the code: type the one that machine shows.
+          This machine ran <code>agentbus login</code>. It takes no work until you approve it. Type the code it shows.
         </p>
         <table className="grid pg-kv">
           <tbody>
@@ -198,15 +201,15 @@ const PendingDetail: React.FC<{ p: PendingMachine; actions?: RunnerActions; onDo
                 maxLength={16}
               />
             </label>{' '}
-            <button type="submit" className="btn btn-primary rn-approve-go" disabled={busy || !code.trim()}>
-              Approve
-            </button>{' '}
-            <button type="button" className="btn btn-secondary rn-refuse" disabled={busy} onClick={() => act(() => actions.refuse(p.id))}>
+            <Button kind="primary" type="submit" className="rn-approve-go" disabled={busy || !code.trim()}>
+              {busy ? 'Approving…' : 'Approve'}
+            </Button>{' '}
+            <Button kind="secondary" className="rn-refuse" disabled={busy} onClick={() => act(() => actions.refuse(p.id))}>
               Refuse
-            </button>
+            </Button>
           </form>
         )}
-        {err && <p className="form-error">{err}</p>}
+        {err && <Notice kind="error">{err}</Notice>}
       </div>
     </>
   );
@@ -214,24 +217,15 @@ const PendingDetail: React.FC<{ p: PendingMachine; actions?: RunnerActions; onDo
 
 const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: () => void }> = ({ r, actions, onDone }) => {
   const connector = r.role === 'connector';
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => setErr(null), [r.id]);
-  const remove = () => {
-    // Remove takes one click, with no confirm.
+  // Remove asks first: its sessions take no more turns after it.
+  const [asking, setAsking] = useState(false);
+  useEffect(() => setAsking(false), [r.id]);
+  const remove = async () => {
     if (!actions) return;
-    setBusy(true);
-    setErr(null);
-    actions.remove(r.id).then(
-      () => onDone(),
-      (e: unknown) => {
-        setBusy(false);
-        setErr(e instanceof Error ? e.message : String(e));
-      }
-    );
+    await actions.remove(r.id);
+    onDone();
   };
   const found = r.harnesses.filter((h) => h.found);
-  const signedIn = found.filter((h) => h.signed_in);
   const chips = (xs: string[], none: string) =>
     xs.length ? xs.map((x) => <span key={x} className="rn-chip">{x}</span>) : <span className="dim">{none}</span>;
   return (
@@ -247,7 +241,7 @@ const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: (
       />
       <div className="colbody pg-body">
         <div className="tab-sum">
-          <b>{r.online ? 'Online' : 'Offline'}</b>
+          <b className={r.online ? 'ok' : 'dim'}>{r.online ? STATE.online : STATE.offline}</b>
           <Sep />
           last seen {formatAgo(r.last_seen) || 'never'}
           {r.capacity !== undefined && (
@@ -258,7 +252,9 @@ const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: (
           )}
         </div>
         {connector && (
-          <p className="pg-note">A connector from before 0.5. It takes no work now: run agentbus runner on this machine instead.</p>
+          <p className="pg-note">
+            A connector from before 0.5. It takes no work. Run <code>agentbus runner</code> on this machine instead.
+          </p>
         )}
         <table className="grid pg-kv">
           <tbody>
@@ -266,11 +262,7 @@ const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: (
               <>
                 <tr>
                   <td>Harnesses</td>
-                  <td>{chips(found.map((h) => (h.version ? `${h.name} ${h.version}` : h.name)), 'none found')}</td>
-                </tr>
-                <tr>
-                  <td>Signed in</td>
-                  <td>{chips(signedIn.map((h) => h.name), 'none')}</td>
+                  <td>{chips(found.map((h) => (h.version ? `${harnessName(h.name)} ${h.version}` : harnessName(h.name))), 'none found')}</td>
                 </tr>
               </>
             )}
@@ -320,15 +312,15 @@ const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: (
                 <tr>
                   <th>Harness</th>
                   <th>Version</th>
-                  <th>Signed in</th>
+                  <th title={`${PRODUCT} uses the sign-ins in Settings, not this one`}>Local sign-in (not used)</th>
                 </tr>
               </thead>
               <tbody>
                 {r.harnesses.map((h) => (
                   <tr key={h.name} className={h.found ? '' : 'off'}>
-                    <td>{h.name}</td>
-                    <td className="t">{h.found ? h.version || '–' : <span className="dim">not found</span>}</td>
-                    <td>{h.found ? (h.signed_in ? 'yes' : 'no') : '–'}</td>
+                    <td>{harnessName(h.name)}</td>
+                    <td className="t">{h.found ? h.version || '—' : <span className="dim">not found</span>}</td>
+                    <td className="dim">{h.found ? (h.signed_in ? 'yes' : 'no') : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -337,16 +329,23 @@ const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: (
         )}
         {actions && !r.online && (
           <p className="rn-remove">
-            <button type="button" className="btn btn-secondary rn-remove-go" disabled={busy} onClick={remove}>
+            <Button kind="secondary" className="rn-remove-go" onClick={() => setAsking(true)}>
               Remove
-            </button>{' '}
-            <span className="dim">
-              Offline. Remove takes it off this list, and it gets no more work. Its sessions stay in the record but take
-              no more turns. To add it back, move runner.json out of its data folder, then run agentbus login on it.
-            </span>
+            </Button>{' '}
+            <span className="dim">Offline. Remove takes it off this list.</span>
           </p>
         )}
-        {err && <p className="form-error">{err}</p>}
+        {asking && (
+          <ConfirmDialog
+            className="rn-remove-ask"
+            title={`Remove ${r.name}?`}
+            line="It gets no more work, and its sessions take no more turns. Its record stays."
+            action="Remove"
+            busyAction="Removing…"
+            onConfirm={remove}
+            onClose={() => setAsking(false)}
+          />
+        )}
       </div>
     </>
   );
@@ -370,7 +369,7 @@ const Queue: React.FC<{ queue?: { turns: ApiTurn[]; error: string | null } }> = 
     <>
       <span className="rn-prompt">{t.prompt || t.id}</span>
       <div className="note">
-        {t.agent || 'agent'}
+        {t.agent ? harnessName(t.agent) : 'agent'}
         {t.number ? ` · turn ${t.number}` : ''}
         {' · '}
         <code>{t.session}</code>
@@ -381,7 +380,7 @@ const Queue: React.FC<{ queue?: { turns: ApiTurn[]; error: string | null } }> = 
     <>
       <ColHead title="Queue" />
       <div className="colbody pg-body">
-        {queue.error && <p className="form-error">{queue.error}</p>}
+        {queue.error && <Notice kind="error">{queue.error}</Notice>}
         <div className="tab-sum">
           <b>{waiting.length} waiting</b>
           <Sep />
@@ -403,7 +402,7 @@ const Queue: React.FC<{ queue?: { turns: ApiTurn[]; error: string | null } }> = 
                   <td className="dim">
                     {t.ahead ? `${plural(t.ahead, 'earlier turn')} of its session` : 'for a free runner'}
                   </td>
-                  <td className="t">{formatAgo(t.asked) || '–'}</td>
+                  <td className="t">{formatAgo(t.asked) || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -422,13 +421,13 @@ const Queue: React.FC<{ queue?: { turns: ApiTurn[]; error: string | null } }> = 
               {running.map((t) => (
                 <tr key={t.id} data-turn={t.id}>
                   <td>{what(t)}</td>
-                  <td className="t">{formatAgo(t.started) || '–'}</td>
+                  <td className="t">{formatAgo(t.started) || '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          <p className="f-note first">Nothing.</p>
+          <p className="f-note first">No turns running.</p>
         )}
       </div>
     </>

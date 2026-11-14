@@ -377,13 +377,20 @@ describe('New session', () => {
     r.unmount();
   });
 
-  it('with no sessions, the columns show a short line and the New session button', async () => {
+  it('with no sessions, the column shows a short line and + Session; the chat says the first step', async () => {
     const svc = fakeService({ sessions: [], agents: AGENTS });
     const r = await mount(svc);
-    const empty = r.container.querySelector('.empty-state');
-    expect(empty).not.toBeNull();
-    expect(empty?.textContent).toContain('No sessions yet');
-    expect(empty?.querySelector('button.new-session')).not.toBeNull();
+    expect(r.container.querySelector('#sessions .empty')?.textContent).toBe('No sessions yet.');
+    expect(r.container.querySelector('#sessions .colhead button.new-session')).not.toBeNull();
+    expect(r.container.querySelector('#convo')!.textContent).toContain('Start one with + Session.');
+    r.unmount();
+  });
+
+  it('with no agent saved, + Session waits and the chat says to add one first', async () => {
+    const svc = fakeService({ sessions: [], agents: AGENTS, saved: [] });
+    const r = await mount(svc);
+    expect(r.container.querySelector('#sessions button.new-session')).toBeNull();
+    expect(r.container.querySelector('#convo')!.textContent).toContain('First add an agent with + Agent. Then start a session.');
     r.unmount();
   });
 });
@@ -752,7 +759,7 @@ describe('The prompt box', () => {
     const r = await mount(svc);
     expect((r.container.querySelector('#c-reply textarea') as HTMLTextAreaElement).disabled).toBe(true);
     expect(r.container.querySelector('#c-reply .reply-why')?.textContent).toBe(
-      'The first turn did not start: the agent could not be started. Start a new conversation.'
+      'The first turn did not start: the agent could not be started. Start a new session.'
     );
     r.unmount();
   });
@@ -764,7 +771,7 @@ describe('The prompt box', () => {
       turnFields: { 'T1-s1': { agent: 'claude' } },
     });
     const r = await mount(svc);
-    expect(r.container.querySelector('#c-reply .reply-why')?.textContent).toBe('This conversation cannot take another message. Start a new one.');
+    expect(r.container.querySelector('#c-reply .reply-why')?.textContent).toBe('This session cannot take another message. Start a new one.');
     r.unmount();
   });
 
@@ -772,8 +779,8 @@ describe('The prompt box', () => {
     const svc = fakeService({ sessions: [row('s1', { resumable: true, closed: '2026-11-11T09:00:00Z' })], events: { s1: oneTurn('s1', 'first') } });
     const r = await mount(svc);
     expect((r.container.querySelector('#c-reply textarea') as HTMLTextAreaElement).disabled).toBe(true);
-    expect(r.container.querySelector('#c-reply .reply-why')?.textContent).toBe('This conversation is closed; start a new one.');
-    expect(r.container.querySelector('#c-head .c-closed')?.textContent?.trim()).toBe('Closed');
+    expect(r.container.querySelector('#c-reply .reply-why')?.textContent).toBe('This session is closed. Start a new one.');
+    expect(r.container.querySelector('#c-head .c-closed')?.textContent?.trim()).toBe('closed');
     expect(r.container.querySelector('#sessions [data-session="s1"] .s-lock')).not.toBeNull();
     r.unmount();
   });
@@ -787,7 +794,7 @@ describe('The prompt box', () => {
     const r = await mount(svc);
     expect(svc.reqs.some((q) => q.method === 'GET' && q.path === '/api/v0/sessions/s1')).toBe(true);
     expect((r.container.querySelector('#c-reply textarea') as HTMLTextAreaElement).disabled).toBe(true);
-    expect(r.container.querySelector('#c-reply .reply-why')?.textContent).toBe('This conversation is closed; start a new one.');
+    expect(r.container.querySelector('#c-reply .reply-why')?.textContent).toBe('This session is closed. Start a new one.');
     expect(r.container.querySelector('#sessions [data-session="s1"] .s-lock')).not.toBeNull();
     r.unmount();
   });
@@ -1130,7 +1137,7 @@ describe('Agents', () => {
   const formLabels = (r: { container: HTMLElement }) =>
     Array.from(r.container.querySelectorAll('.agent-form .ad-set > label > span:first-child')).map((x) => x.textContent);
 
-  it('+ Agent opens the form: Harness, Access, Model, Name, then the extras, disabled', async () => {
+  it('+ Agent opens the form: Harness, Access, Model, Name, and nothing that does not work', async () => {
     const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS });
     const r = await mount(svc);
     await click(r.container.querySelector('#agents button.add-agent'));
@@ -1140,17 +1147,12 @@ describe('Agents', () => {
       'Access',
       'Model',
       'Name',
-      'Models this agent can use',
-      'MCP servers',
-      'Skills',
-      'Instruction files',
-      'Programs that run on it',
     ]);
     const form = r.container.querySelector('.agent-form')!;
-    // opencode is listed and cannot be picked; the API key is shown and disabled.
-    expect((form.querySelector('[data-harness="opencode"]') as HTMLButtonElement).disabled).toBe(true);
-    expect((form.querySelector('[data-access="api"]') as HTMLButtonElement).disabled).toBe(true);
-    expect(Array.from(form.querySelectorAll('.f-off [role="combobox"]')).every((x) => (x as HTMLButtonElement).disabled)).toBe(true);
+    // A harness or an access the service marks not available is left out, not shown disabled.
+    expect(form.querySelector('[data-harness="opencode"]')).toBeNull();
+    expect(form.querySelector('[data-access="api"]')).toBeNull();
+    expect(form.textContent).not.toMatch(/Not available yet|coming soon/i);
     expect(form.querySelector('select')).toBeNull();
     // A subscription agent starts with no model, so the harness picks its
     // own; the name follows harness and model.
@@ -1253,7 +1255,7 @@ describe('Agents', () => {
     expect(set.disabled).toBe(true);
     expect(set.querySelectorAll('input, button').length).toBe(r.container.querySelectorAll('.agent-form input, .agent-form button').length);
     await act(async () => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
     });
     expect(r.container.querySelector('.agent-form')).not.toBeNull();
     await act(async () => finish(json({ id: 'a_9', name: 'Claude Code · sonnet', harness: 'claude', access: 'subscription', model: 'sonnet' }, 201)));
@@ -1318,7 +1320,7 @@ describe('Agents', () => {
     r.unmount();
   });
 
-  it('while a remove is in flight, Edit and Remove wait; then the row is gone', async () => {
+  it('while a remove is in flight, its confirm waits; then the row is gone', async () => {
     let finish: () => void = () => {};
     const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS });
     const inner = svc.fn.getMockImplementation()!;
@@ -1331,8 +1333,10 @@ describe('Agents', () => {
     await settle();
     await click(r.container.querySelector('#agents [data-agent="codex"]'));
     await click(r.container.querySelector('#agents [data-agent="codex"] .ag-remove'));
-    expect((r.container.querySelector('#agents [data-agent="codex"] .ag-edit') as HTMLButtonElement).disabled).toBe(true);
-    expect((r.container.querySelector('#agents [data-agent="codex"] .ag-remove') as HTMLButtonElement).disabled).toBe(true);
+    // Remove asks first; while the remove is in flight the confirm waits.
+    await click(r.container.querySelector('.ag-remove-ask .confirm-go'));
+    expect((r.container.querySelector('.ag-remove-ask .confirm-go') as HTMLButtonElement).disabled).toBe(true);
+    expect((r.container.querySelector('.ag-remove-ask .dlg-cancel') as HTMLButtonElement).disabled).toBe(true);
     await act(async () => finish());
     await settle();
     expect(svc.reqs.find((q) => q.method === 'DELETE')?.path).toBe('/api/v0/agents/codex');
@@ -1340,7 +1344,7 @@ describe('Agents', () => {
     r.unmount();
   });
 
-  it('a row edits its agent with PUT, and one click on Remove removes it', async () => {
+  it('a row edits its agent with PUT, and Remove removes it after the cockpit\'s own confirm', async () => {
     const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS });
     const r = await mount(svc);
     await settle();
@@ -1359,6 +1363,9 @@ describe('Agents', () => {
     await click(r.container.querySelector('#agents [data-agent="codex"]'));
     const confirm = vi.spyOn(window, 'confirm');
     await click(r.container.querySelector('#agents [data-agent="codex"] .ag-remove'));
+    expect(svc.reqs.filter((q) => q.method === 'DELETE')).toEqual([]);
+    expect(r.container.querySelector('.ag-remove-ask')!.getAttribute('role')).toBe('alertdialog');
+    await click(r.container.querySelector('.ag-remove-ask .confirm-go'));
     await settle();
     expect(confirm).not.toHaveBeenCalled();
     confirm.mockRestore();
@@ -1375,7 +1382,7 @@ describe('Connect check timeout', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200 })));
     const result = checkConnection({ address: 'http://127.0.0.1:8787', token: 't' }, 'http://localhost:5173');
     await vi.advanceTimersByTimeAsync(10_000);
-    await expect(result).resolves.toBe('agentbus at http://127.0.0.1:8787 did not answer within 10 seconds');
+    await expect(result).resolves.toBe('AgentBus at http://127.0.0.1:8787 did not answer within 10 seconds.');
   });
 
   it('a fetch that never answers gives the same error', async () => {
@@ -1383,7 +1390,7 @@ describe('Connect check timeout', () => {
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
     const result = checkConnection({ address: 'http://127.0.0.1:8787', token: 't' }, 'http://localhost:5173');
     await vi.advanceTimersByTimeAsync(10_000);
-    await expect(result).resolves.toBe('agentbus at http://127.0.0.1:8787 did not answer within 10 seconds');
+    await expect(result).resolves.toBe('AgentBus at http://127.0.0.1:8787 did not answer within 10 seconds.');
   });
 });
 
@@ -1452,7 +1459,7 @@ describe('The turn list from the API', () => {
     expect(turnReads(svc)).toBe(before + 1);
     expect(bubbles()).toEqual(['first', 'from elsewhere']);
     // While it runs, one live line stands where its reply will be.
-    expect(r.container.querySelectorAll('#convo .tb')[1].querySelector('.m-live')?.textContent).toMatch(/^Starting the agent · \d+s$/);
+    expect(r.container.querySelectorAll('#convo .tb')[1].querySelector('.m-live')?.textContent).toMatch(/^starting the agent · \d+s$/);
 
     // A tool call of the open turn (turn 1) joins its events from the stream:
     // no read of its events, and no read of the list (a tool call changes no row).
@@ -1863,7 +1870,7 @@ describe('New session: the machine, then a folder on it', () => {
     });
     const { r, dialog } = await openDialog(svc);
     await setValue(dialog.querySelector('input[name="folder"]'), '/x');
-    expect(dialog.textContent).toContain('No machine is online. Start agentbus runner on one.');
+    expect(dialog.textContent).toContain('No machine is online. Run agentbus runner on one.');
     expect((dialog.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(true);
     r.unmount();
   });
@@ -1881,7 +1888,7 @@ describe('New session: the machine, then a folder on it', () => {
     await setValue(dialog.querySelector('textarea[name="prompt"]'), 'x');
     await submitForm(dialog);
     await settle();
-    expect(dialog.querySelector('.form-error')?.textContent).toBe('That machine is offline. Start agentbus runner on it, or pick another machine.');
+    expect(dialog.querySelector('.form-error')?.textContent).toBe('That machine is offline. Run agentbus runner on it, or pick another machine.');
     r.unmount();
   });
 });

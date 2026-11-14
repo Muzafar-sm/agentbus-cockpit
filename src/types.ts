@@ -646,9 +646,12 @@ export interface DataSource {
   // snapshot the stream starts from: once at the start, and again whenever it
   // starts over (the store changed). Show that list, so the list and the
   // stream share one cursor.
+  // onState says whether the stream is up: true once a connection is open,
+  // false when it drops and while it reconnects.
   subscribe?(
     onEvent: (event: CockpitEvent) => void,
-    onSnapshot?: (sessions: SessionSummary[], cursor?: { store: string; seq: number }) => void
+    onSnapshot?: (sessions: SessionSummary[], cursor?: { store: string; seq: number }) => void,
+    onState?: (up: boolean) => void
   ): () => void;
 }
 

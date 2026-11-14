@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Notice } from './Notice';
 
 interface TitleEditProps {
   title: string;
@@ -70,7 +71,11 @@ export const TitleEdit: React.FC<TitleEditProps> = ({ title, onSave, onDone, cla
           if (!saving.current) onDone();
         }}
       />
-      {error && <span className="form-error">{error}</span>}
+      {error && (
+        <Notice kind="error" inline>
+          {error}
+        </Notice>
+      )}
     </span>
   );
 };

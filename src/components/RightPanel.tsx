@@ -7,9 +7,14 @@ import {
   formatTime,
   formatTokens,
   stateLabel,
+  toolStateClass,
+  toolStateLabel,
   turnStateClass,
   toolInputSummary,
 } from '../utils/format';
+import { Markdown } from './Markdown';
+import { Loading } from './Notice';
+import { Session, STATE } from '../words';
 import { Cost } from './Cost';
 import { CallPanel, CallTab } from './CallPanel';
 import { LoadContext } from './ContextTab';
@@ -24,7 +29,7 @@ import { QueueView } from '../data/useJobs';
 import { ReviewBar, TurnTab } from './Jobs';
 import { reviewUI } from '../features';
 import { folderLabel, useFolders } from '../data/folders';
-import { Toolbox, toolboxSummary, turnToolbox } from '../data/toolbox';
+import { turnToolbox } from '../data/toolbox';
 import { McpTab } from './McpTab';
 import { TurnChangesTab } from './Changes';
 import { TurnDiff } from '../types';
@@ -82,7 +87,7 @@ interface RightPanelProps {
   tabs?: PanelTabs;
 }
 
-type TabKey = 'result' | 'changes' | 'events' | 'model' | 'tools' | 'prompt' | 'skills' | 'mcp' | 'cicd';
+type TabKey = 'result' | 'changes' | 'events' | 'model' | 'tools' | 'prompt' | 'mcp' | 'cicd';
 
 // Follows the selected level: the session, one turn, or one model call. The
 // turn and call tabs are kept here, so stepping down and back keeps them.
@@ -239,10 +244,10 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
     return (
       <section id="right">
         <PanelHead up={[]} onClose={onClose}>
-          Select a turn
+          No turn selected
         </PanelHead>
         <div id="d-body">
-          <p className="dim">Click a turn in the session column to view its timeline and details.</p>
+          <p className="dim">Pick a turn in the {Session.toLowerCase()} to see its events.</p>
         </div>
       </section>
     );
@@ -271,12 +276,12 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
   // The head reads the turn list's row, so it shows while the events load.
   const head = (
     <>
-      <PanelHead up={[{ level: 'session', label: 'Session' }]} onLevel={onLevel} onClose={onClose}>
-        <span className="ph-t">
-          {turn.prompt.length > 50 || turn.promptTruncated ? `${turn.prompt.slice(0, 50)}…` : turn.prompt}
+      <PanelHead up={[{ level: 'session', label: Session }]} onLevel={onLevel} onClose={onClose}>
+        <span className="ph-n">
+          Turn {turn.turnNumber} of {totalTurns}
         </span>
-        <span className="ch-sub">
-          turn {turn.turnNumber} of {totalTurns}
+        <span className="ch-sub ph-t">
+          {turn.prompt.length > 50 || turn.promptTruncated ? `${turn.prompt.slice(0, 50)}…` : turn.prompt}
         </span>
       </PanelHead>
 
@@ -302,9 +307,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
           </div>
           <div>
             <span>Tokens</span>
-            <b>
-              {formatTokens(turn.usage)} in/out
-            </b>
+            <b>{formatTokens(turn.usage)}</b>
           </div>
           <div>
             <span>Time</span>
@@ -313,8 +316,8 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
 
           <div>
             <span>Turn</span>
-            <b title={turn.id}>
-              {turn.id.length > 10 ? `${turn.id.slice(0, 10)}…` : turn.id}
+            <b>
+              {turn.id}
               <CopyButton text={turn.id} />
             </b>
           </div>
@@ -327,11 +330,6 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
           )}
         </div>
         {continued && <div className="turn-cont">{continued}</div>}
-        {box && (
-          <button className="turn-cont turn-tools" onClick={() => setActiveTab('mcp')} title="Open the MCP tab">
-            {toolboxSummary(box)}
-          </button>
-        )}
         {showJobs && onReview && (
           <ReviewBar
             key={turn.id}
@@ -355,7 +353,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
       <section id="right">
         {head}
         <div id="d-body">
-          <p className="dim">Loading the turn's events…</p>
+          <Loading />
         </div>
       </section>
     );
@@ -372,7 +370,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
   const renderEventSummary = (e: CockpitEvent) => {
     switch (e.kind) {
       case 'turn.started':
-        return <span>turn started</span>;
+        return <span>{STATE.starting}</span>;
       case 'model.requested':
         return (
           <span>
@@ -382,7 +380,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
       case 'model.responded':
         return (
           <span>
-            {callFailed(e) && <span className="bad">failed · </span>}
+            {callFailed(e) && <span className="bad">{STATE.failed} · </span>}
             <code>{e.stop_reason || 'stop'}</code>
             {e.usage?.output_tokens ? ` · ${e.usage.output_tokens} out` : ''}
           </span>
@@ -396,16 +394,14 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
       case 'tool.completed':
         return (
           <span>
-            {e.tool_error ? <span className="bad">error</span> : <span className="ok">completed</span>}
+            <span className={toolStateClass(e)}>{toolStateLabel(e)}</span>
             {' · '}
             {(e.tool_output || '').slice(0, 80).replace(/\n/g, ' ')}
           </span>
         );
       case 'turn.completed':
         return (
-          <span>
-            outcome: <span className="ok">{e.outcome || 'finished'}</span>
-          </span>
+          <span className="ok">{e.outcome || STATE.finished}</span>
         );
       default:
         return <span>{e.kind}</span>;
@@ -414,7 +410,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
 
   const renderEventDuration = (e: CockpitEvent) => {
     if (e.kind === 'model.responded' && e.latency_ms) {
-      return `${e.latency_ms}ms`;
+      return formatDuration(e.latency_ms);
     }
     return '';
   };
@@ -470,7 +466,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
     return (
       <div className="det">
         <div className="kvs">
-          <span>Event ID</span>
+          <span>Event id</span>
           <span><code>{e.id}</code></span>
 
           <span>Time</span>
@@ -487,7 +483,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
             <>
               <span>Status</span>
               <span className="bad">
-                failed{reply!.status !== undefined ? ` · ${reply!.status}` : ''}
+                {STATE.failed}{reply!.status !== undefined ? ` · ${reply!.status}` : ''}
               </span>
               {reply!.error ? (
                 <>
@@ -519,7 +515,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
           {latency ? (
             <>
               <span>Latency</span>
-              <span>{latency}ms</span>
+              <span>{formatDuration(latency)}</span>
             </>
           ) : null}
 
@@ -541,7 +537,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
 
           {toolId ? (
             <>
-              <span>Tool ID</span>
+              <span>Tool id</span>
               <span><code>{toolId}</code></span>
             </>
           ) : null}
@@ -555,8 +551,8 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
         </div>
 
         {toolInput !== undefined && (
-          <div style={{ marginTop: '0.5rem' }}>
-            <div className="sub-h">Tool Input</div>
+          <div className="det-block">
+            <div className="sub-h">Tool input</div>
             <pre className="term">
               {typeof toolInput === 'string'
                 ? toolInput
@@ -566,15 +562,15 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
         )}
 
         {toolOutput !== undefined && (
-          <div style={{ marginTop: '0.5rem' }}>
-            <div className="sub-h">Tool Output</div>
+          <div className="det-block">
+            <div className="sub-h">Tool output</div>
             <pre className="term">{toolOutput}</pre>
           </div>
         )}
 
         {responseText !== undefined && responseText !== '' && (
-          <div style={{ marginTop: '0.5rem' }}>
-            <div className="sub-h">Response Text</div>
+          <div className="det-block">
+            <div className="sub-h">{e.kind === 'turn.started' ? 'Prompt' : 'Reply'}</div>
             <pre className="term">{responseText}</pre>
           </div>
         )}
@@ -595,7 +591,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
       </div>
 
       <div id="d-body">
-        {tab !== 'cicd' && tab !== 'changes' && <TabSum tab={tab} turn={turn} detail={detail} box={box} />}
+        {tab !== 'cicd' && tab !== 'changes' && <TabSum tab={tab} turn={turn} detail={detail} />}
 
         {tab === 'cicd' && <TurnTab turn={turn} row={row} reviews={reviews} onStop={onStopQueued} />}
 
@@ -606,13 +602,12 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
         {tab === 'result' && (
           <div>
             {detail.agentResponse ? (
-              <div className="reply">
-                {detail.agentResponse.split('\n\n').map((p, i) => (
-                  <p key={i}>{p}</p>
-                ))}
+              // Formatted as the chat shows it.
+              <div className="m-agent md-reply result-md">
+                <Markdown text={detail.agentResponse} files={{ session: turn.sessionId, folder: turn.folder }} />
               </div>
             ) : (
-              <p className="dim">No final answer yet.</p>
+              <p className="dim">No reply yet.</p>
             )}
           </div>
         )}
@@ -622,7 +617,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
           <table className="grid events">
             <thead>
               <tr>
-                <th style={{ width: '1.25rem' }}></th>
+                <th className="c"></th>
                 <th>Time</th>
                 <th>Event</th>
                 <th>Detail</th>
@@ -650,7 +645,9 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
                     {isOpen && (
                       <tr className="ev-open">
                         <td></td>
-                        <td colSpan={4}>{renderEventExpandedDetail(e)}</td>
+                        <td colSpan={4}>
+                          <div className="ev-in">{renderEventExpandedDetail(e)}</div>
+                        </td>
                       </tr>
                     )}
                   </React.Fragment>
@@ -667,12 +664,12 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
             <table className="grid events">
               <thead>
                 <tr>
-                  <th style={{ width: '1.25rem' }}></th>
+                  <th className="c"></th>
                   <th>#</th>
                   <th className="r">In</th>
                   <th className="r">Cache</th>
                   <th className="r">Out</th>
-                  <th>Stop Reason</th>
+                  <th>Stop reason</th>
                   <th className="r">Latency</th>
                   <th className="r">Cost</th>
                 </tr>
@@ -694,10 +691,10 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
                         <td className="r">{res?.usage?.cache_read_tokens ?? 0}</td>
                         <td className="r">{res?.usage?.output_tokens ?? 0}</td>
                         <td>
-                          {callFailed(res) && <span className="bad">failed </span>}
+                          {callFailed(res) && <span className="bad">{STATE.failed} </span>}
                           <code>{res?.stop_reason || (callFailed(res) ? '' : '—')}</code>
                         </td>
-                        <td className="r">{res?.latency_ms ? `${res.latency_ms}ms` : '—'}</td>
+                        <td className="r">{res?.latency_ms ? formatDuration(res.latency_ms) : '—'}</td>
                         <td className="r">
                           <Cost usd={res?.cost_usd} complete={res?.cost_complete === true} />
                         </td>
@@ -706,6 +703,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
                         <tr className="ev-open">
                           <td></td>
                           <td colSpan={7}>
+                            <div className="ev-in">
                             {onSelectCall && (
                               <button className="open-call" onClick={() => onSelectCall(turn, req.id)}>
                                 Open call {idx + 1}
@@ -715,12 +713,11 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
                             {renderEventExpandedDetail(req, false)}
                             {res && (
                               <>
-                                <div className="sub-h" style={{ marginTop: '0.75rem' }}>
-                                  Reply
-                                </div>
+                                <div className="sub-h det-block next">Reply</div>
                                 {renderEventExpandedDetail(res, false)}
                               </>
                             )}
+                            </div>
                           </td>
                         </tr>
                       )}
@@ -749,18 +746,12 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
 
         {tab === 'prompt' && (
           <div>
-            <textarea
-              className="prompt"
-              readOnly
-              rows={6}
-              style={{ width: '100%', marginBottom: '0.75rem', padding: '0.625rem' }}
-              value={detail.prompt ?? turn.prompt}
-            />
+            <textarea className="prompt prompt-box" readOnly rows={6} value={detail.prompt ?? turn.prompt} />
 
             {detail.rawPrompt !== undefined && detail.rawPrompt !== detail.prompt && (
               <>
-                <div className="sub-h">Full Raw Prompt (with System Reminders)</div>
-                <pre className="term" style={{ maxHeight: '18.75rem', overflowY: 'auto' }}>
+                <div className="sub-h">Raw prompt, with what AgentBus added</div>
+                <pre className="term raw-prompt">
                   {detail.rawPrompt}
                 </pre>
               </>
@@ -805,21 +796,15 @@ const TURN_TABS: [TabKey, string][] = [
   ['events', 'Events'],
   ['model', 'Model calls'],
   ['tools', 'Tools'],
-  ['skills', 'Skills'],
-  ['mcp', 'MCP'],
+  ['mcp', 'AgentBus tools'],
 ];
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-// Every turn tab opens with one summary line in one style: a count or a
-// state in bold, then plain facts. Skills says what it will show: the API
-// does not offer that data yet.
-export const TabSum: React.FC<{ tab: TabKey; turn: Turn; detail: TurnDetail; box?: Toolbox | null }> = ({
-  tab,
-  turn,
-  detail,
-  box,
-}) => {
+// A turn tab opens with one summary line in one style, only for totals the
+// tab's own list does not show: a count or a state in bold, then plain
+// facts. No line explains how to use the tab.
+export const TabSum: React.FC<{ tab: TabKey; turn: Turn; detail: TurnDetail }> = ({ tab, turn, detail }) => {
   const facts: React.ReactNode[] = [];
   let head: React.ReactNode;
   switch (tab) {
@@ -835,39 +820,25 @@ export const TabSum: React.FC<{ tab: TabKey; turn: Turn; detail: TurnDetail; box
     }
     case 'events':
       head = plural(detail.events.length, 'event');
-      facts.push('click a row to open it');
       break;
     case 'model': {
       head = plural(detail.modelCalls.length, 'call');
+      // The table has no model column: the distinct models are said here.
       const models = turnModels(detail);
       if (models.length) facts.push(models.join(', '));
-      facts.push('click a call to open it');
+      if (formatCost(turn.costUsd)) facts.push(<Cost usd={turn.costUsd} complete={turn.costComplete} />);
+      const failed = detail.modelCalls.filter((p) => callFailed(p.responded)).length;
+      if (failed) facts.push(<span className="bad">{failed} failed</span>);
       break;
     }
     case 'tools': {
       head = plural(detail.toolCalls.length, 'tool call');
       const failed = detail.toolCalls.filter((p) => p.completed?.tool_error).length;
       if (failed) facts.push(<span className="bad">{failed} failed</span>);
-      facts.push('click a card to open it');
       break;
     }
-    case 'skills':
-      head = 'Coming next';
-      facts.push('the skills this agent can use, and which ones this turn loaded');
-      break;
-    case 'mcp': {
-      if (!box) {
-        head = 'Off';
-        facts.push('no AgentBus tools in this turn');
-        break;
-      }
-      head = plural(box.agentbus.length, 'AgentBus tool');
-      facts.push(`${box.agentbus.filter((t) => t.uses > 0).length} used`);
-      if (box.hidden.length) facts.push(`${box.hidden.length} hidden`);
-      if (box.other.length) facts.push(plural(box.other.length, 'other server'));
-      facts.push('what the turn could call; the Tools tab shows each call');
-      break;
-    }
+    // The AgentBus tools tab is its own list: a line would only repeat it.
+    case 'mcp':
     case 'cicd':
     case 'changes':
       return null;

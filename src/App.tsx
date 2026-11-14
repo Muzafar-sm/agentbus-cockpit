@@ -7,6 +7,8 @@ import { SettingsPage } from './components/SettingsPage';
 import { RunnersPage } from './components/RunnersPage';
 import { RUNNERS_PAGE_POLL_MS, useRunners } from './components/RunnersList';
 import { usePage } from './page';
+import { Loading } from './components/Notice';
+import { PRODUCT, Session, SESSION, Sessions, SESSIONS } from './words';
 import { useColumns } from './columns';
 import { BackButton } from './components/BackButton';
 import { sandboxOffer, type SettingsApi } from './data/settings';
@@ -405,6 +407,9 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // few connections to control. Back on the cockpit, the stream starts again
   // from a new snapshot, which reads the list and the shown session again.
   const tabShown = useTabShown();
+  // Whether the live stream is up, for the AgentBus card's dot. Undefined
+  // before it first says, and for a source that does not stream.
+  const [streamUp, setStreamUp] = useState<boolean | undefined>(undefined);
   const pageShown = ownPageShown(page, dataSource);
   const streamOn = tabShown && !pageShown;
   useEffect(() => {
@@ -483,7 +488,8 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         setLiveTurns({});
         loadOpenTurns.current(snapshot);
         setReloadKey((k) => k + 1);
-      }
+      },
+      setStreamUp
     );
     return () => {
       if (refreshTimer) clearTimeout(refreshTimer);
@@ -1213,8 +1219,8 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
 
   if (loading) {
     return (
-      <div id="app" style={{ alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ color: 'var(--ink3)' }}>Loading AgentBus Cockpit…</div>
+      <div id="app" className="app-loading">
+        <Loading />
       </div>
     );
   }
@@ -1233,6 +1239,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         agents={savedAgents ?? []}
         selectedAgentId={selectedAgentId}
         sourceLabel={sourceLabel}
+        streamUp={dataSource.subscribe ? streamUp ?? false : undefined}
         onDisconnect={onDisconnect}
         disconnectLabel={disconnectLabel}
         // Selecting an agent only marks it, for "+ Session": the session on
@@ -1274,7 +1281,12 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         }}
         onAgents={() => setAgentsMenu(true)}
         // New session starts on the selected agent when it is a saved one.
-        onNewSession={canStart ? () => setNewSession({ agent: savedAgents?.find((a) => a.id === selectedAgentId)?.id }) : undefined}
+        // With no agent saved yet, + Session waits: the chat says to add one first.
+        onNewSession={
+          canStart && (!canKeepAgents || (savedAgents?.length ?? 0) > 0)
+            ? () => setNewSession({ agent: savedAgents?.find((a) => a.id === selectedAgentId)?.id })
+            : undefined
+        }
         onRename={renameSession}
         agents={savedAgents}
         empty={sessions.length === 0}
@@ -1362,22 +1374,25 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         <main id="convo">
           <header id="c-head" className="colhead">
             <BackButton label="Sessions" onClick={() => columns.back('convo')} />
-            <div className="colhead-title">{allSessions.length === 0 ? 'No sessions yet' : 'No session selected'}</div>
+            <div className="colhead-title">{allSessions.length === 0 ? `No ${SESSIONS} yet` : `No ${SESSION} selected`}</div>
           </header>
-          <div id="c-msgs" style={{ padding: '1.25rem' }}>
+          <div id="c-msgs" className="c-empty">
             <p className="dim">
               {allSessions.length === 0
                 ? canStart
                   ? savedAgents?.length === 0
-                    ? 'Add an agent first with + Agent, then start a session.'
-                    : 'Start one with New session.'
-                  : 'Sessions appear here when an agent runs through agentbus.'
-                : 'Select a session from the list to view conversation.'}
+                    ? `First add an agent with + Agent. Then start a ${SESSION}.`
+                    : `Start one with + ${Session}.`
+                  : `${Sessions} show here when an agent runs through ${PRODUCT}.`
+                : `Pick a ${SESSION} from the list.`}
             </p>
           </div>
         </main>
       )}
 
+      {/* Between 900 and 1200px the panel lies over the chat: a scrim covers
+          the chat, and a click on it closes the panel (styles/narrow.css). */}
+      {panelOpen && <div className="panel-scrim" aria-hidden="true" onClick={closePanel} />}
       <div className="panel-slot" hidden={!panelOpen}>
       {applyOpen && previewSession ? (
         <ApplyPanel

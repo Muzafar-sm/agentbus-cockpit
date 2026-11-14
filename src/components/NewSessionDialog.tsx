@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { FolderInfo, lastMachine, recentFolders } from '../data/folders';
 import { Harness, RunRequest, RunnerInfo, SavedAgent } from '../types';
 import { agentLine } from './AgentsDialog';
-import { Select } from './Controls';
+import { Button, Select } from './Controls';
+import { Dialog, DialogActions } from './Dialog';
+import { Notice, WithCode } from './Notice';
+import { LOADING, PRODUCT, SESSION } from '../words';
 
 interface NewSessionDialogProps {
   // The saved agents (GET /api/v0/agents).
@@ -32,7 +35,7 @@ interface NewSessionDialogProps {
 export function folderRefusal(message: string): string | null {
   if (/not an existing directory|absolute path|no such file|does not exist/i.test(message)) return 'That folder does not exist.';
   if (/machine is offline|machine .* is offline|no machine is online/i.test(message))
-    return 'That machine is offline. Start agentbus runner on it, or pick another machine.';
+    return 'That machine is offline. Run `agentbus runner` on it, or pick another machine.';
   if (/has no folders of its own|folder_ref|connector is not connected|machines are online/i.test(message))
     return 'This service cannot use that folder. Pick one of the folders listed under the field.';
   return null;
@@ -43,7 +46,7 @@ export function folderRefusal(message: string): string | null {
 type Where = { ref: string; connector?: string } | { path: string };
 
 // A new session is a saved agent and a folder, with an optional name and an
-// optional first message. The service isolates it: the conversation works on its own copy of the folder,
+// optional first message. The service isolates it: the session works on its own copy of the folder,
 // and nothing reaches the folder until a turn's changes are applied.
 export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
   loadAgents,
@@ -129,12 +132,6 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
     };
   }, [loadAgents, loadHarnesses]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   const chosen = agents?.find((a) => a.id === agent);
   const hasWhere = !!where && ('ref' in where || where.path.trim() !== '');
   const machineOk = !byMachine || (!!picked && picked.online);
@@ -162,9 +159,7 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
   };
 
   return (
-    <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <form className="new-dialog" onSubmit={submit}>
-        <div className="nd-title">New session</div>
+    <Dialog title={`New ${SESSION}`} onClose={onClose} busy={starting} onSubmit={submit}>
         <label>
           <span>Agent</span>
           <Select
@@ -172,7 +167,7 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
             label="Agent"
             value={agent}
             disabled={!agents}
-            placeholder={agents ? 'No agents' : agentsError ? '' : 'Looking…'}
+            placeholder={agents ? 'No agents' : agentsError ? '' : LOADING}
             options={(agents ?? []).map((a) => ({
               value: a.id,
               label: a.name,
@@ -183,14 +178,14 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
           />
         </label>
         {chosen && <div className="nd-note">{agentLine(chosen, harnesses)}</div>}
-        {agentsError && <div className="form-error">{agentsError}</div>}
+        {agentsError && <Notice kind="error">{agentsError}</Notice>}
         {agents && agents.length === 0 && (
           <div className="nd-note">
             No agents yet.{' '}
             {onAddAgent && (
-              <button type="button" className="nd-link" onClick={onAddAgent}>
+              <Button kind="link" className="nd-link" onClick={onAddAgent}>
                 Add one
-              </button>
+              </Button>
             )}
           </div>
         )}
@@ -213,7 +208,9 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
           </label>
         )}
         {byMachine && !usable.some((m) => m.online) && (
-          <div className="nd-note">No machine is online. Start agentbus runner on one.</div>
+          <div className="nd-note">
+            No machine is online. Run <code>agentbus runner</code> on one.
+          </div>
         )}
         <label>
           <span>Folder</span>
@@ -224,7 +221,7 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
             className={tried && !hasWhere ? 'invalid' : undefined}
             value={path}
             onChange={(e) => pick({ path: e.target.value })}
-            placeholder={folders.length > 0 || recent.length > 0 ? 'Pick one below, or type a path' : '/Users/you/project'}
+            placeholder={folders.length > 0 || recent.length > 0 ? 'Pick one below, or type a path' : 'Path to a folder'}
             spellCheck={false}
             autoComplete="off"
           />
@@ -249,14 +246,14 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
             ))}
           </div>
         )}
-        {!hasWhere && tried && <div className="form-error nd-missing">Pick a folder to start.</div>}
+        {!hasWhere && tried && (
+          <Notice kind="error" className="nd-missing">
+            Pick a folder to start.
+          </Notice>
+        )}
         <div className="nd-note">
-          {byMachine
-            ? `A folder on ${picked?.name ?? 'the machine picked'}: pick a recent one or type its path. The session runs on that machine. `
-            : folders.length > 0
-              ? 'A folder the service lists, or a path on the machine where AgentBus runs. '
-              : 'A folder on the machine where AgentBus runs. '}
-          The conversation works on its own copy of it, so your folder is not changed until you apply a turn's changes.
+          {byMachine ? `A folder on ${picked?.name ?? 'the machine picked'}. ` : `A folder on the machine ${PRODUCT} runs on. `}
+          The {SESSION} works on a copy until you apply its changes.
         </div>
         <label>
           <span>Name (optional)</span>
@@ -274,17 +271,17 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
           <span>First message (optional)</span>
           <textarea name="prompt" rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
         </label>
-        {prompt.trim() === '' && <div className="nd-note">Leave it empty to write it in the conversation.</div>}
-        {error && <div className="form-error">{error}</div>}
-        <div className="nd-actions">
-          <button type="submit" className="btn btn-primary connect-go" disabled={starting || !agents || !machineOk}>
+        {prompt.trim() === '' && <div className="nd-note">Empty: write it in the {SESSION}.</div>}
+        {error && (
+          <Notice kind="error">
+            <WithCode text={error} />
+          </Notice>
+        )}
+        <DialogActions>
+          <Button kind="primary" type="submit" className="nd-start" disabled={starting || !agents || !machineOk}>
             {starting ? 'Starting…' : 'Start'}
-          </button>
-          <button type="button" className="btn btn-secondary nd-cancel" onClick={onClose}>
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
+          </Button>
+        </DialogActions>
+    </Dialog>
   );
 };

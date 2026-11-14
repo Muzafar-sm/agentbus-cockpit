@@ -48,7 +48,7 @@ afterEach(() => {
 });
 
 describe('Close', () => {
-  it('asks first in the cockpit\'s own dialog, never the browser\'s; Keep it open sends nothing', async () => {
+  it('asks first in the cockpit\'s own dialog, never the browser\'s; Cancel sends nothing', async () => {
     const closeSession = vi.fn(async () => 'closed' as const);
     const confirm = vi.fn(() => true);
     vi.stubGlobal('confirm', confirm);
@@ -59,25 +59,26 @@ describe('Close', () => {
     expect(confirm).not.toHaveBeenCalled();
     const d = ask()!;
     expect(d.getAttribute('role')).toBe('alertdialog');
-    expect(d.querySelector('.nd-title')!.textContent).toBe('Close this conversation?');
+    expect(d.querySelector('.nd-title')!.textContent).toBe('Close this session?');
     expect(d.querySelector('.nd-note')!.textContent).toBe(CLOSE_NOTE);
-    expect(d.querySelector('.close-unapplied')).toBeNull();
-    await click(button(d, 'Keep it open'));
+    expect(d.querySelector('.confirm-warn')).toBeNull();
+    await click(button(d, 'Cancel'));
     expect(ask()).toBeNull();
     expect(closeSession).not.toHaveBeenCalled();
     r.unmount();
   });
 
-  it('closes on Close conversation: Close becomes a disabled Closed, and the box takes no input', async () => {
+  it('closes on Close session: Close becomes a lock and closed, and the box takes no input', async () => {
     const closeSession = vi.fn(async () => 'closed' as const);
     const { r } = await open({ closeSession });
     await click(r.container.querySelector('#c-head .c-close'));
-    await click(button(ask()!, 'Close conversation'));
+    await click(button(ask()!, 'Close session'));
     await flush();
     expect(closeSession).toHaveBeenCalledWith('c1');
     expect(ask()).toBeNull();
-    expect(r.container.querySelector('#c-head .c-closed')!.textContent!.trim()).toBe('Closed');
-    expect((r.container.querySelector('#c-head .c-closed') as HTMLButtonElement).disabled).toBe(true);
+    // A state, not a button: the lock and the word.
+    expect(r.container.querySelector('#c-head .c-closed')!.textContent!.trim()).toBe('closed');
+    expect(r.container.querySelector('#c-head .c-closed')!.tagName).toBe('SPAN');
     expect(r.container.querySelector('#c-head .c-close')).toBeNull();
     expect((r.container.querySelector('#input') as HTMLTextAreaElement).disabled).toBe(true);
     r.unmount();
@@ -86,7 +87,7 @@ describe('Close', () => {
   it('warns of changes not applied: "Apply what you want to keep first"', async () => {
     const { r } = await open({ closeSession: vi.fn(), getApplyPreview: vi.fn(async () => unapplied), applyTurn: vi.fn() });
     await click(r.container.querySelector('#c-head .c-close'));
-    expect(ask()!.querySelector('.close-unapplied')!.textContent).toBe(
+    expect(ask()!.querySelector('.confirm-warn')!.textContent).toBe(
       '2 files changed here are not in your folder yet. Apply what you want to keep first.'
     );
     r.unmount();
@@ -99,13 +100,13 @@ describe('Close', () => {
       .mockRejectedValueOnce(new Error('only the main token closes a session'));
     const { r } = await open({ closeSession });
     await click(r.container.querySelector('#c-head .c-close'));
-    await click(button(ask()!, 'Close conversation'));
+    await click(button(ask()!, 'Close session'));
     await flush();
-    expect(ask()!.querySelector('.close-refused')!.textContent).toBe(CLOSE_RUNNING);
+    expect(ask()!.querySelector('.confirm-refused')!.textContent).toBe(CLOSE_RUNNING);
     expect(CLOSE_RUNNING).toBe('A turn is still running. Stop it or wait for it to end, then close.');
-    await click(button(ask()!, 'Close conversation'));
+    await click(button(ask()!, 'Close session'));
     await flush();
-    expect(ask()!.querySelector('.close-refused')!.textContent).toBe('only the main token closes a session');
+    expect(ask()!.querySelector('.confirm-refused')!.textContent).toBe('only the main token closes a session');
     expect(r.container.querySelector('#c-head .c-closed')).toBeNull();
     r.unmount();
   });

@@ -5,12 +5,18 @@ import { FeedbackDialog } from './FeedbackDialog';
 import { PlusIcon } from './Icons';
 import { PlanUsage, usageOf } from './PlanUsage';
 import { SignInDot, signInOf } from './SignInDot';
+import { Button } from './Controls';
+import { ConfirmDialog } from './Dialog';
+import { PRODUCT } from '../words';
 
 interface AgentsColumnProps {
   agents: SavedAgent[];
   selectedAgentId: string | null;
   onSelectAgent: (agentId: string) => void;
   sourceLabel?: string;
+  // The live stream: true while it is up, false while it reconnects,
+  // undefined for a source with no stream (recorded data): no dot then.
+  streamUp?: boolean;
   onDisconnect?: () => void;
   disconnectLabel?: string;
   // Given only when the source keeps saved agents: "+ Agent" opens the form,
@@ -44,7 +50,8 @@ export const AgentsColumn: React.FC<AgentsColumnProps> = ({
   agents,
   selectedAgentId,
   onSelectAgent,
-  sourceLabel = 'Gateway on this Mac',
+  sourceLabel = '',
+  streamUp,
   onDisconnect,
   disconnectLabel = 'Disconnect',
   onAddAgent,
@@ -57,39 +64,25 @@ export const AgentsColumn: React.FC<AgentsColumnProps> = ({
   subscriptions,
   onOpenSignIn,
 }) => {
-  // A remove in flight, or refused. Remove takes one click: a saved agent
-  // can be made again, and its sessions stay.
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ id: string; msg: string } | null>(null);
+  // The agent whose Remove asks first, as every remove does; its answer and
+  // any refusal show in the confirm.
+  const [removing, setRemoving] = useState<SavedAgent | null>(null);
   const [feedback, setFeedback] = useState(false);
-
-  const remove = async (id: string) => {
-    if (!onRemoveAgent) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await onRemoveAgent(id);
-    } catch (err) {
-      setError({ id, msg: (err as Error).message });
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <aside id="agents">
       <header className="colhead">
         <div className="colhead-title">Agents</div>
         {onAddAgent && (
-          <button className="add-agent btn btn-quiet" onClick={onAddAgent} aria-label="Add agent" title="Add agent">
+          <Button kind="quiet" className="add-agent" onClick={onAddAgent} aria-label="Add agent" title="Add agent">
             <PlusIcon />
             Agent
-          </button>
+          </Button>
         )}
       </header>
       <div className="colbody">
         {agents.length === 0 && (
-          <p className="empty agents-empty">{onAddAgent ? 'No agents yet. Add one with + Agent.' : 'No agents yet.'}</p>
+          <p className="empty agents-empty">No agents yet.</p>
         )}
         {agents.map((a) => {
           const isSelected = selectedAgentId === a.id;
@@ -115,17 +108,16 @@ export const AgentsColumn: React.FC<AgentsColumnProps> = ({
                 {body}
                 <span className="ag-act">
                   {onEditAgent && (
-                    <button type="button" className="btn btn-secondary btn-sm ag-edit" disabled={busy} onClick={() => onEditAgent(a)}>
+                    <Button kind="secondary" small className="ag-edit" onClick={() => onEditAgent(a)}>
                       Edit
-                    </button>
+                    </Button>
                   )}
                   {onRemoveAgent && (
-                    <button type="button" className="btn btn-secondary btn-sm ag-remove" disabled={busy} onClick={() => remove(a.id)}>
+                    <Button kind="secondary" small className="ag-remove" onClick={() => setRemoving(a)}>
                       Remove
-                    </button>
+                    </Button>
                   )}
                 </span>
-                {error?.id === a.id && <span className="form-error">{error.msg}</span>}
               </div>
             );
           }
@@ -134,16 +126,24 @@ export const AgentsColumn: React.FC<AgentsColumnProps> = ({
               key={a.id}
               className={`side-chat agent pick${isSelected ? ' on' : ''}`}
               data-agent={a.id}
-              onClick={() => {
-                setError(null);
-                onSelectAgent(a.id);
-              }}
+              onClick={() => onSelectAgent(a.id)}
             >
               {body}
             </button>
           );
         })}
       </div>
+      {removing && onRemoveAgent && (
+        <ConfirmDialog
+          className="ag-remove-ask"
+          title={`Remove ${removing.name}?`}
+          line="Its sessions stay. You can add the agent again."
+          action="Remove"
+          busyAction="Removing…"
+          onConfirm={() => onRemoveAgent(removing.id)}
+          onClose={() => setRemoving(null)}
+        />
+      )}
 
       {/* The foot stays put while the list above it scrolls: the links to
           the cockpit's own pages, then the AgentBus this cockpit reads, as one
@@ -173,26 +173,32 @@ export const AgentsColumn: React.FC<AgentsColumnProps> = ({
         </nav>
         {feedback && <FeedbackDialog version={version} onClose={() => setFeedback(false)} />}
         <div className="bus-card">
-          <span className="bc-t">
+          <span className="bc-row">
             <b className="brand">
-              AgentBus
+              {PRODUCT}
               {version && " "}
               {version && (
-                <span className="bc-v" title="this service's build">
+                <span className="bc-v" title="its build">
                   {version}
                 </span>
               )}
             </b>
-            <span className="bc-a gw">
-              <i className="live" />
-              <span>{sourceLabel}</span>
-            </span>
+            {onDisconnect && (
+              <Button kind="link" className="disconnect" onClick={onDisconnect}>
+                {disconnectLabel}
+              </Button>
+            )}
           </span>
-          {onDisconnect && (
-            <button className="disconnect" onClick={onDisconnect}>
-              {disconnectLabel}
-            </button>
-          )}
+          <span className="bc-a gw">
+            {streamUp !== undefined && (
+              <i
+                className={`live${streamUp ? '' : ' down'}`}
+                title={streamUp ? 'Live' : 'Reconnecting'}
+                aria-label={streamUp ? 'Live' : 'Reconnecting'}
+              />
+            )}
+            <span>{sourceLabel}</span>
+          </span>
         </div>
       </div>
     </aside>

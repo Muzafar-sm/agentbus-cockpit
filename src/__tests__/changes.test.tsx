@@ -59,7 +59,7 @@ async function open(extra: Parameters<typeof liveReplay>[1]) {
 }
 
 describe('The apply bar', () => {
-  it('shows "● 2 files changed, not applied  Review ▸" above the message box while there is unapplied work', async () => {
+  it('shows "● 2 files changed, not applied  Changes ▸" above the message box while there is unapplied work', async () => {
     const getApplyPreview = vi.fn(async () => preview);
     const { r } = await open({ getApplyPreview, applyTurn: vi.fn() });
     expect(getApplyPreview).toHaveBeenCalledWith('c1');
@@ -67,7 +67,7 @@ describe('The apply bar', () => {
     expect(b).not.toBeNull();
     expect(b.querySelector('.ab-dot')!.textContent).toBe('●');
     expect(b.querySelector('.ab-text')!.textContent).toBe('2 files changed, not applied');
-    expect(b.querySelector('.ab-review')!.textContent).toBe('Review ▸');
+    expect(b.querySelector('.ab-review')!.textContent).toBe('Changes ▸');
     // Directly above the message box.
     expect(b.nextElementSibling!.tagName).toBe('FORM');
     r.unmount();
@@ -139,7 +139,7 @@ describe('The apply bar', () => {
 });
 
 describe('The apply preview', () => {
-  it('Review ▸ opens it in the right panel: each file with counts and a coloured diff', async () => {
+  it('Changes ▸ opens it in the right panel: each file with counts and a coloured diff', async () => {
     const { r } = await open({ getApplyPreview: vi.fn(async () => preview), applyTurn: vi.fn() });
     expect(panelOpen(r.container)).toBe(false);
     await click(bar(r.container)!.querySelector('.ab-review'));
@@ -160,7 +160,7 @@ describe('The apply preview', () => {
     r.unmount();
   });
 
-  it('Apply applies the turn the preview names; then "Applied. Your folder matches this conversation." and the bar goes', async () => {
+  it('Apply applies the turn the preview names; then "Applied. Your folder matches this session." and the bar goes', async () => {
     let p = preview;
     const getApplyPreview = vi.fn(async () => p);
     const applyTurn = vi.fn(async () => {
@@ -173,7 +173,7 @@ describe('The apply preview', () => {
     await click(button(r.container.querySelector('#right')!, 'Apply to my folder'));
     await flush();
     expect(applyTurn).toHaveBeenCalledWith('T1');
-    expect(r.container.querySelector('#right .nd-note.ok[role="status"]')!.textContent).toBe('Applied. Your folder matches this conversation.');
+    expect(r.container.querySelector('#right .nd-note.ok[role="status"]')!.textContent).toBe('Applied. Your folder matches this session.');
     expect(button(r.container.querySelector('#right')!, 'Apply to my folder')).toBeUndefined();
     expect(bar(r.container)).toBeNull();
     r.unmount();
@@ -185,7 +185,7 @@ describe('The apply preview', () => {
     expect(r.container.querySelector('.ch-file.conflict .ch-conflict')!.textContent).toBe(
       'you changed this file since; it would be refused'
     );
-    const box = r.container.querySelector('.form-error.ap-conflicts')!;
+    const box = r.container.querySelector('.form-warn.ap-conflicts')!;
     expect(box.textContent).toContain('1 file would be refused.');
     expect(box.querySelector('li')!.textContent).toBe('a.txt: changed in your folder since the checkpoint');
     expect(button(r.container, 'Apply to my folder')!.disabled).toBe(true);
@@ -226,7 +226,7 @@ describe('The apply preview', () => {
       });
     }
     expect(readApply).toHaveBeenCalledWith('T1');
-    expect(r.container.textContent).toContain('Applied. Your folder matches this conversation.');
+    expect(r.container.textContent).toContain('Applied. Your folder matches this session.');
     r.unmount();
   });
 

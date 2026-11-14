@@ -1,3 +1,4 @@
+import { STATE } from '../words';
 // The turn queue, on the same agentbus API as everything else: one address,
 // one token. Every action is on a turn. A prompt is POST /api/v0/turns, which
 // names the turn at once, even while it waits. A turn that ended can be
@@ -210,18 +211,18 @@ export function modelHints(agent: string): string[] {
 export function outcome(t: ApiTurn): { label: string; cls: string } {
   switch (t.state) {
     case 'queued':
-      return { label: 'Queued', cls: 'dim' };
+      return { label: STATE.queued, cls: 'dim' };
     case 'running':
-      return { label: 'Running', cls: 'run' };
+      return { label: STATE.running, cls: 'run' };
     case 'stopped':
-      return { label: 'Stopped', cls: 'dim' };
+      return { label: STATE.stopped, cls: 'dim' };
     case 'failed':
-      return { label: t.error ? `Failed: ${t.error}` : 'Failed', cls: 'bad' };
+      return { label: t.error ? `${STATE.failed} · ${t.error}` : STATE.failed, cls: 'bad' };
     case 'finished':
-      if (t.kind !== 'review') return { label: 'Finished', cls: 'ok' };
-      if (t.verdict === 'pass') return { label: 'Passed', cls: 'ok' };
-      if (t.verdict === 'fail') return { label: 'Failed', cls: 'bad' };
-      return { label: 'No verdict', cls: 'warn' };
+      if (t.kind !== 'review') return { label: STATE.finished, cls: 'ok' };
+      if (t.verdict === 'pass') return { label: 'passed', cls: 'ok' };
+      if (t.verdict === 'fail') return { label: STATE.failed, cls: 'bad' };
+      return { label: 'no verdict', cls: 'warn' };
   }
   return { label: t.state, cls: '' };
 }

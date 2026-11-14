@@ -1,7 +1,9 @@
 import React from 'react';
 import { addedContext, CallGroup, callFailed, turnNotes } from '../data/turns';
 import { Level, Turn, TurnDetail } from '../types';
-import { formatDuration, formatTime, toolInputSummary } from '../utils/format';
+import { formatDuration, formatTime, toolInputSummary, toolStateClass, toolStateLabel } from '../utils/format';
+import { Markdown } from './Markdown';
+import { Session, STATE } from '../words';
 import { ContextTab, LoadContext } from './ContextTab';
 import { Cost } from './Cost';
 import { PanelHead } from './PanelHead';
@@ -41,7 +43,7 @@ export const CallPanel: React.FC<CallPanelProps> = ({ turn, call, tab, onTab, on
     <section id="right">
       <PanelHead
         up={[
-          { level: 'session', label: 'Session' },
+          { level: 'session', label: Session },
           { level: 'turn', label: `Turn ${turn.turnNumber}` },
         ]}
         onLevel={onLevel}
@@ -72,7 +74,7 @@ export const CallPanel: React.FC<CallPanelProps> = ({ turn, call, tab, onTab, on
           <div>
             <span>Stop</span>
             <b>
-              {failed && <span className="bad">failed</span>}
+              {failed && <span className="bad">{STATE.failed}</span>}
               {res?.stop_reason ? res.stop_reason : failed ? null : '—'}
             </b>
           </div>
@@ -81,7 +83,7 @@ export const CallPanel: React.FC<CallPanelProps> = ({ turn, call, tab, onTab, on
 
       <div id="d-tabs">
         <button className={`tab ${tab === 'sent' ? 'on' : ''}`} onClick={() => onTab('sent')}>
-          Sent
+          Request
         </button>
         <button className={`tab ${tab === 'reply' ? 'on' : ''}`} onClick={() => onTab('reply')}>
           Reply
@@ -112,20 +114,18 @@ export const CallPanel: React.FC<CallPanelProps> = ({ turn, call, tab, onTab, on
                 )}
                 <div className="sub-h first">Text</div>
                 {typeof res.text === 'string' && res.text !== '' ? (
-                  <div className="reply">
-                    {res.text.split('\n\n').map((p, i) => (
-                      <p key={i}>{p}</p>
-                    ))}
+                  <div className="m-agent md-reply result-md">
+                    <Markdown text={res.text} files={{ session: turn.sessionId, folder: turn.folder }} />
                   </div>
                 ) : (
-                  <p className="dim">No text.</p>
+                  <p className="dim">No text yet.</p>
                 )}
               </>
             )}
 
             <div className="sub-h">Tool calls it asked for</div>
             {call.tools.length === 0 ? (
-              <p className="dim">None.</p>
+              <p className="dim">No tool calls yet.</p>
             ) : (
               <div className="grid-scroll">
               <table className="grid events asked">
@@ -146,13 +146,9 @@ export const CallPanel: React.FC<CallPanelProps> = ({ turn, call, tab, onTab, on
                         <code>{toolInputSummary(tc.requested.tool_input).slice(0, 80)}</code>
                       </td>
                       <td>
-                        {tc.completed?.tool_error ? (
-                          <span className="bad">error</span>
-                        ) : tc.completed ? (
-                          <span className="ok">ok</span>
-                        ) : (
-                          <span className="dim">pending</span>
-                        )}
+                        <span className={toolStateClass(tc.completed, turn.state === 'running')}>
+                          {toolStateLabel(tc.completed, turn.state === 'running')}
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -194,7 +190,7 @@ export const CallPanel: React.FC<CallPanelProps> = ({ turn, call, tab, onTab, on
             )}
             <span>Sent at</span>
             <span>{formatTime(req.time)}</span>
-            <span>Event ID</span>
+            <span>Event id</span>
             <span>
               <code>{req.id}</code>
             </span>

@@ -166,7 +166,7 @@ describe('The Stop button', () => {
     ];
     const svc = fakeService({ sessions: [row('s1', { resumable: false })], events: { s1: handPointed } });
     const r = await mount(svc);
-    expect(liveLine(r)?.textContent).toMatch(/^Waiting on the model · call 1 · \d+s$/);
+    expect(liveLine(r)?.textContent).toMatch(/^waiting on the model · call 1 · \d+s$/);
     // No Stop: a message typed here would queue behind it.
     expect(goBtn(r).textContent).toBe('Queue');
     r.unmount();
@@ -198,7 +198,7 @@ describe('The Stop button', () => {
     r.unmount();
   });
 
-  it('shows a stopped turn as "Stopped by you", not as a red failure, and Send comes back', async () => {
+  it('shows a stopped turn as "stopped", not as a red failure, and Send comes back', async () => {
     const svc = fakeService({ sessions: [row('s1')], events: { s1: runningTurn('s1') } });
     const r = await mount(svc);
     await click(goBtn(r));
@@ -207,7 +207,7 @@ describe('The Stop button', () => {
     await svc.push(ev({ session: 's1', kind: 'session.closed', turn: 'T1', hold: 'h1', exit_code: 143, stopped: true }));
     await settle();
     const state = footState(r)!;
-    expect(state.textContent).toBe('Stopped by you');
+    expect(state.textContent).toBe('stopped');
     expect(state.classList.contains('bad')).toBe(false);
     expect(goBtn(r).textContent).toBe('Send');
     expect(r.container.querySelector('#c-reply .form-error')).toBeNull();

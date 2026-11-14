@@ -134,23 +134,24 @@ describe('the Runners page in three columns', () => {
     expect(r.container.querySelector('.pg-list .runner.on')!.getAttribute('data-runner')).toBe('run_a');
     expect(main().querySelector('.colhead')!.textContent).toBe('macrunner');
     const t = main().textContent!;
-    expect(t).toContain('Online');
+    expect(t).toContain('online');
     expect(t).toContain('4 turns at once');
-    expect(t).toContain('claude 2.1.319');
+    // The harness by its product name; the local sign-in column says it is not used.
+    expect(t).toContain('Claude Code 2.1.319');
+    expect(t).toContain('Local sign-in (not used)');
     expect(t).toContain('darwin arm64');
     expect(t).toContain('gpu');
-    // Signed in lists only the harnesses that said so.
-    const signed = [...main().querySelectorAll('.pg-kv tr')].find((x) => x.textContent!.startsWith('Signed in'))!;
-    expect(signed.textContent).toBe('Signed inclaude');
-    // A harness not found is listed, quiet.
-    expect(main().querySelector('.rn-harnesses tr.off')!.textContent).toContain('agy');
+    // No "Signed in" row: a machine's own sign-in is not what turns use.
+    expect([...main().querySelectorAll('.pg-kv tr')].some((x) => x.textContent!.startsWith('Signed in'))).toBe(false);
+    // A harness not found is listed, quiet, by its product name.
+    expect(main().querySelector('.rn-harnesses tr.off')!.textContent).toContain('Antigravity');
     // A connector has no harnesses; an offline runner says when it was last seen.
     await click(r.container.querySelector('[data-runner="run_b"]'));
     expect(main().querySelector('.colhead')!.textContent).toBe('macconnector');
     expect(main().textContent).not.toContain('Harnesses');
-    expect(main().textContent).toContain('takes no work now');
+    expect(main().textContent).toContain('takes no work.');
     await click(r.container.querySelector('[data-runner="run_c"]'));
-    expect(main().textContent).toContain('Offline');
+    expect(main().textContent).toContain('offline');
     expect(main().textContent).toContain('last seen 3 min ago');
     expect(main().textContent).toContain('not reported yet');
   });
@@ -368,7 +369,7 @@ describe('signing a machine in, and removing one', () => {
     expect(a.refuse).toHaveBeenCalledWith('lgn_0123456789abcdef');
   });
 
-  it('shows whether a runner can sandbox, and Remove only for one offline, in one click', async () => {
+  it('shows whether a runner can sandbox, and Remove only for one offline, after the cockpit\'s own confirm', async () => {
     const a = actions();
     const confirm = vi.spyOn(window, 'confirm');
     const list: RunnerInfo[] = [{ ...runners[0], sandbox: { can: true } }, { ...runners[2], sandbox: { can: false, why: 'bwrap is missing' } }];
@@ -378,11 +379,17 @@ describe('signing a machine in, and removing one', () => {
     expect([...main().querySelectorAll('button')].some((b) => b.textContent === 'Remove')).toBe(false);
     await click(r.container.querySelector('[data-runner="run_c"]'));
     expect(main().textContent).toContain('cannot: bwrap is missing');
-    expect(main().textContent).toContain('move runner.json out of its data folder, then run agentbus login on it');
+    expect(main().textContent).toContain('Offline. Remove takes it off this list.');
     expect(main().textContent).not.toContain('credential');
     await click([...main().querySelectorAll('button')].find((b) => b.textContent === 'Remove')!);
-    await flush();
+    // It asks first, in the cockpit's own dialog, never the browser's.
     expect(confirm).not.toHaveBeenCalled();
+    expect(a.remove).not.toHaveBeenCalled();
+    const ask = r.container.querySelector('.rn-remove-ask')!;
+    expect(ask.getAttribute('role')).toBe('alertdialog');
+    expect(ask.querySelector('.nd-title')!.textContent).toBe('Remove box?');
+    await click(ask.querySelector('.confirm-go'));
+    await flush();
     expect(a.remove).toHaveBeenCalledWith('run_c');
     confirm.mockRestore();
   });

@@ -23,14 +23,14 @@ describe('the message box styles', () => {
   });
 
   it('places nothing over the text: no control is positioned absolutely', () => {
-    for (const sel of ['#c-reply .go', '#c-reply .next-agent', '#c-reply .next-agent-at', '#c-reply .go-split']) {
+    for (const sel of ['#c-reply .go', '#c-reply .next-agent', '#c-reply .next-agent-at']) {
       expect(rule(sel)).not.toMatch(/position:\s*absolute/);
     }
     expect(css).not.toMatch(/#c-reply[^{]*\{[^}]*position:\s*absolute/);
   });
 
   it('gives Send and Stop a fixed least width, so a changing label moves nothing', () => {
-    expect(rule('#c-reply .go-split .go')).toMatch(/min-width:\s*4\.5rem/);
+    expect(rule('#c-reply .go')).toMatch(/min-width:\s*4\.5rem/);
     expect(rule('#c-reply .go.stop')).toMatch(/min-width:\s*6rem/);
   });
 });

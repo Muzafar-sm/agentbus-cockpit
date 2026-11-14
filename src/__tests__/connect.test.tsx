@@ -130,7 +130,7 @@ describe('Connect screen', () => {
     await type(r.container.querySelector('input[name="token"]'), 'wrong');
     await submit(r.container);
 
-    expect(r.container.querySelector('.connect-error')?.textContent).toBe('the token was refused');
+    expect(r.container.querySelector('.connect-error')?.textContent).toBe('The token was refused.');
     expect(r.container.querySelector('form.connect')).not.toBeNull();
     expect(sessionStorage.getItem('agentbus.token')).toBeNull();
     r.unmount();
@@ -143,8 +143,10 @@ describe('Connect screen', () => {
     await submit(r.container);
 
     expect(r.container.querySelector('.connect-error')?.textContent).toBe(
-      `cannot reach agentbus at ${ADDR}; start it with \`agentbus up\` (if it runs with -origin, that must be ${window.location.origin})`
+      `Cannot reach AgentBus at ${ADDR}. Start it with agentbus up. If it runs with -origin, that must be ${window.location.origin}.`
     );
+    // The command and the flag show as code, never as backticks.
+    expect([...r.container.querySelectorAll('.connect-error code')].map((c) => c.textContent)).toEqual(['agentbus up', '-origin']);
     r.unmount();
   });
 
@@ -245,7 +247,7 @@ describe('Connect checks that are overtaken', () => {
     await submit(r.container);
 
     expect(r.container.querySelector('.connect-error')?.textContent).toBe(
-      `agentbus at ${ADDR} did not answer like agentbus`
+      `${ADDR} did not answer like AgentBus.`
     );
     expect(sessionStorage.getItem('agentbus.token')).toBeNull();
     r.unmount();
@@ -257,7 +259,7 @@ describe('Connect checks that are overtaken', () => {
     await type(r.container.querySelector('input[name="token"]'), TOKEN);
     await submit(r.container);
     expect(r.container.querySelector('.connect-error')?.textContent).toBe(
-      `agentbus at ${ADDR} did not answer like agentbus`
+      `${ADDR} did not answer like AgentBus.`
     );
     r.unmount();
   });

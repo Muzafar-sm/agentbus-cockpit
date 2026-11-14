@@ -63,8 +63,8 @@ describe('asked work in the conversation', () => {
     );
     const lines = Array.from(r.container.querySelectorAll('.m-origin')).map((x) => x.textContent);
     expect(lines).toEqual([
-      'Result from DeepSeek flash, delivered by AgentBus, not typed by you · open its session',
-      'Review result from Codex, delivered by AgentBus, not typed by you · open its session',
+      'Result from DeepSeek flash, sent by AgentBus · open its session',
+      'Review result from Codex, sent by AgentBus · open its session',
     ]);
     const bubbles = r.container.querySelectorAll('.tb .bubble');
     expect(bubbles[0].classList.contains('delivered')).toBe(false);
@@ -151,7 +151,7 @@ describe('asked work across sessions', () => {
     // The child is listed first; its asked line links to the parent, which
     // is under another agent.
     await waitFor(() => shownSession(r.container) === 'c' && r.container.querySelector('.origin-link') !== null, 'the child');
-    expect(r.container.querySelector('.m-origin')!.textContent).toBe('Asked by another agent · open the session that asked');
+    expect(r.container.querySelector('.m-origin')!.textContent).toBe('Asked by another agent · open its session');
     await click(r.container.querySelector('.origin-link'));
     await waitFor(() => shownSession(r.container) === 'p' && r.container.querySelectorAll('.origin-link').length === 2, 'the parent');
     // A later list refresh keeps it.

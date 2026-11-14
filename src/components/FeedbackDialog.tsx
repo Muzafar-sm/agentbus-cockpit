@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { Switch } from './Controls';
+import React, { useState } from 'react';
+import { Button, Switch } from './Controls';
+import { Dialog, DialogActions } from './Dialog';
+import { Notice } from './Notice';
+import { FEEDBACK_TEAM } from '../words';
 
 // Where the Feedback box sends: the Lorebug site's one endpoint
 // (agentbus web/functions/api/feedback.js). It stores one row per message.
@@ -21,9 +23,10 @@ interface FeedbackDialogProps {
 // exactly those and the AgentBus version, nothing from sessions, code,
 // prompts or folders. When sending fails it says why (the site's own words
 // when it answered), keeps the text to copy and send again, and links GitHub
-// Discussions. All of this happens inside the one box: once sent, the fields
-// stay in view, disabled, and a short line takes the place of Send. Close and
-// Escape always close it; Escape before the cockpit behind it sees the key.
+// Discussions. All of this happens inside the one box (a Dialog): once sent,
+// the fields stay in view, disabled, and a short line takes the place of
+// Send. Cancel and Escape close it; once sent, nothing is left to cancel and
+// the button says Close.
 export const FeedbackDialog: React.FC<FeedbackDialogProps> = ({ version, onClose }) => {
   const [message, setMessage] = useState('');
   const [email, setEmail] = useState('');
@@ -33,18 +36,6 @@ export const FeedbackDialog: React.FC<FeedbackDialogProps> = ({ version, onClose
   const [refusal, setRefusal] = useState<string | null>(null);
   // While sending and once sent, the fields and Send are disabled.
   const locked = state === 'sending' || state === 'sent';
-
-  // A capture listener on window runs before the cockpit's own Escape
-  // handler, which leaves alone a key whose default is prevented.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.preventDefault();
-      onClose();
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
 
   const send = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,10 +67,8 @@ export const FeedbackDialog: React.FC<FeedbackDialogProps> = ({ version, onClose
     }
   };
 
-  return createPortal(
-    <div className="modal-back feedback-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <form className="new-dialog feedback-dialog" role="dialog" aria-modal="true" aria-label="Feedback" onSubmit={send}>
-        <div className="nd-title">Feedback</div>
+  return (
+    <Dialog title="Feedback" className="feedback-dialog" onClose={onClose} onSubmit={send}>
         <label>
           <span>What's missing or broken?</span>
           <textarea
@@ -107,39 +96,34 @@ export const FeedbackDialog: React.FC<FeedbackDialogProps> = ({ version, onClose
         <Switch
           className="fb-hosted"
           name="wants_hosted"
-          label="Tell me when hosted version is ready"
+          label="Tell me when the hosted version is ready"
           on={wantsHosted}
           onChange={setWantsHosted}
           disabled={locked}
         />
-        <div className="nd-note fb-what">This sends your message to the Lorebug team.</div>
+        <div className="nd-note fb-what">This sends your message to {FEEDBACK_TEAM}.</div>
         {state === 'failed' && (
-          <div className="form-error fb-failed" role="alert">
+          <Notice kind="error" className="fb-failed" role="alert">
             {refusal ? `It was not sent: ${refusal}` : 'It could not be sent.'} Your message is still in the box above:
             copy it, or post it on{' '}
             <a href={DISCUSSIONS_URL} target="_blank" rel="noreferrer">
               GitHub Discussions
             </a>
             .
-          </div>
+          </Notice>
         )}
-        <div className="nd-actions">
+        <DialogActions cancel={state === 'sent' ? 'Close' : undefined}>
           {state === 'sent' ? (
             <div className="fb-done" role="status">
               Sent. Thank you.
             </div>
           ) : (
-            <button type="submit" className="btn btn-primary fb-send" disabled={!message.trim() || locked}>
+            <Button kind="primary" type="submit" className="fb-send" disabled={!message.trim() || locked}>
               {state === 'sending' ? 'Sending…' : state === 'failed' ? 'Send again' : 'Send'}
-            </button>
+            </Button>
           )}
-          <button type="button" className="btn btn-secondary fb-close" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      </form>
-    </div>,
-    document.body
+        </DialogActions>
+    </Dialog>
   );
 };
 

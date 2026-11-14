@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { Button } from './Controls';
+import { Session, SESSION, Sessions, SESSIONS } from '../words';
 import { liveStatus, LiveTurns } from '../data/liveStatus';
 import { sessionAgents } from '../data/turns';
 import { SavedAgent, SessionSummary } from '../types';
@@ -66,32 +68,23 @@ export const SessionsColumn: React.FC<SessionsColumnProps> = ({
     <section id="sessions">
       <header className="colhead">
         {onAgents && (
-          <button type="button" className="agents-menu btn btn-quiet" onClick={onAgents} aria-label="Agents" title="Agents">
+          <Button kind="quiet" className="agents-menu" onClick={onAgents} aria-label="Agents" title="Agents">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
               <path d="M3 4.5h10M3 8h10M3 11.5h10" />
             </svg>
-          </button>
+          </Button>
         )}
         {/* No cost total here, as in the mockup: each card and the panel carry the cost. */}
-        <div className="colhead-title">Sessions</div>
-        {onNewSession && !empty && (
-          <button className="new-session btn btn-quiet" onClick={onNewSession} aria-label="New session" title="New session">
+        <div className="colhead-title">{Sessions}</div>
+        {onNewSession && (
+          <Button kind="quiet" className="new-session" onClick={onNewSession} aria-label={`New ${SESSION}`} title={`New ${SESSION}`}>
             <PlusIcon />
-            Session
-          </button>
+            {Session}
+          </Button>
         )}
       </header>
       <div className="colbody">
-        {empty && (
-          <div className="empty-state">
-            <p className="empty">No sessions yet.</p>
-            {onNewSession && (
-              <button className="new-session btn btn-quiet" onClick={onNewSession}>
-                New session
-              </button>
-            )}
-          </div>
-        )}
+        {empty && <p className="empty">No {SESSIONS} yet.</p>}
         {sessions.map((s) => {
           const isSelected = selectedSessionId === s.id;
           const ago = formatAgo(s.last, now);
@@ -138,7 +131,7 @@ export const SessionsColumn: React.FC<SessionsColumnProps> = ({
               ) : null}
             </span>
           );
-          // A pencil on hover starts a rename. It sits beside the card, not
+          // A pencil, always shown, starts a rename. It sits beside the card, not
           // in it, since a button cannot hold another.
           const pencil =
             onRename && !isEditing ? (

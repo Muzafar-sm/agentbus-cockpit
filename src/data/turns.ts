@@ -1,3 +1,4 @@
+import { harnessName } from '../words';
 // Call pairing within a turn, shared by the replay and live sources, and the
 // replay source's own grouping of a recorded file into turns and sessions.
 // The rules come from CLIENT_API.md, "Turns".
@@ -412,12 +413,8 @@ function guessFolder(events: CockpitEvent[]): string {
   return '';
 }
 
-// The harnesses' own names, for an agent no saved agent names.
-const HARNESS_NAMES: Record<string, string> = { claude: 'Claude Code', codex: 'Codex' };
-
-export function harnessName(harness: string): string {
-  return HARNESS_NAMES[harness] ?? harness;
-}
+// The harnesses' own names, for an agent no saved agent names (words.ts).
+export { harnessName };
 
 // The agents that took part in a session, as far as its row in GET
 // /api/v0/sessions says: the agent of its first turn (its saved agent's name,

@@ -10,7 +10,8 @@
 // the model" and a codex script is shown as code.
 import { CockpitEvent, ToolCallPair, TurnDetail } from '../types';
 import { callFailed, pairModelCalls, pairToolCalls, turnCost } from './turns';
-import { formatCost } from '../utils/format';
+import { formatCost, formatDuration } from '../utils/format';
+import { harnessName, STATE, TOOL_STATE } from '../words';
 
 export type LiveState =
   | 'starting' // the agent runs, no model call yet
@@ -260,9 +261,9 @@ export function toolResult(req: CockpitEvent, done: CockpitEvent): ToolResult {
   if (done.tool_error === true) {
     const m = out.match(/^Exit code (\d+)\s*\n?([\s\S]*)$/);
     if (m) return { text: `exit ${m[1]}`, failed: true, exitCode: Number(m[1]), why: lastLine(m[2]) || undefined };
-    return { text: 'error', failed: true, why: lastLine(out) || undefined };
+    return { text: TOOL_STATE.failed, failed: true, why: lastLine(out) || undefined };
   }
-  if (done.tool_error === false) return { text: 'ok', failed: false };
+  if (done.tool_error === false) return { text: TOOL_STATE.ok, failed: false };
   if (SCRIPT_TOOLS.has(req.tool_name ?? '')) {
     const exits = codexExits(out);
     const bad = exits.find((x) => x.code !== 0);
@@ -270,9 +271,9 @@ export function toolResult(req: CockpitEvent, done: CockpitEvent): ToolResult {
       const why = lastLine(bad.output ?? '') || lastLine(codexPlainOutput(out).replace(/\{[\s\S]*$/, ''));
       return { text: `exit ${bad.code}`, failed: true, exitCode: bad.code, why: why || undefined };
     }
-    if (exits.length > 0) return { text: 'ok', failed: false, exitCode: 0 };
+    if (exits.length > 0) return { text: TOOL_STATE.ok, failed: false, exitCode: 0 };
   }
-  return { text: 'done', failed: false };
+  return { text: TOOL_STATE.ok, failed: false };
 }
 
 function visible(events: CockpitEvent[]): CockpitEvent[] {
@@ -369,9 +370,9 @@ export function liveStatus(rawEvents: CockpitEvent[], now: number, agent?: strin
   const ended = (state: LiveState, end: CockpitEvent, why?: string): LiveStatus => {
     const endedMs = ms(end.time);
     const elapsedMs = Math.max(0, endedMs - startedMs);
-    const parts = [state === 'finished' ? 'Finished' : state === 'stopped' ? 'Stopped' : 'Failed'];
+    const parts: string[] = [STATE[state as 'finished' | 'stopped' | 'failed']];
     if (why) parts.push(why);
-    parts.push(formatElapsed(elapsedMs));
+    parts.push(formatDuration(elapsedMs));
     const c = formatCost(cost.usd, cost.complete);
     if (c && state === 'finished') parts.push(c);
     return { ...base, state, running: false, line: parts.join(' · '), sinceMs: endedMs, endedMs, elapsedMs };
@@ -389,13 +390,14 @@ export function liveStatus(rawEvents: CockpitEvent[], now: number, agent?: strin
     ...base,
     state,
     running: true,
-    line: `${what} · ${formatElapsed(now - sinceMs)}`,
+    // A status line starts lowercase, as every state word does.
+    line: `${what.charAt(0).toLowerCase()}${what.slice(1)} · ${formatElapsed(now - sinceMs)}`,
     sinceMs,
     call,
     elapsedMs,
   });
 
-  if (completed) return open('finishing', 'Finishing', ms(completed.time));
+  if (completed) return open('finishing', STATE.finishing, ms(completed.time));
   // The last reply asked for no tool and did not fail: it is the turn's
   // answer, and the agent is ending (turn.completed comes with it, or soon).
   const lastCall = modelCalls[modelCalls.length - 1];
@@ -405,7 +407,7 @@ export function liveStatus(rawEvents: CockpitEvent[], now: number, agent?: strin
     !callFailed(lastReply) &&
     !events.some((e) => e.kind === 'tool.requested' && (lastCall.requested.exchange ? e.exchange === lastCall.requested.exchange : ms(e.time) >= ms(lastReply.time)))
   ) {
-    return open('finishing', 'Finishing', ms(lastReply.time));
+    return open('finishing', STATE.finishing, ms(lastReply.time));
   }
 
   // The open model call: the last request with no reply.
@@ -428,7 +430,7 @@ export function liveStatus(rawEvents: CockpitEvent[], now: number, agent?: strin
   }
   if (tools.length > 1) return open('tools', `${tools.length} tools running`, toolsAt);
 
-  if (modelCalls.length === 0) return open('starting', `Starting ${name || 'the agent'}`, startedMs);
+  if (modelCalls.length === 0) return open('starting', `Starting ${name ? harnessName(name) : 'the agent'}`, startedMs);
   const lastAt = Math.max(...events.map((e) => ms(e.time)));
   return open('agent', 'Waiting on the agent', lastAt);
 }

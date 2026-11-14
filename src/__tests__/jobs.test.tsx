@@ -385,12 +385,12 @@ describe('the session CI/CD view', () => {
     await waitFor(() => r.container.querySelectorAll('.jobs-table tbody tr').length === 3, 'three rows');
     const rows = Array.from(r.container.querySelectorAll('.jobs-table tbody tr')).map((tr) => tr.textContent);
     expect(rows[0]).toContain('turn');
-    expect(rows[0]).toContain('Finished');
+    expect(rows[0]).toContain('finished');
     expect(rows[0]).toContain('0:12');
     expect(rows[1]).toContain('review');
     expect(rows[1]).toContain('codex');
-    expect(rows[1]).toContain('Passed · 0 findings');
-    expect(rows[2]).toContain('Queued · 1 ahead');
+    expect(rows[1]).toContain('passed · 0 findings');
+    expect(rows[2]).toContain('queued · 1 ahead');
     expect(Array.from(r.container.querySelectorAll('.jobs-table th')).map((th) => th.textContent)).not.toContain('Job');
     r.unmount();
   });
@@ -416,7 +416,7 @@ describe('sending with the turn queue', () => {
   // New session is a saved agent and a folder: POST /api/v0/turns names the
   // agent's id and isolate, and the service makes the copy. No worktree,
   // base, model or read-only choice is shown, and the note says the
-  // conversation works on its own copy of the folder.
+  // conversation works on a copy of the folder.
   it('New session starts a turn with the agent, the folder and isolate, and shows no workspace choice', async () => {
     const fake = fakeQueue([]);
     const { src } = source(turnEvents());
@@ -427,7 +427,7 @@ describe('sending with the turn queue', () => {
     const dialog = r.container.querySelector('.new-dialog')!;
     expect(dialog.textContent).not.toContain('New worktree');
     expect(dialog.textContent).not.toContain('worktree');
-    expect(dialog.textContent).toContain('works on its own copy');
+    expect(dialog.textContent).toContain('works on a copy');
     expect(dialog.querySelector('[role="radiogroup"]')).toBeNull();
     expect(dialog.querySelector('input[name="base"], input[name="model"], input[name="read_only"]')).toBeNull();
     await setValue(dialog.querySelector('input[name="folder"]'), '/Users/ana/repo');

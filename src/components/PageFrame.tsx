@@ -1,4 +1,5 @@
 import React from 'react';
+import { buttonClass } from './Controls';
 import { follow, PAGE_PATHS } from '../page';
 
 interface PageFrameProps {
@@ -20,7 +21,7 @@ export const PageFrame: React.FC<PageFrameProps> = ({ title, onBack, list, foot,
     <aside className="pg-list">
       <header className="colhead">
         <h1 className="colhead-title">{title}</h1>
-        <a className="btn btn-quiet page-back" href={PAGE_PATHS.cockpit} onClick={follow(onBack)}>
+        <a className={buttonClass('quiet', false, 'page-back')} href={PAGE_PATHS.cockpit} onClick={follow(onBack)}>
           <BackIcon />
           Cockpit
         </a>

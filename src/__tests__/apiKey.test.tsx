@@ -51,7 +51,7 @@ describe('APIKey', () => {
     const { container } = await render(<APIKey api={f.api} name="anthropic" />);
     await flush();
     expect(container.textContent).toContain('Anthropic API key');
-    expect(container.textContent).toContain('Used by claude agents on access API key');
+    expect(container.textContent).toContain('Used by Claude Code agents on an API key.');
     expect(container.querySelector('input[name="anthropic_key"]')).toBeNull();
     await click(container.querySelector('.key-set'));
     const input = container.querySelector('input[name="anthropic_key"]') as HTMLInputElement;
@@ -65,6 +65,8 @@ describe('APIKey', () => {
     expect(container.querySelector('input[name="anthropic_key"]')).toBeNull();
     expect(container.innerHTML).not.toContain(FAKE_ANTH);
     await click(container.querySelector('.key-remove'));
+    // Remove asks first.
+    await click(container.querySelector('.confirm-go'));
     await flush();
     expect(f.api.removeAPIKey).toHaveBeenCalledWith('anthropic');
     expect(container.querySelector('.cs-status')?.textContent).toBe('not set');
@@ -107,7 +109,7 @@ describe('The API key agent form', () => {
     expect(container.querySelector('.key-row[data-harness="anthropic"]')).not.toBeNull();
     // The access choice reads only "API key"; the row and note say whose.
     expect(container.querySelector('[data-access="api"]')?.textContent).toBe('API key');
-    expect(container.textContent).toContain('Control adds your Anthropic API key');
+    expect(container.textContent).toContain('AgentBus adds your Anthropic API key');
     expect((container.querySelector('input[name="model"]') as HTMLInputElement).value).toBe('');
     await act(async () => {
       (container.querySelector('form.agent-form') as HTMLFormElement).requestSubmit();

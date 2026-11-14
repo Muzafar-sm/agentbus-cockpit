@@ -739,7 +739,8 @@ export class LiveDataSource implements DataSource {
   // goes back to the start once a connection delivers. Unsubscribing stops it.
   subscribe(
     onEvent: (event: CockpitEvent) => void,
-    onSnapshot?: (sessions: SessionSummary[], cursor?: { store: string; seq: number }) => void
+    onSnapshot?: (sessions: SessionSummary[], cursor?: { store: string; seq: number }) => void,
+    onState?: (up: boolean) => void
   ): () => void {
     const controller = new AbortController();
     const signal = controller.signal;
@@ -779,6 +780,7 @@ export class LiveDataSource implements DataSource {
             throw new Error('store changed again');
           }
           if (!res.ok || !res.body) throw new Error(`Event stream failed: ${res.status}`);
+          onState?.(true);
           const c: { store: string; after: number } = cursor;
           await readStream(res.body, (e) => {
             if (typeof e.seq === 'number') c.after = e.seq;
@@ -791,6 +793,7 @@ export class LiveDataSource implements DataSource {
           console.warn('Event stream interrupted, reconnecting:', err);
         }
         if (signal.aborted) return;
+        onState?.(false);
         await wait(delay);
         delay = Math.min(delay * 2, this.retryMaxMs);
       }

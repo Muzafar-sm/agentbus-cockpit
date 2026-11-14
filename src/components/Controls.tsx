@@ -306,11 +306,14 @@ export const Switch: React.FC<{
   onChange: (v: boolean) => void;
   disabled?: boolean;
   className?: string;
-}> = ({ name, label, on, onChange, disabled, className }) => (
+  // What on means, in a few words, as its tooltip.
+  title?: string;
+}> = ({ name, label, on, onChange, disabled, className, title }) => (
   <button
     type="button"
     role="switch"
     name={name}
+    title={title}
     aria-checked={on}
     disabled={disabled}
     className={`ctl-switch${className ? ` ${className}` : ''}`}
@@ -356,16 +359,21 @@ export const Seg: React.FC<{
   </span>
 );
 
-// Button is every button with words in the cockpit, in one of three looks:
+// Button is every button with words in the cockpit, in one of four looks:
 // "primary" is the one main action of a form or a step (ink), "secondary"
 // any other action beside it (white, outlined), "quiet" an action in a
-// column header (no fill until hovered). small is for a button inside a
-// line of text or a card. A link that looks like a button takes the same
-// classes through buttonClass.
-export type ButtonKind = 'primary' | 'secondary' | 'quiet';
+// column header (no fill until hovered), "link" a text action inside a line
+// (grey, underlined). small is for a button inside a line of text or a card.
+// A link that looks like a button takes the same classes through
+// buttonClass.
+//
+// Send and Stop under the message box are the one exception (.go): the
+// mockup's ink button joined to the "how to send" menu as one split control,
+// whose size and corners the four looks do not have.
+export type ButtonKind = 'primary' | 'secondary' | 'quiet' | 'link';
 
 export const buttonClass = (kind: ButtonKind, small?: boolean, className?: string) =>
-  `btn btn-${kind}${small ? ' btn-sm' : ''}${className ? ` ${className}` : ''}`;
+  `${kind === 'link' ? 'link-btn' : `btn btn-${kind}${small ? ' btn-sm' : ''}`}${className ? ` ${className}` : ''}`;
 
 export const Button: React.FC<
   React.ButtonHTMLAttributes<HTMLButtonElement> & { kind: ButtonKind; small?: boolean }

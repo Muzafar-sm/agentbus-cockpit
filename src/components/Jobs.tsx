@@ -16,7 +16,7 @@ import {
 import { Turn } from '../types';
 import { formatCost } from '../utils/format';
 import { useNow } from '../utils/useNow';
-import { Combo, Select } from './Controls';
+import { Button, Combo, Select } from './Controls';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -161,15 +161,15 @@ export const ReviewBar: React.FC<ReviewBarProps> = ({ turn, row, reviews, loadAg
             />
           </span>
         </label>
-        <button
-          type="button"
-          className="btn btn-primary rb-go"
+        <Button
+          kind="primary"
+          className="rb-go"
           onClick={press}
           disabled={!canReview || busy}
           title={canReview ? undefined : 'Review opens when the turn ends'}
         >
           {busy ? 'Starting…' : 'Review'}
-        </button>
+        </Button>
       </div>
       {agent === turn.agent && <div className="rb-note warn">Same vendor as the author.</div>}
       {!canReview && <div className="rb-note dim">Review opens when the turn ends.</div>}
@@ -178,14 +178,15 @@ export const ReviewBar: React.FC<ReviewBarProps> = ({ turn, row, reviews, loadAg
         <div className="rb-verdict">
           <span className="rb-line">{reviewLine(newest, reviews.length, now)}</span>
           {canFix && (
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm rb-fix"
+            <Button
+              kind="secondary"
+              small
+              className="rb-fix"
               onClick={() => onFix!(fixPrompt(newest.findings ?? [], turn.turnNumber))}
               title="Put the findings in the message box, to edit and send"
             >
               Fix
-            </button>
+            </Button>
           )}
           <button type="button" className="lnk" onClick={onShowTurns}>
             CI/CD
@@ -321,7 +322,7 @@ export const TurnTab: React.FC<TurnTabProps> = ({ turn, row, reviews, onStop }) 
               <div className="job-sub">
                 {r.verdict === 'pass' || r.verdict === 'fail'
                   ? plural(r.findings?.length ?? 0, 'finding')
-                  : 'The reply had no verdict block. No verdict is never a pass.'}
+                  : 'The reply had no verdict block, so it does not count as a pass.'}
               </div>
             )}
             <TurnFacts row={r} now={now} />

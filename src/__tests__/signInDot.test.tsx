@@ -78,13 +78,13 @@ describe('signInOf', () => {
   const claude = SAVED[0];
   const router = SAVED[2];
   it('is green when the tool is connected, and says so', () => {
-    expect(signInOf(claude, SUBS)).toEqual({ ok: true, title: 'claude is connected' });
+    expect(signInOf(claude, SUBS)).toEqual({ ok: true, title: 'Claude Code is connected' });
   });
   it('is yellow when the tool is not connected, or its sign-in expired', () => {
-    expect(signInOf(SAVED[1], SUBS)).toEqual({ ok: false, title: 'codex is not connected — open Settings to connect' });
+    expect(signInOf(SAVED[1], SUBS)).toEqual({ ok: false, title: 'Codex is not connected — open Settings to connect' });
     expect(signInOf(claude, { subscriptions: [] })?.ok).toBe(false);
     const expired = signInOf(claude, { subscriptions: [{ harness: 'claude', connected: true, expired: true }] });
-    expect(expired).toEqual({ ok: false, title: "claude's sign-in expired — open Settings to connect again" });
+    expect(expired).toEqual({ ok: false, title: "Claude Code's sign-in expired — open Settings to connect again" });
   });
   it('shows nothing for a subscription agent until the subscriptions are read, or when the service keeps none', () => {
     expect(signInOf(claude, undefined)).toBeUndefined();
@@ -109,11 +109,11 @@ describe('the sign-in dot in the cockpit', () => {
     const ok = rowDot(r.container, 'claude')!;
     expect(ok.getAttribute('data-signin')).toBe('ok');
     expect(ok.classList.contains('pending')).toBe(false);
-    expect(ok.getAttribute('title')).toBe('claude is connected');
+    expect(ok.getAttribute('title')).toBe('Claude Code is connected');
     const no = rowDot(r.container, 'codex')!;
     expect(no.getAttribute('data-signin')).toBe('no');
     expect(no.classList.contains('pending')).toBe(true);
-    expect(no.getAttribute('title')).toBe('codex is not connected — open Settings to connect');
+    expect(no.getAttribute('title')).toBe('Codex is not connected — open Settings to connect');
     expect(rowDot(r.container, 'or')!.getAttribute('data-signin')).toBe('no');
     // No Connect button on agents.
     expect([...r.container.querySelectorAll('#agents button')].some((b) => /connect/i.test(b.textContent ?? ''))).toBe(false);
@@ -201,10 +201,10 @@ describe('the sign-in dot in the cockpit', () => {
     const r = await render(<App dataSource={src} />);
     await waitFor(() => sendDot(r.container) !== null, 'the send-box dot');
     expect(sendDot(r.container)!.getAttribute('data-signin')).toBe('no');
-    expect(sendDot(r.container)!.getAttribute('title')).toBe('codex is not connected — open Settings to connect');
+    expect(sendDot(r.container)!.getAttribute('title')).toBe('Codex is not connected — open Settings to connect');
     await choose(r.container, 'next_agent', 'claude');
     expect(sendDot(r.container)!.getAttribute('data-signin')).toBe('ok');
-    expect(sendDot(r.container)!.getAttribute('title')).toBe('claude is connected');
+    expect(sendDot(r.container)!.getAttribute('title')).toBe('Claude Code is connected');
     await choose(r.container, 'next_agent', 'codex');
     expect(sendDot(r.container)!.getAttribute('data-signin')).toBe('no');
     await click(sendDot(r.container));

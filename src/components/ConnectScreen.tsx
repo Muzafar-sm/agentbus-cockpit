@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import { Button } from './Controls';
+import { Notice, WithCode } from './Notice';
+import { PRODUCT } from '../words';
 
 interface ConnectScreenProps {
   address: string;
@@ -31,14 +34,20 @@ export const ConnectScreen: React.FC<ConnectScreenProps> = ({
         }}
       >
         <div className="brand">AgentBus</div>
-        {served && (
-          <p className="connect-hint">
-            For a new sign-in link, stop <code>agentbus up</code> and start it again. Or paste the token from the
-            data folder.
-          </p>
-        )}
+        <p className="connect-hint">
+          {served ? (
+            <>
+              For a new sign-in link, start <code>agentbus up</code> again.
+            </>
+          ) : (
+            <>
+              <code>agentbus up</code> opens a sign-in link.
+            </>
+          )}{' '}
+          Or paste the token from <code>~/.local/share/agentbus/token</code>.
+        </p>
         <label>
-          <span>Service</span>
+          <span>{PRODUCT} address</span>
           <input
             name="address"
             type="text"
@@ -58,11 +67,15 @@ export const ConnectScreen: React.FC<ConnectScreenProps> = ({
             autoComplete="off"
           />
         </label>
-        {error && <div className="connect-error">{error}</div>}
+        {error && (
+          <Notice kind="error" className="connect-error">
+            <WithCode text={error} />
+          </Notice>
+        )}
         <div className="connect-actions">
-          <button type="submit" className="btn btn-primary connect-go" disabled={checking}>
-            {checking ? 'Checking…' : 'Connect'}
-          </button>
+          <Button kind="primary" type="submit" className="connect-go" disabled={checking}>
+            {checking ? 'Connecting…' : 'Connect'}
+          </Button>
         </div>
       </form>
     </div>

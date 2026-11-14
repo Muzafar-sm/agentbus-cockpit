@@ -115,13 +115,11 @@ const Card: React.FC<CardProps> = ({ card, grouped, now, running, isOpen, onTogg
       {r?.failed && r.why && <div className="why">{r.why}</div>}
       {isOpen && (
         <div className="tcard-open">
-          <div className="sub-h">Tool Request</div>
+          <div className="sub-h">Request</div>
           {renderDetail(card.pair.requested)}
           {card.pair.completed && (
             <>
-              <div className="sub-h" style={{ marginTop: '0.75rem' }}>
-                Tool Result
-              </div>
+              <div className="sub-h det-block next">Result</div>
               {renderDetail(card.pair.completed)}
             </>
           )}

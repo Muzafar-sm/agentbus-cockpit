@@ -1,4 +1,5 @@
 import { TurnState, Usage, VersionInfo } from '../types';
+import { STATE, TOOL_STATE } from '../words';
 
 // Colour only for status: a failed turn is red, a finished one green.
 export function stateClass(state: TurnState): string {
@@ -7,11 +8,25 @@ export function stateClass(state: TurnState): string {
   return 'dim';
 }
 
-// How a turn's state reads: a stopped turn as stopped, a finished turn by its
+// How a turn's state reads, in the one lowercase word of each state
+// (words.ts STATE): a stopped turn as stopped, a finished turn by its
 // outcome, when it has one.
 export function stateLabel(turn: { state: TurnState; outcome?: string; stopped?: boolean }): string {
-  if (turn.stopped) return 'Stopped by you';
-  return turn.state === 'finished' ? turn.outcome || 'finished' : turn.state;
+  if (turn.stopped) return STATE.stopped;
+  if (turn.state === 'finished') return turn.outcome || STATE.finished;
+  return STATE[turn.state as keyof typeof STATE] ?? turn.state;
+}
+
+// A tool call's state from its result event (tool.completed), the same word
+// in every view: ok, failed, or, with no result, running while its turn
+// runs and "no result" after.
+export function toolStateLabel(done?: { tool_error?: boolean } | null, running = false): string {
+  if (!done) return running ? TOOL_STATE.running : TOOL_STATE.none;
+  return done.tool_error ? TOOL_STATE.failed : TOOL_STATE.ok;
+}
+export function toolStateClass(done?: { tool_error?: boolean } | null, running = false): string {
+  if (!done) return running ? 'run' : 'dim';
+  return done.tool_error ? 'bad' : 'ok';
 }
 
 // The colour of a turn's state. A turn the person stopped did not fail on its
@@ -70,9 +85,11 @@ export function formatTime(isoString: string): string {
   }
 }
 
+// Every duration and latency on screen, one rule: whole ms under a second,
+// else seconds with one decimal ("640ms", "1.7s", "11.2s").
 export function formatDuration(ms?: number): string {
   if (ms === undefined || ms === null || isNaN(ms)) return '';
-  if (ms < 1000) return `${ms}ms`;
+  if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
 }
 

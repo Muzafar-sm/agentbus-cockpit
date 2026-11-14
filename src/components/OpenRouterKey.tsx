@@ -1,12 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { SubscriptionList } from '../types';
-import { SubscriptionApi } from './ConnectStep';
+import { CardHead, SubscriptionApi } from './ConnectStep';
+import { Button } from './Controls';
+import { ConfirmDialog } from './Dialog';
+import { Notice } from './Notice';
+import { harnessName } from '../words';
 
-// A key set once on control (PUT /api/v0/subscriptions/<name>/key): the
+// A key set once in AgentBus (PUT /api/v0/subscriptions/<name>/key): the
 // OpenRouter key, added to every OpenRouter agent's calls, and each vendor's
 // API key (anthropic, openai, gemini), added to the calls of that vendor's
 // agents with access "API key". The key is typed into a password field, sent
-// once, and then cleared: the page never holds it after Save and control
+// once, and then cleared: the page never holds it after Save and AgentBus
 // never sends it back. Only "set" or "not set" is shown.
 //
 // A plain row, not a form: it sits inside the agent form too, where a nested
@@ -51,6 +55,9 @@ const KeyRow: React.FC<KeyRowProps> = ({ api, name, label, placeholder, note, st
   // Set key or Replace was clicked: the field shows until a save works or
   // Cancel is clicked.
   const [open, setOpen] = useState(false);
+  // Remove was clicked: it asks first, as every remove with a lasting
+  // effect does (agents using the key stop working).
+  const [asking, setAsking] = useState(false);
   // What the last write here did, shown until a list read after it
   // succeeds: a save or remove that worked shows so even when that read
   // fails.
@@ -108,9 +115,19 @@ const KeyRow: React.FC<KeyRowProps> = ({ api, name, label, placeholder, note, st
     if (!k) return;
     run(() => set!(k), true);
   };
-  const forget = () => run(() => remove!(), false);
+  // Remove, after the confirm: its answer shows in the confirm, and the
+  // list read after it says what is kept.
+  const forget = async () => {
+    await remove!();
+    if (!alive.current) return;
+    setKey('');
+    setOpen(false);
+    setWrote({ set: false });
+    onChange?.();
+    reload();
+  };
 
-  if (list === undefined && error) return <div className="form-error">{error}</div>;
+  if (list === undefined && error) return <Notice kind="error">{error}</Notice>;
   // Not read yet, a service that keeps no subscriptions, or one too old to
   // keep this key: no row.
   const kept = list ? stateOf(list) : undefined;
@@ -126,29 +143,37 @@ const KeyRow: React.FC<KeyRowProps> = ({ api, name, label, placeholder, note, st
   // Replace; one line says what uses the key.
   return (
     <div className={`connect-step key-row ${cls}-key`} data-harness={name} data-phase={st.set ? 'connected' : 'not-connected'}>
-      <div className="cs-head">
-        <span>{label}</span>
-        <span className={`cs-status ${st.set ? 'ok' : 'off'}`}>{st.set ? 'set' : 'not set'}</span>
-        {st.set && st.set_at && <span className="cs-until">since {day(st.set_at)}</span>}
+      <CardHead name={label} ok={st.set} state={st.set ? 'set' : 'not set'} detail={st.set && st.set_at ? `since ${day(st.set_at)}` : undefined}>
         {open ? (
-          <button type="button" className={`btn btn-secondary btn-sm cs-btn key-cancel ${cls}-cancel`} onClick={cancel} disabled={busy}>
+          <Button kind="secondary" small className={`key-cancel ${cls}-cancel`} onClick={cancel} disabled={busy}>
             Cancel
-          </button>
+          </Button>
         ) : st.set ? (
           <>
-            <button type="button" className={`btn btn-secondary btn-sm cs-btn key-replace ${cls}-replace`} onClick={() => setOpen(true)} disabled={busy}>
+            <Button kind="secondary" small className={`key-replace ${cls}-replace`} onClick={() => setOpen(true)} disabled={busy}>
               Replace
-            </button>
-            <button type="button" className={`btn btn-secondary btn-sm cs-btn key-remove ${cls}-remove`} onClick={forget} disabled={busy}>
+            </Button>
+            <Button kind="secondary" small className={`key-remove ${cls}-remove`} onClick={() => setAsking(true)} disabled={busy}>
               Remove
-            </button>
+            </Button>
           </>
         ) : (
-          <button type="button" className={`btn btn-secondary btn-sm cs-btn key-set ${cls}-set`} onClick={() => setOpen(true)} disabled={busy}>
+          <Button kind="secondary" small className={`key-set ${cls}-set`} onClick={() => setOpen(true)} disabled={busy}>
             Set key
-          </button>
+          </Button>
         )}
-      </div>
+      </CardHead>
+      {asking && (
+        <ConfirmDialog
+          className={`key-remove-ask ${cls}-remove-ask`}
+          title={`Remove the ${label}?`}
+          line="Agents that use it cannot run until a key is set again."
+          action="Remove"
+          busyAction="Removing…"
+          onConfirm={forget}
+          onClose={() => setAsking(false)}
+        />
+      )}
       {open && (
         <div className="cs-input">
           <input
@@ -168,12 +193,16 @@ const KeyRow: React.FC<KeyRowProps> = ({ api, name, label, placeholder, note, st
             spellCheck={false}
             disabled={busy}
           />
-          <button type="button" className={`btn btn-primary btn-sm cs-btn key-save ${cls}-save`} onClick={save} disabled={busy || !key.trim()}>
-            {busy ? 'Saving' : 'Save'}
-          </button>
+          <Button kind="primary" small className={`key-save ${cls}-save`} onClick={save} disabled={busy || !key.trim()}>
+            {busy ? 'Saving…' : 'Save'}
+          </Button>
         </div>
       )}
-      {error && <div className="form-error cs-why">{error}</div>}
+      {error && (
+        <Notice kind="error" className="cs-why">
+          {error}
+        </Notice>
+      )}
       <span className="nd-note">{note}</span>
     </div>
   );
@@ -187,7 +216,7 @@ export const OpenRouterKey: React.FC<{ api: SubscriptionApi }> = ({ api }) => (
     name="openrouter"
     label="OpenRouter key"
     placeholder="sk-or-…"
-    note="Used by agents on OpenRouter. It stays on control and is never shown."
+    note="Used by agents on OpenRouter."
     stateOf={(l) => l.openrouter_key}
     set={api.setKey}
     remove={api.removeKey}
@@ -196,7 +225,7 @@ export const OpenRouterKey: React.FC<{ api: SubscriptionApi }> = ({ api }) => (
 );
 
 // One vendor's API key, by its name (vendorKeys). A service whose api cannot
-// set it, or a control too old to list it, shows no row.
+// set it, or one too old to list it, shows no row.
 export const APIKey: React.FC<{ api: SubscriptionApi; name: string; onChange?: () => void }> = ({ api, name, onChange }) => {
   const v = vendorKeys[name] ?? { label: `${name} API key`, placeholder: '', harness: name };
   return (
@@ -205,7 +234,7 @@ export const APIKey: React.FC<{ api: SubscriptionApi; name: string; onChange?: (
       name={name}
       label={v.label}
       placeholder={v.placeholder}
-      note={`Used by ${v.harness} agents on access API key. It stays on control and is never shown.`}
+      note={`Used by ${harnessName(v.harness)} agents on an API key.`}
       stateOf={(l) => l.api_keys?.[name]}
       set={api.setAPIKey ? (k) => api.setAPIKey!(name, k) : undefined}
       remove={api.removeAPIKey ? () => api.removeAPIKey!(name) : undefined}
