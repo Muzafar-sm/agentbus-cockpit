@@ -727,8 +727,6 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                     </div>
                   )}
 
-                  {/* An error stays on its turn, selected or not. */}
-                  {turn.state === 'failed' && turn.error && <div className="form-error turn-error">{turn.error}</div>}
                   {notes.replayErrors.map((msg, i) => (
                     <div key={i} className="form-error turn-error">
                       The earlier turns could not be replayed: {msg}

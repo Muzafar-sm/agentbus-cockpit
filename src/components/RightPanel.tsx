@@ -310,17 +310,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
             <span>Time</span>
             <b>{status ? formatElapsed(status.elapsedMs) : turn.durationMs === undefined ? '—' : formatDuration(turn.durationMs)}</b>
           </div>
-          {(turn.state !== 'finished' || turn.stopped) && (
-            <div>
-              <span>Status</span>
-              <b>
-                <span className={turn.state === 'failed' && !turn.stopped ? 'bad' : ''}>
-                  {stateLabel(turn)}
-                  {turn.state === 'failed' && turn.error ? `: ${turn.error}` : ''}
-                </span>
-              </b>
-            </div>
-          )}
+
           <div>
             <span>Turn</span>
             <b title={turn.id}>

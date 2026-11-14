@@ -801,14 +801,14 @@ describe('The prompt box', () => {
     r.unmount();
   });
 
-  it("shows a failed turn's error text on the turn", async () => {
+  it("shows a failed turn as failed, with no error box; the reason is in its events", async () => {
     const svc = fakeService({
       sessions: [row('s1', { resumable: true })],
       events: { s1: oneTurn('s1', 'first') },
       turnFields: { 'T1-s1': { state: 'failed', error: 'the relay refused: quota reached' } },
     });
     const r = await mount(svc);
-    expect(r.container.querySelector('.tb .turn-error')?.textContent).toBe('the relay refused: quota reached');
+    expect(r.container.querySelector('.tb .turn-error')).toBeNull();
     expect(r.container.querySelector('.tb .tb-state')?.textContent).toBe('failed');
     r.unmount();
   });
