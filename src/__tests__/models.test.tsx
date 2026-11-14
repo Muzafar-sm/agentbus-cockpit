@@ -59,12 +59,12 @@ describe('The agent form and the list of models', () => {
     );
     await flush();
     expect(loadModels).toHaveBeenCalledWith('claude', 'subscription', false);
-    expect(container.querySelector('.ad-models')?.textContent).toContain("3 models from Claude Code's aliases");
+    expect(container.querySelector('.ad-models')?.textContent).toContain("3 models");
     expect(container.querySelector('.ad-models-refresh')).toBeNull();
     await click(container.querySelector('[data-harness="codex"]'));
     await flush();
     expect(loadModels).toHaveBeenLastCalledWith('codex', 'subscription', false);
-    expect(container.querySelector('.ad-models')?.textContent).toContain("2 models from Codex's own list, after its last turn");
+    expect(container.querySelector('.ad-models')?.textContent).toContain("2 models");
     const input = container.querySelector('input[name="model"]') as HTMLInputElement;
     expect(input.value).toBe('');
     await focus(input);

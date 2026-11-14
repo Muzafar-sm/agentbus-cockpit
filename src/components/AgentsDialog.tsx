@@ -125,7 +125,9 @@ function sourceText(source: string, label: string, keyName?: string): string {
 // when is a time as the person's clock reads it, to the minute.
 const when = (iso: string) => {
   const d = new Date(iso);
-  return isNaN(d.getTime()) ? iso : d.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+  if (isNaN(d.getTime())) return iso;
+  const today = d.toDateString() === new Date().toDateString();
+  return today ? d.toLocaleTimeString(undefined, { timeStyle: "short" }) : d.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
 };
 
 const Off: React.FC<{ label: string; value: string }> = ({ label, value }) => (
@@ -396,7 +398,7 @@ export const AgentsDialog: React.FC<AgentsDialogProps> = ({
                   />
                 )}
                 {loadModels && access?.any_model && (
-                  <span className="nd-note ad-models" data-source={listed?.source ?? ""}>
+                  <span className="nd-note ad-models" data-source={listed?.source ?? ""} title={listed ? `From ${sourceText(listed.source, harness?.label ?? form.harness, apiKey ? access?.key_name : undefined)}` : undefined}>
                     {modelsBusy
                       ? "Reading the models this access can use…"
                       : modelsError
@@ -406,7 +408,7 @@ export const AgentsDialog: React.FC<AgentsDialogProps> = ({
                           : listed?.error
                           ? listed.error
                           : listed
-                            ? `${listed.models.length} models from ${sourceText(listed.source, harness?.label ?? form.harness, apiKey ? access?.key_name : undefined)}${listed.fetched_at ? `, read ${when(listed.fetched_at)}` : ""}.`
+                            ? `${listed.models.length} ${listed.models.length === 1 ? "model" : "models"}${listed.fetched_at ? ` · updated ${when(listed.fetched_at)}` : ""}`
                             : ""}{" "}
                     {listed && listed.source !== "fixed" && (
                       <button type="button" className="btn btn-secondary btn-sm ad-models-refresh" onClick={() => readModels(true)} disabled={modelsBusy}>

@@ -149,7 +149,7 @@ describe('The models of an API key agent', () => {
     await flush();
     await flush();
     expect(loadModels).toHaveBeenLastCalledWith('claude', 'api', true);
-    expect(container.querySelector('.ad-models')?.textContent).toContain("1 models from Anthropic's list, read with your API key");
+    expect(container.querySelector('.ad-models')?.textContent).toContain("1 model");
     expect(container.innerHTML).not.toContain(FAKE_ANTH);
   });
 });
