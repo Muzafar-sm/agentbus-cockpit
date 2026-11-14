@@ -92,7 +92,7 @@ const barOf = (row: Element) => row.querySelector('.quota') as HTMLElement;
 describe('the Agents column', () => {
   it('shows the longest window on the bar, in its tooltip, and the shortest on the line', async () => {
     const r = await render(
-      <AgentsColumn agents={[claude, codex]} selectedAgentId={null} onSelectAgent={() => undefined} subscriptions={subs([fiveHour, weekly])} />
+      <AgentsColumn agents={[claude, codex]} selectedAgentId={null} onSelectAgent={() => undefined} subscriptions={subs([{ ...fiveHour, resets_at: iso(new Date(Date.now() + 2 * 3600000)) }, weekly])} />
     );
     const row = rowOf(r.container, 'claude');
     const bar = barOf(row);
@@ -100,7 +100,7 @@ describe('the Agents column', () => {
     expect((bar.querySelector('i') as HTMLElement).style.width).toBe('31%');
     expect(bar.getAttribute('title')).toMatch(/^Weekly limit · 31% left · resets \w+ \d\d:\d\d$/);
     expect(bar.getAttribute('aria-label')).toBe(bar.getAttribute('title'));
-    expect(row.querySelector('.plan-line')?.textContent).toMatch(/^5h · 62% left · \d\d:\d\d$/);
+    expect(row.querySelector('.plan-line')?.textContent).toMatch(/^5h · 62% left · (\w+ )?\d\d:\d\d$/);
     const other = rowOf(r.container, 'codex');
     expect(other.querySelector('.quota')).toBeNull();
     expect(other.querySelector('.plan-line')).toBeNull();
@@ -167,3 +167,21 @@ describe("reading usage at a turn's end", () => {
     await settle(() => listSubscriptions.mock.calls.length === before + 1, 'a read at the turn end');
   });
 });
+
+describe('the bar colour', () => {
+  it('is red at 5% left or less in any window, yellow at 20% or less, plain otherwise', async () => {
+    const at = (used: number[]) =>
+      render(
+        <AgentsColumn
+          agents={[claude]}
+          selectedAgentId={null}
+          onSelectAgent={() => undefined}
+          subscriptions={subs(used.map((u, i) => ({ ...(i === 0 ? fiveHour : weekly), used_percent: u })))}
+        />
+      ).then((r) => barOf(rowOf(r.container, 'claude')).className);
+    expect(await at([8, 98])).toBe('quota out');
+    expect(await at([85, 10])).toBe('quota low');
+    expect(await at([8, 40])).toBe('quota');
+  });
+});
+

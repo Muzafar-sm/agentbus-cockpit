@@ -87,9 +87,13 @@ export const PlanUsage: React.FC<{ usage: PlanReading[] | undefined; now?: Date 
   const longest = usage[usage.length - 1];
   const left = percentLeft(longest);
   const words = planLine(longest, now);
+  // The bar's colour is the tightest limit: red at 5% left or less in any
+  // window, yellow at 20% or less.
+  const least = Math.min(...usage.map(percentLeft));
+  const tone = least <= 5 ? ' out' : least <= 20 ? ' low' : '';
   return (
     <>
-      <span className="quota" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={left} aria-label={words} title={words}>
+      <span className={`quota${tone}`} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={left} aria-label={words} title={words}>
         <i style={{ width: `${left}%` }} />
       </span>
       {usage.length > 1 && <span className="q-l plan-line" title={planLine(shortest, now)}>{shortLine(shortest, now)}</span>}
