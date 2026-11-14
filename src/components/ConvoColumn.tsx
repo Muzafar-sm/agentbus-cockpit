@@ -307,6 +307,15 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
     }
   };
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Sending scrolls the session to its newest message, the one just sent.
+  const msgsRef = useRef<HTMLDivElement>(null);
+  const [sentTick, setSentTick] = useState(0);
+  useEffect(() => {
+    const el = msgsRef.current;
+    if (!sentTick || !el) return;
+    if (typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    else el.scrollTop = el.scrollHeight;
+  }, [sentTick]);
   // The message box grows with its text, wrapped lines too, up to its CSS
   // max-height (about ten lines), and then scrolls inside.
   useLayoutEffect(() => {
@@ -451,6 +460,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
     setPending((list) => [...list, p]);
     setSendError(null);
     setDraft('');
+    setSentTick((n) => n + 1);
     const set = (patch: Partial<Pending>) => setPending((list) => list.map((x) => (x.key === p.key ? { ...x, ...patch } : x)));
     try {
       const started = await onSend!(p.prompt, p.readOnly, p.agent, p.key);
@@ -617,7 +627,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
         />
       )}
 
-      <div id="c-msgs">
+      <div id="c-msgs" ref={msgsRef}>
         <div className="c-in">
           {placed.get(-1)?.map((r) => <ShellEntry key={r.id} run={r} />)}
           {refusedAfter(0).map(pendingRow)}
