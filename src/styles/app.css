@@ -1030,3 +1030,7 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .pg-detail .nd-seg { align-self: flex-start; }
 .pg-find { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.4rem; }
 .pg-find > .nd-note, .pg-find > .form-error { margin: 0; }
+
+/* Settings, Subscriptions: one card per sign-in or key, spaced like the cockpit's other cards. */
+.subs-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.subs-list .connect-step { background: #fff; border-color: var(--line2); border-radius: var(--sel-r); padding: 0.625rem 0.75rem; box-shadow: 0 1px 2px rgba(0,0,0,.04); }

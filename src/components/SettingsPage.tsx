@@ -84,17 +84,15 @@ const GROUPS: Group[] = [
   {
     id: "workspace",
     name: "Workspace",
-    sub: "Which files a turn works on",
+    sub: "Each conversation works in its own copy of your folder",
     controls: [
-      { key: "isolation", name: "Folder", kind: { t: "folder" },
-        line: "Where a new session's turns run. A copy leaves your folder as it is until a turn is applied." },
       { key: "share_read_only", name: "Shared folders", kind: { t: "list", placeholder: "node_modules", mono: true },
         line: "Not copied, read-only, such as node_modules. A turn cannot write there." },
       { key: "read_folders", name: "Read folders", kind: { t: "list", placeholder: "~/notes", mono: true },
         line: "Folders claude may read beyond its own, one per line." },
     ],
     side: [
-      "Your folder is not changed until a turn is applied, unless Folder is Your folder.",
+      "You apply what you want to keep. Your folder is not changed until then.",
       "Shared folders are one name each, at the top of the session's folder.",
     ],
   },
@@ -118,8 +116,6 @@ const GROUPS: Group[] = [
     name: "Agents",
     sub: "What agents may do through AgentBus",
     controls: [
-      { key: "edit", name: "Edit", kind: { t: "seg", options: [["session", "Its own folder"], ["none", "Nowhere"]] },
-        line: "Where a turn may change files without asking." },
       { key: "agent_api.tools", name: "AgentBus tools", kind: { t: "switch" },
         line: "Agents get AgentBus's own tools to ask other agents, review and read turns." },
       { key: "subagents", name: "Subagents", kind: { t: "switch" },
@@ -864,7 +860,7 @@ const SubscriptionsPart: React.FC<{ api: SubscriptionApi }> = ({ api }) => {
   if (list === undefined) return <div className="nd-note">Reading…</div>;
   if (list === null) return <div className="nd-note">This service keeps no subscriptions.</div>;
   return (
-    <>
+    <div className="subs-list">
       {list.subscriptions.map((s) => (
         <ConnectStep key={s.harness} harness={s.harness} api={api} />
       ))}
@@ -874,6 +870,6 @@ const SubscriptionsPart: React.FC<{ api: SubscriptionApi }> = ({ api }) => {
         .map((name) => (
           <APIKey key={name} api={api} name={name} />
         ))}
-    </>
+    </div>
   );
 };

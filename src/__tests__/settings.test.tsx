@@ -201,7 +201,7 @@ describe('the Settings page', () => {
     // Each group by its short name and one-line subtitle.
     const heads = [...container.querySelectorAll('.pg-list [data-part]')].map((x) => [x.querySelector('.pr-n')!.textContent, x.querySelector('.pr-m2')!.textContent]);
     expect(heads.slice(0, 5)).toEqual([
-      ['Workspace', 'Which files a turn works on'],
+      ['Workspace', 'Each conversation works in its own copy of your folder'],
       ['Config', 'Your settings, skills, MCP servers and logins each conversation gets'],
       ['Agents', 'What agents may do through AgentBus'],
       ['Isolation', 'Sandbox, network and commands'],
@@ -215,11 +215,15 @@ describe('the Settings page', () => {
     expect(container.querySelector('[data-part="grants"]')).toBeNull();
     expect(container.textContent).not.toContain('Grants');
     // Every key of the policy has a control, and each control a key.
-    expect([...SETTINGS_CONTROLS].sort()).toEqual(Object.keys(flatPolicy(policy())).sort());
+    // isolation and edit are kept, but only in Advanced (his call, 0.5.7): every
+    // conversation works in a copy, and a single turn is made read-only from the
+    // message box.
+    const advancedOnly = ['isolation', 'edit'];
+    expect([...SETTINGS_CONTROLS].sort()).toEqual(Object.keys(flatPolicy(policy())).filter((k) => !advancedOnly.includes(k)).sort());
     const groups: Record<string, string[]> = {
-      workspace: ['isolation', 'share_read_only', 'read_folders'],
+      workspace: ['share_read_only', 'read_folders'],
       config: ['home_files'],
-      agents: ['edit', 'agent_api.tools', 'subagents', 'agent_api.apply'],
+      agents: ['agent_api.tools', 'subagents', 'agent_api.apply'],
       isolation: ['sandbox.mode', 'network.contain', 'network.allow', 'allow', 'forbid'],
       limits: ['limits.max_depth', 'limits.max_jobs_per_turn', 'limits.max_jobs_per_tree', 'limits.max_cost_usd_per_tree'],
     };
@@ -240,8 +244,8 @@ describe('the Settings page', () => {
     expect(container.textContent).toContain('agy cannot turn its own subagents off, so this does not apply to agy.');
     await pick(container, '[data-part="workspace"]');
     expect(container.textContent).toContain('Not copied, read-only, such as node_modules.');
-    expect(container.querySelector('[aria-label="Folder"] [aria-checked="true"]')!.textContent).toBe('A copy of your folder');
-    expect(container.querySelector('[aria-label="Copy method"] [aria-checked="true"]')!.textContent).toBe('Auto');
+    expect(container.querySelector('[aria-label="Folder"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Copy method"]')).toBeNull();
     await pick(container, '[data-part="isolation"]');
     expect([...container.querySelectorAll('.pg-main .pg-ctl-h')].map((x) => x.textContent)).toEqual(['Network', 'Commands']);
     expect(container.textContent).toContain('A wall around each conversation: its folder, its home, and the network only through AgentBus.');
@@ -533,41 +537,6 @@ describe('the Settings page', () => {
 
   // Folder is the isolation key in two choices: "none" is Your folder, any
   // other value a copy made that way, its method a detail of A copy.
-  it('reads and writes Folder as the isolation key, both ways', async () => {
-    const { api, state } = fakeApi();
-    state.policy.isolation = 'git';
-    const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
-    await flush();
-    const folder = () => container.querySelector('[aria-label="Folder"] [aria-checked="true"]')!.textContent;
-    const method = () => container.querySelector('[aria-label="Copy method"] [aria-checked="true"]')?.textContent;
-    const choose = (label: string, text: string) =>
-      click([...container.querySelectorAll(`[aria-label="${label}"] button`)].find((b) => b.textContent === text)!);
-    expect(folder()).toBe('A copy of your folder');
-    expect(method()).toBe('Git worktree');
-    // Your folder writes none, and the method is not shown.
-    await choose('Folder', 'Your folder');
-    expect(container.querySelector('[data-copy-method]')).toBeNull();
-    await click(button(container, 'Save workspace'));
-    await flush();
-    expect(api.patchPolicy.mock.calls[0][0]).toEqual({ isolation: 'none' });
-    expect(folder()).toBe('Your folder');
-    // A copy again comes back on Auto when the read was none, and a method picked is what is written.
-    await choose('Folder', 'A copy of your folder');
-    expect(method()).toBe('Auto');
-    await choose('Copy method', 'Overlay');
-    await click(button(container, 'Save workspace'));
-    await flush();
-    expect(api.patchPolicy.mock.calls[1][0]).toEqual({ isolation: 'overlay' });
-    // Your folder, then A copy: the method last picked comes back.
-    await choose('Copy method', 'Copy');
-    await choose('Folder', 'Your folder');
-    await choose('Folder', 'A copy of your folder');
-    expect(method()).toBe('Copy');
-    await click(button(container, 'Save workspace'));
-    await flush();
-    expect(api.patchPolicy.mock.calls[2][0]).toEqual({ isolation: 'copy' });
-    expect(state.policy.isolation).toBe('copy');
-  });
 
   describe('Use my config', () => {
     const open = async (findConfig: SettingsApi['findConfig'], home: string[] = []) => {
