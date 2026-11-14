@@ -792,7 +792,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
             id="input"
             ref={inputRef}
             rows={1}
-            placeholder={closed ? 'This conversation is closed' : `Message ${nextName || agentName || 'the agent'}…`}
+            placeholder={closed ? '' : `Message ${nextName || agentName || 'the agent'}…`}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
