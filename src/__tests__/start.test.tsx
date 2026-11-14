@@ -323,11 +323,14 @@ describe('New session', () => {
     const dialog = r.container.querySelector('.new-dialog')!;
     const picks = Array.from(dialog.querySelectorAll('.nd-recent button')) as HTMLButtonElement[];
     expect(picks.map((b) => b.textContent)).toEqual(['app', 'site', '/Users/ana/old']);
-    // Nothing is picked until the person picks: Start waits for a folder.
+    // Nothing is picked until the person picks. Start with no folder says
+    // which field is missing, and starts nothing.
     expect(dialog.querySelector('.nd-recent button.on')).toBeNull();
     expect((dialog.querySelector('input[name="folder"]') as HTMLInputElement).value).toBe('');
-    expect((dialog.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(true);
-    expect(dialog.textContent).toContain('Pick a folder to start.');
+    expect(dialog.textContent).not.toContain('Pick a folder to start.');
+    await click(dialog.querySelector('button[type="submit"]') as HTMLButtonElement);
+    expect(dialog.querySelector('.nd-missing')?.textContent).toBe('Pick a folder to start.');
+    expect((dialog.querySelector('input[name="folder"]') as HTMLInputElement).getAttribute('aria-invalid')).toBe('true');
     await click(picks[1]);
     expect(picks[1].classList.contains('on')).toBe(true);
     expect((dialog.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(false);
@@ -801,7 +804,7 @@ describe('The prompt box', () => {
     r.unmount();
   });
 
-  it("shows a failed turn as failed, with no error box; the reason is in its events", async () => {
+  it("shows a failed turn's reason on its state label, with no error box", async () => {
     const svc = fakeService({
       sessions: [row('s1', { resumable: true })],
       events: { s1: oneTurn('s1', 'first') },
@@ -809,7 +812,7 @@ describe('The prompt box', () => {
     });
     const r = await mount(svc);
     expect(r.container.querySelector('.tb .turn-error')).toBeNull();
-    expect(r.container.querySelector('.tb .tb-state')?.textContent).toBe('failed');
+    expect(r.container.querySelector('.tb .tb-state')?.textContent).toBe('failed · the relay refused: quota reached');
     r.unmount();
   });
 
@@ -1825,7 +1828,7 @@ describe('New session: the machine, then a folder on it', () => {
     await choose(dialog, 'con_c');
     expect(picks(dialog)).toEqual(['infra', '/work/ops']);
     expect(dialog.querySelector('.nd-recent button.on')).toBeNull();
-    expect((dialog.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(true);
+    expect((dialog.querySelector('input[name="folder"]') as HTMLInputElement).value).toBe('');
     r.unmount();
   });
 

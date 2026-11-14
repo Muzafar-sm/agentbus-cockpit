@@ -104,6 +104,8 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
   const [prompt, setPrompt] = useState('');
   const [name, setName] = useState('');
   const [starting, setStarting] = useState(false);
+  // Start was pressed with something missing: the missing field says so.
+  const [tried, setTried] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // An agent whose harness the service does not find cannot start here. With
@@ -140,7 +142,10 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ready) return;
+    if (!ready) {
+      setTried(true);
+      return;
+    }
     setStarting(true);
     setError(null);
     try {
@@ -215,6 +220,8 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
           <input
             name="folder"
             type="text"
+            aria-invalid={tried && !hasWhere ? true : undefined}
+            className={tried && !hasWhere ? 'invalid' : undefined}
             value={path}
             onChange={(e) => pick({ path: e.target.value })}
             placeholder={folders.length > 0 || recent.length > 0 ? 'Pick one below, or type a path' : '/Users/you/project'}
@@ -242,7 +249,7 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
             ))}
           </div>
         )}
-        {!hasWhere && (folders.length > 0 || recent.length > 0) && <div className="nd-note">Pick a folder to start.</div>}
+        {!hasWhere && tried && <div className="form-error nd-missing">Pick a folder to start.</div>}
         <div className="nd-note">
           {byMachine
             ? `A folder on ${picked?.name ?? 'the machine picked'}: pick a recent one or type its path. The session runs on that machine. `
@@ -270,7 +277,7 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
         {prompt.trim() === '' && <div className="nd-note">Leave it empty to write it in the conversation.</div>}
         {error && <div className="form-error">{error}</div>}
         <div className="nd-actions">
-          <button type="submit" className="btn btn-primary connect-go" disabled={!ready}>
+          <button type="submit" className="btn btn-primary connect-go" disabled={starting || !agents || !machineOk}>
             {starting ? 'Starting…' : 'Start'}
           </button>
           <button type="button" className="btn btn-secondary nd-cancel" onClick={onClose}>

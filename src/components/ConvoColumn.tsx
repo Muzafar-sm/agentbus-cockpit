@@ -735,8 +735,12 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
 
                   <div className="tb-foot">
                     {(turn.state !== 'finished' || turn.stopped) && !(showLive && !stopping?.has(turn.id)) && (
-                      <span className={`tb-state ${turnStateClass(turn)}`}>
+                      <span
+                        className={`tb-state ${turnStateClass(turn)}`}
+                        title={turn.state === 'failed' && turn.error ? turn.error : undefined}
+                      >
                         {turn.state === 'running' && stopping?.has(turn.id) ? 'stopping…' : replyIn ? 'finishing' : stateLabel(turn)}
+                        {turn.state === 'failed' && !turn.stopped && turn.error ? ` · ${turn.error}` : ''}
                       </span>
                     )}
                     <span className="tb-stat">
