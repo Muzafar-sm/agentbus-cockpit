@@ -9,6 +9,7 @@ import { Cost } from './Cost';
 import { folderLabel, sessionFolderRef, useFolders } from '../data/folders';
 import { LiveLine } from './LiveLine';
 import { PencilIcon, TitleEdit } from './TitleEdit';
+import { LockIcon } from './Icons';
 import { ShellEntry } from './ShellEntry';
 import { Button, Select, Switch } from './Controls';
 import { commandsAfter } from '../data/shell';
@@ -560,13 +561,12 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
             >
               {session.title}
             </div>
-            {closed && <span className="c-closed dim">closed</span>}
             {onRename && (
               <button type="button" className="c-rename" aria-label="Rename" title="Rename" onClick={() => setRenaming(true)}>
                 <PencilIcon />
               </button>
             )}
-            {(onExport || (onCloseSession && !closed)) && (
+            {(onExport || onCloseSession) && (
               <div className="c-acts">
                 {exportError && (
                   <span className="c-act-error" role="alert" title={exportError}>
@@ -587,6 +587,11 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                 {onCloseSession && !closed && (
                   <Button kind="quiet" small className="c-close" onClick={() => setCloseAsk({ busy: false, error: null })}>
                     Close
+                  </Button>
+                )}
+                {closed && (
+                  <Button kind="quiet" small className="c-closed" disabled title="This conversation is closed">
+                    <LockIcon /> Closed
                   </Button>
                 )}
               </div>
@@ -782,12 +787,12 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
             </button>
           </div>
         )}
-        <form className={`box${showPick ? ' with-pick' : ''}`} onSubmit={send}>
+        <form className={`box${showPick ? ' with-pick' : ''}${closed ? ' closed' : ''}`} onSubmit={send}>
           <textarea
             id="input"
             ref={inputRef}
             rows={1}
-            placeholder={`Message ${nextName || agentName || 'the agent'}…`}
+            placeholder={closed ? 'This conversation is closed' : `Message ${nextName || agentName || 'the agent'}…`}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {

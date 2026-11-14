@@ -5,7 +5,7 @@ import { SavedAgent, SessionSummary } from '../types';
 import { useNow } from '../utils/useNow';
 import { formatAgo, formatCost, formatTokens } from '../utils/format';
 import { Cost } from './Cost';
-import { CopyButton, PlusIcon } from './Icons';
+import { CopyButton, LockIcon, PlusIcon } from './Icons';
 import { LiveLine } from './LiveLine';
 import { PencilIcon, TitleEdit } from './TitleEdit';
 
@@ -105,7 +105,6 @@ export const SessionsColumn: React.FC<SessionsColumnProps> = ({
             </span>
           ) : (
             <span className="s-m" title={metaTitle}>
-              {s.closed ? 'closed · ' : ''}
               {formatCost(s.cost_usd) ? <Cost usd={s.cost_usd} complete={s.cost_complete} /> : `${formatTokens(s.usage)} tokens`}
               {ago ? ` · ${ago}` : ''}
             </span>
@@ -119,6 +118,11 @@ export const SessionsColumn: React.FC<SessionsColumnProps> = ({
           const title = (
             <span className="s-t">
               {s.open ? <i className="live" /> : null}
+              {s.closed ? (
+                <span className="s-lock" title="Closed" aria-label="Closed">
+                  <LockIcon />
+                </span>
+              ) : null}
               {isEditing ? (
                 <TitleEdit title={s.title} onSave={(t) => onRename!(s.id, t)} onDone={() => setEditing(null)} />
               ) : isSelected && onRename ? (

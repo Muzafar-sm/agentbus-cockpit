@@ -770,8 +770,8 @@ describe('The prompt box', () => {
     const r = await mount(svc);
     expect((r.container.querySelector('#c-reply textarea') as HTMLTextAreaElement).disabled).toBe(true);
     expect(r.container.querySelector('#c-reply .reply-why')?.textContent).toBe('This conversation is closed; start a new one.');
-    expect(r.container.querySelector('#c-head .c-closed')?.textContent).toBe('closed');
-    expect(r.container.querySelector('#sessions [data-session="s1"] .s-m')?.textContent).toMatch(/^closed · /);
+    expect(r.container.querySelector('#c-head .c-closed')?.textContent?.trim()).toBe('Closed');
+    expect(r.container.querySelector('#sessions [data-session="s1"] .s-lock')).not.toBeNull();
     r.unmount();
   });
 
@@ -785,7 +785,7 @@ describe('The prompt box', () => {
     expect(svc.reqs.some((q) => q.method === 'GET' && q.path === '/api/v0/sessions/s1')).toBe(true);
     expect((r.container.querySelector('#c-reply textarea') as HTMLTextAreaElement).disabled).toBe(true);
     expect(r.container.querySelector('#c-reply .reply-why')?.textContent).toBe('This conversation is closed; start a new one.');
-    expect(r.container.querySelector('#sessions [data-session="s1"] .s-m')?.textContent).toMatch(/^closed · /);
+    expect(r.container.querySelector('#sessions [data-session="s1"] .s-lock')).not.toBeNull();
     r.unmount();
   });
 

@@ -68,7 +68,7 @@ describe('Close', () => {
     r.unmount();
   });
 
-  it('closes on Close conversation: the header says closed, Close goes, and Send is off', async () => {
+  it('closes on Close conversation: Close becomes a disabled Closed, and the box takes no input', async () => {
     const closeSession = vi.fn(async () => 'closed' as const);
     const { r } = await open({ closeSession });
     await click(r.container.querySelector('#c-head .c-close'));
@@ -76,7 +76,8 @@ describe('Close', () => {
     await flush();
     expect(closeSession).toHaveBeenCalledWith('c1');
     expect(ask()).toBeNull();
-    expect(r.container.querySelector('#c-head .c-closed')!.textContent).toBe('closed');
+    expect(r.container.querySelector('#c-head .c-closed')!.textContent!.trim()).toBe('Closed');
+    expect((r.container.querySelector('#c-head .c-closed') as HTMLButtonElement).disabled).toBe(true);
     expect(r.container.querySelector('#c-head .c-close')).toBeNull();
     expect((r.container.querySelector('#input') as HTMLTextAreaElement).disabled).toBe(true);
     r.unmount();

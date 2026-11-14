@@ -1015,3 +1015,11 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
    it takes no room beside the name. */
 #agents .agent .mark { position: relative; }
 #agents .agent .mark .signin-dot { position: absolute; right: -0.2rem; top: -0.2rem; margin: 0; box-shadow: 0 0 0 2px #fff; }
+
+/* A closed conversation: the message box is greyed and takes no input, the
+   header keeps Export where it was and shows Closed in Close's place, and its
+   card carries a lock. */
+.box.closed { background: var(--bg2, #F2F1EC); opacity: 0.7; }
+.box.closed textarea { cursor: not-allowed; background: transparent; }
+.c-closed { display: inline-flex; align-items: center; gap: 0.3rem; }
+.s-lock { display: inline-flex; align-items: center; color: var(--ink3); margin-right: 0.3rem; vertical-align: -1px; }
