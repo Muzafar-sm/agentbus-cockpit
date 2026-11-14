@@ -107,7 +107,8 @@ const GROUPS: Group[] = [
       "Use my config adds the usual config files found on the folder's machine. Look them over, then save.",
       "Copied at the start of each turn, with the sandbox on or off.",
       "Hooks with absolute paths into your real home do not work under the sandbox.",
-      "What an MCP server does is outside AgentBus's record.",
+      "MCP servers in your config load on normal turns, never on read-only ones. What a server does is outside AgentBus's record.",
+      "The browser cannot run in AgentBus sessions.",
     ],
   },
   {
