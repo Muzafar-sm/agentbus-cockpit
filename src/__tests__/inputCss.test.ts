@@ -30,7 +30,8 @@ describe('the message box styles', () => {
   });
 
   it('gives Send and Stop a fixed least width, so a changing label moves nothing', () => {
-    expect(rule('#c-reply .go')).toMatch(/min-width:\s*4\.5rem/);
-    expect(rule('#c-reply .go.stop')).toMatch(/min-width:\s*6rem/);
+    // One least width for Send, Queue, Stop and Stopping…, text centred.
+    expect(rule('#c-reply .go')).toMatch(/min-width:\s*6rem/);
+    expect(rule('#c-reply .go')).toMatch(/justify-content:\s*center/);
   });
 });

@@ -21,6 +21,10 @@ code { font-size: .86em; }
 .col-lab { font-size: var(--fs-s); font-weight: 600; color: var(--ink3); padding: 0.75rem 0.625rem 0.3125rem; }
 .agent { display: flex; align-items: center; gap: 0.625rem; padding: 0.5rem 0.625rem; white-space: normal; }
 .agent .mark { width: 1.5rem; height: 1.5rem; border-radius: 0.375rem; display: grid; place-items: center; color: #fff; font-size: var(--fs-xs); font-weight: 750; flex: none; }
+/* Each vendor's own colour, so agents tell apart at a glance; any other harness is grey. */
+.agent .mark.claude { background: #C2603E; }
+.agent .mark.codex { background: #1F1F23; }
+.agent .mark.agy { background: #3B6CC9; }
 .ag-t { display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.25; }
 .ag-t b { font-size: 0.9062rem; font-weight: 600; color: var(--ink); }
 .ag-t span { font-size: var(--fs-s); color: var(--ink3); font-weight: 400; }
@@ -86,7 +90,6 @@ code { font-size: .86em; }
 #c-reply #input { font-size: 0.9375rem; flex: 1 1 14rem; min-width: 0; width: auto; padding: 0.3125rem 0; max-height: calc(1.35em * 10 + 0.625rem); overflow-y: auto; }
 #c-reply .box-row { flex: none; margin-left: auto; display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; min-width: 0; max-width: 100%; }
 /* Stop and Stopping… keep one width, so a changing label moves nothing. */
-#c-reply .go.stop { min-width: 6rem; }
 #c-reply .go.stop:disabled { opacity: .5; }
 /* The agent for the next message, beside Send: quiet text until hovered (mockup v4, round 17). */
 #c-reply .next-agent { max-width: 10rem; min-width: 0; }
@@ -701,7 +704,7 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 /* The Agents column: every saved agent, its access under its name, and on
    the selected one Edit and Remove. */
 #agents .agent { flex-wrap: wrap; }
-#agents .agent .mark { background: #6B6B66; }
+#agents .agent .mark:not(.claude):not(.codex):not(.agy) { background: #6B6B66; }
 #agents .ag-t .q-l { overflow: hidden; text-overflow: ellipsis; }
 /* The usage line stays on one line. */
 #agents .ag-t .plan-line { white-space: nowrap; }
@@ -709,7 +712,7 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 #agents .agent .form-error { flex-basis: 100%; padding-left: 2.125rem; font-weight: 400; white-space: normal; }
 
 /* Send, Queue and Stop: the message box's own ink button (base.css .go). */
-#c-reply .go { position: static; flex: none; height: 2rem; min-width: 4.5rem; border-radius: 0.5rem; font-size: var(--fs-m); }
+#c-reply .go { position: static; flex: none; height: 2rem; min-width: 6rem; border-radius: 0.5rem; font-size: var(--fs-m); display: inline-flex; align-items: center; justify-content: center; }
 .reply-foot .ctl-switch { font-size: var(--fs-xs); color: var(--ink3); }
 
 /* ---------- rename ---------- */
@@ -1050,7 +1053,8 @@ input.invalid, textarea.invalid { border-color: var(--bad); }
 #app.app-loading { align-items: center; justify-content: center; }
 #app.app-loading .loading { margin: 0; font-size: var(--fs-m); }
 /* An empty-state line in a column body, with room around it. */
-.c-empty { padding: 1.25rem 1.5rem; }
+/* The session column's empty state: the same body and empty line as the Agents and Sessions columns. */
+#c-msgs.c-empty { padding: 1.25rem 0.75rem; }
 /* The tab's empty line: the same size as every quiet line. */
 #d-body .dim { font-size: var(--fs-m); }
 /* A closed session: a lock and the word, not a button. */

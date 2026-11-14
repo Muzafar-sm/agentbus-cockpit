@@ -1376,8 +1376,8 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
             <BackButton label="Sessions" onClick={() => columns.back('convo')} />
             <div className="colhead-title">{allSessions.length === 0 ? `No ${SESSIONS} yet` : `No ${SESSION} selected`}</div>
           </header>
-          <div id="c-msgs" className="c-empty">
-            <p className="dim">
+          <div id="c-msgs" className="colbody c-empty">
+            <p className="empty">
               {allSessions.length === 0
                 ? canStart
                   ? savedAgents?.length === 0
