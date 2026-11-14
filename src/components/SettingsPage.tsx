@@ -141,7 +141,7 @@ const GROUPS: Group[] = [
       { key: "network.allow", name: "Allow hosts", kind: { t: "list", placeholder: "github.com", mono: true },
         line: "Hosts a contained agent may reach, one per line. *.example.com takes every name under it." },
       { key: "allow", name: "Allow", head: "Commands", kind: { t: "list", placeholder: "go test", mono: true },
-        line: "Commands claude may run without asking, one per line." },
+        line: "Commands claude may run, one per line. Others are refused." },
       { key: "forbid", name: "Forbid", kind: { t: "list", placeholder: "git push", mono: true },
         line: "Commands claude and codex may never run, one per line." },
     ],
