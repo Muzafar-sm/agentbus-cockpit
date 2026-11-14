@@ -91,6 +91,41 @@ export function lines(text: string): string[] {
     .filter((l) => l !== '');
 }
 
+// One usual config path in the home of a folder's machine, as
+// GET /api/v0/folders/{ref}/home-files lists it: its name, file or folder,
+// and size. Never its contents.
+export interface FoundPath {
+  path: string; // as home_files takes it; a folder's ends in /
+  kind: string; // "file" or "folder"
+  size?: number;
+  files?: number; // a folder's files, at any depth
+  part?: string; // only this part is copied, such as mcpServers
+  over?: boolean; // a folder too big for home_files: never added
+}
+
+// What Use my config found: the paths, and the machine they came from when
+// the folders are on more than one, so the page can say which.
+export interface ConfigFound {
+  paths: FoundPath[];
+  from?: string;
+}
+
+// addFound is the home files list text with each found path it does not
+// hold yet added at its end, except a folder too big to copy. Every entry already there stays, in its order.
+export function addFound(text: string, found: FoundPath[]): { text: string; added: string[] } {
+  const have = lines(text);
+  const seen = new Set(have);
+  const added: string[] = [];
+  for (const f of found) {
+    if (f?.over) continue; // too big: home_files would refuse each turn
+    const p = typeof f?.path === 'string' ? f.path.trim() : '';
+    if (p === '' || seen.has(p)) continue;
+    seen.add(p);
+    added.push(p);
+  }
+  return { text: [...have, ...added].join('\n'), added };
+}
+
 // What the Settings page needs from a data source.
 export interface SettingsApi {
   getSettings(): Promise<Versioned<SettingsInfo>>;
@@ -100,6 +135,10 @@ export interface SettingsApi {
   patchPolicy(change: Policy, etag: string): Promise<Versioned<Policy>>;
   getInstructions(): Promise<Versioned<string>>;
   putInstructions(text: string, etag: string): Promise<Versioned<string>>;
+  // findConfig lists the usual config paths in the home of a folder's
+  // machine (GET /api/v0/folders/{ref}/home-files). Absent: a source
+  // without the route.
+  findConfig?(): Promise<ConfigFound>;
 }
 
 // Whether this setup can honour the sandbox setting, from the one source

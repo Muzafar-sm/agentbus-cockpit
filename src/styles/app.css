@@ -1023,3 +1023,10 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .box.closed textarea { cursor: not-allowed; background: transparent; }
 .c-closed { display: inline-flex; align-items: center; gap: 0.3rem; }
 .s-lock { display: inline-flex; align-items: center; color: var(--ink3); margin-right: 0.3rem; vertical-align: -1px; }
+/* Settings: a small heading inside a group, the copy method under Folder, Use my config. */
+.pg-ctl-h { padding: 1.1rem 0 0.1rem; font-size: var(--fs-s); font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink2); }
+.pg-detail { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.3rem; padding-left: 0.8rem; border-left: 2px solid var(--line); }
+.pg-detail > .pg-note { margin: 0; }
+.pg-detail .nd-seg { align-self: flex-start; }
+.pg-find { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.4rem; }
+.pg-find > .nd-note, .pg-find > .form-error { margin: 0; }

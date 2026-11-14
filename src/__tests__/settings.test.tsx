@@ -5,7 +5,7 @@ import { App } from '../App';
 import { ReplayDataSource } from '../data/ReplayDataSource';
 import { SETTINGS_CONTROLS, SettingsPage } from '../components/SettingsPage';
 import { LiveDataSource } from '../data/LiveDataSource';
-import { changeOf, flatPolicy, homeFilesOf, isEmpty, lines, nestPolicy, Policy, sandboxOffer, SettingsApi, SettingsInfo } from '../data/settings';
+import { addFound, changeOf, flatPolicy, homeFilesOf, isEmpty, lines, nestPolicy, Policy, sandboxOffer, SettingsApi, SettingsInfo } from '../data/settings';
 import { RunnerInfo } from '../types';
 import { click, ev, flush, jsonl, panelOpen, render, unmountAll } from './helpers';
 
@@ -197,18 +197,30 @@ describe('the Settings page', () => {
     const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
     await flush();
     const parts = [...container.querySelectorAll('.pg-list [data-part]')].map((x) => x.getAttribute('data-part'));
-    expect(parts).toEqual(['agents', 'files', 'home', 'commands', 'network', 'sandbox', 'limits', 'instructions', 'advanced']);
+    expect(parts).toEqual(['workspace', 'config', 'agents', 'isolation', 'limits', 'instructions', 'advanced']);
+    // Each group by its short name and one-line subtitle.
+    const heads = [...container.querySelectorAll('.pg-list [data-part]')].map((x) => [x.querySelector('.pr-n')!.textContent, x.querySelector('.pr-m2')!.textContent]);
+    expect(heads.slice(0, 5)).toEqual([
+      ['Workspace', 'Which files a turn works on'],
+      ['Config', 'Your settings, skills, MCP servers and logins each conversation gets'],
+      ['Agents', 'What agents may do through AgentBus'],
+      ['Isolation', 'Sandbox, network and commands'],
+      ['Limits', 'How much agents may ask for'],
+    ]);
+    // No OS differences anywhere on the page.
+    for (const g of ['workspace', 'config', 'agents', 'isolation', 'limits']) {
+      await pick(container, `[data-part="${g}"]`);
+      expect(container.textContent).not.toMatch(/macOS|Linux|Mac\b/);
+    }
     expect(container.querySelector('[data-part="grants"]')).toBeNull();
     expect(container.textContent).not.toContain('Grants');
     // Every key of the policy has a control, and each control a key.
     expect([...SETTINGS_CONTROLS].sort()).toEqual(Object.keys(flatPolicy(policy())).sort());
     const groups: Record<string, string[]> = {
-      agents: ['agent_api.tools', 'subagents', 'agent_api.apply'],
-      files: ['edit', 'read_folders', 'isolation', 'share_read_only'],
-      home: ['home_files'],
-      commands: ['allow', 'forbid'],
-      network: ['network.contain', 'network.allow'],
-      sandbox: ['sandbox.mode'],
+      workspace: ['isolation', 'share_read_only', 'read_folders'],
+      config: ['home_files'],
+      agents: ['edit', 'agent_api.tools', 'subagents', 'agent_api.apply'],
+      isolation: ['sandbox.mode', 'network.contain', 'network.allow', 'allow', 'forbid'],
       limits: ['limits.max_depth', 'limits.max_jobs_per_turn', 'limits.max_jobs_per_tree', 'limits.max_cost_usd_per_tree'],
     };
     for (const [g, keys] of Object.entries(groups)) {
@@ -226,10 +238,13 @@ describe('the Settings page', () => {
     expect(sw(container, 'agent_api.tools').getAttribute('aria-checked')).toBe('true');
     expect(sw(container, 'subagents').getAttribute('aria-checked')).toBe('false');
     expect(container.textContent).toContain('agy cannot turn its own subagents off, so this does not apply to agy.');
-    await pick(container, '[data-part="files"]');
+    await pick(container, '[data-part="workspace"]');
     expect(container.textContent).toContain('Not copied, read-only, such as node_modules.');
-    expect(container.querySelector('[aria-label="Isolation"] [aria-checked="true"]')!.textContent).toBe('Auto');
-    await pick(container, '[data-part="commands"]');
+    expect(container.querySelector('[aria-label="Folder"] [aria-checked="true"]')!.textContent).toBe('A copy of your folder');
+    expect(container.querySelector('[aria-label="Copy method"] [aria-checked="true"]')!.textContent).toBe('Auto');
+    await pick(container, '[data-part="isolation"]');
+    expect([...container.querySelectorAll('.pg-main .pg-ctl-h')].map((x) => x.textContent)).toEqual(['Network', 'Commands']);
+    expect(container.textContent).toContain('A wall around each conversation: its folder, its home, and the network only through AgentBus.');
     expect((container.querySelector('textarea[name="forbid"]') as HTMLTextAreaElement).value).toBe('git push');
     await pick(container, '[data-part="limits"]');
     expect((container.querySelector('input[name="limits.max_depth"]') as HTMLInputElement).value).toBe('2');
@@ -242,6 +257,7 @@ describe('the Settings page', () => {
     const { api, state } = fakeApi();
     const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
     await flush();
+    await pick(container, '[data-part="agents"]');
     await click(sw(container, 'subagents'));
     await click(button(container, 'Save agents'));
     await flush();
@@ -256,10 +272,10 @@ describe('the Settings page', () => {
     await flush();
     expect(api.patchPolicy.mock.calls[1]).toEqual([{ limits: { max_cost_usd_per_tree: 2.5 } }, '"4"']);
 
-    await pick(container, '[data-part="network"]');
+    await pick(container, '[data-part="isolation"]');
     await click(sw(container, 'network.contain'));
     await setValue(container.querySelector('textarea[name="network.allow"]'), 'github.com\n\nregistry.npmjs.org');
-    await click(button(container, 'Save network'));
+    await click(button(container, 'Save isolation'));
     await flush();
     expect(api.patchPolicy.mock.calls[2][0]).toEqual({ network: { contain: 'on', allow: ['github.com', 'registry.npmjs.org'] } });
 
@@ -298,20 +314,23 @@ describe('the Settings page', () => {
     expect(api.patchPolicy.mock.calls[0][0]).toEqual({ limits: { max_depth: 4 } });
   });
 
-  it('shows Home files as a part of its own, with its one line, and saves them into home_files', async () => {
+  it('shows the home files under Config, with its lines, and saves them into home_files', async () => {
     const { api, state } = fakeApi();
     const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
     await flush();
-    await pick(container, '[data-part="home"]');
-    expect(container.textContent).toContain("Files from your home copied into each conversation's own home, such as ~/.aws/config.");
+    await pick(container, '[data-part="config"]');
+    expect(container.querySelector('[data-key="home_files"] .pg-ctl-n')!.textContent).toBe('Copied from your home');
+    expect(container.textContent).toContain("Copied into each conversation's own home at each turn. Sign-ins are never copied; AgentBus holds them.");
+    // A source without the route offers no button.
+    expect(button(container, 'Use my config')).toBeUndefined();
     await setValue(container.querySelector('textarea[name="home_files"]'), '~/.aws/config\n\n~/.gitconfig');
-    expect(container.querySelector('[data-part="home"]')!.textContent).toContain('Unsaved');
-    await click(button(container, 'Save home files'));
+    expect(container.querySelector('[data-part="config"]')!.textContent).toContain('Unsaved');
+    await click(button(container, 'Save config'));
     await flush();
     expect(api.patchPolicy.mock.calls[0]).toEqual([{ home_files: ['~/.aws/config', '~/.gitconfig'] }, '"3"']);
     expect(state.policy).toMatchObject({ forbid: ['git push'], sandbox: { mode: 'off' }, home_files: ['~/.aws/config', '~/.gitconfig'] });
     expect(container.textContent).toContain('Saved.');
-    expect(container.querySelector('[data-part="home"]')!.textContent).not.toContain('Unsaved');
+    expect(container.querySelector('[data-part="config"]')!.textContent).not.toContain('Unsaved');
   });
 
   it('refuses a stale write and says so', async () => {
@@ -319,6 +338,7 @@ describe('the Settings page', () => {
     const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
     await flush();
     state.info.version = 9; // changed elsewhere
+    await pick(container, '[data-part="agents"]');
     await click(sw(container, 'agent_api.apply'));
     await click(button(container, 'Save agents'));
     await flush();
@@ -354,7 +374,7 @@ describe('the Settings page', () => {
     await flush();
     await pick(container, '[data-part="instructions"]');
     await setValue(container.querySelector('textarea[name="instructions"]'), 'Draft, not saved.');
-    await pick(container, '[data-part="commands"]');
+    await pick(container, '[data-part="isolation"]');
     await setValue(container.querySelector('textarea[name="allow"]'), 'go test');
     await pick(container, '[data-part="agents"]');
     await click(sw(container, 'agent_api.apply'));
@@ -364,7 +384,7 @@ describe('the Settings page', () => {
     await pick(container, '[data-part="instructions"]');
     expect((container.querySelector('textarea[name="instructions"]') as HTMLTextAreaElement).value).toBe('Draft, not saved.');
     expect(api.getInstructions).toHaveBeenCalledTimes(1);
-    await pick(container, '[data-part="commands"]');
+    await pick(container, '[data-part="isolation"]');
     expect((container.querySelector('textarea[name="allow"]') as HTMLTextAreaElement).value).toBe('go test');
     expect(state.policy.allow).toEqual([]);
     // The page read the state again: it shows when the settings changed.
@@ -377,6 +397,7 @@ describe('the Settings page', () => {
     await flush();
     const dirty = () => [...container.querySelectorAll('.pg-list [data-part]')].filter((x) => x.querySelector('.pr-dirty')).map((x) => x.getAttribute('data-part'));
     expect(dirty()).toEqual([]);
+    await pick(container, '[data-part="agents"]');
     expect(button(container, 'Save agents')!.disabled).toBe(true);
     expect(container.querySelector('.pg-dirty')).toBeNull();
     await click(sw(container, 'agent_api.apply'));
@@ -407,6 +428,7 @@ describe('the Settings page', () => {
     };
     const { container } = await render(<Pages />);
     await flush();
+    await pick(container, '[data-part="agents"]');
     const ask = () => document.querySelector('[role="alertdialog"]');
     // A link's click, as a browser sends it: cancelable, so the page keeps it.
     const back = () =>
@@ -456,6 +478,7 @@ describe('the Settings page', () => {
     };
     const { container } = await render(<Pages />);
     await flush();
+    await pick(container, '[data-part="agents"]');
     await click(sw(container, 'agent_api.apply'));
     // The read after the write waits until released.
     let release!: () => void;
@@ -496,8 +519,8 @@ describe('the Settings page', () => {
     const { api } = fakeApi();
     const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
     await flush();
-    expect(container.querySelector('.pg-list .on')!.getAttribute('data-part')).toBe('agents');
-    expect(container.querySelector('.pg-main .colhead')!.textContent).toContain('Agents');
+    expect(container.querySelector('.pg-list .on')!.getAttribute('data-part')).toBe('workspace');
+    expect(container.querySelector('.pg-main .colhead')!.textContent).toContain('Workspace');
     expect(container.querySelector('.pg-side .colhead')!.textContent).toBe('How it applies');
     // The policy as saved, nested keys by their dotted path.
     await pick(container, '[data-part="advanced"]');
@@ -506,6 +529,158 @@ describe('the Settings page', () => {
     expect(saved).toContain('forbidgit push');
     expect(saved).toContain('read_foldersnone');
     expect(saved).toContain('home_filesnone');
+  });
+
+  // Folder is the isolation key in two choices: "none" is Your folder, any
+  // other value a copy made that way, its method a detail of A copy.
+  it('reads and writes Folder as the isolation key, both ways', async () => {
+    const { api, state } = fakeApi();
+    state.policy.isolation = 'git';
+    const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
+    await flush();
+    const folder = () => container.querySelector('[aria-label="Folder"] [aria-checked="true"]')!.textContent;
+    const method = () => container.querySelector('[aria-label="Copy method"] [aria-checked="true"]')?.textContent;
+    const choose = (label: string, text: string) =>
+      click([...container.querySelectorAll(`[aria-label="${label}"] button`)].find((b) => b.textContent === text)!);
+    expect(folder()).toBe('A copy of your folder');
+    expect(method()).toBe('Git worktree');
+    // Your folder writes none, and the method is not shown.
+    await choose('Folder', 'Your folder');
+    expect(container.querySelector('[data-copy-method]')).toBeNull();
+    await click(button(container, 'Save workspace'));
+    await flush();
+    expect(api.patchPolicy.mock.calls[0][0]).toEqual({ isolation: 'none' });
+    expect(folder()).toBe('Your folder');
+    // A copy again comes back on Auto when the read was none, and a method picked is what is written.
+    await choose('Folder', 'A copy of your folder');
+    expect(method()).toBe('Auto');
+    await choose('Copy method', 'Overlay');
+    await click(button(container, 'Save workspace'));
+    await flush();
+    expect(api.patchPolicy.mock.calls[1][0]).toEqual({ isolation: 'overlay' });
+    // Your folder, then A copy: the method last picked comes back.
+    await choose('Copy method', 'Copy');
+    await choose('Folder', 'Your folder');
+    await choose('Folder', 'A copy of your folder');
+    expect(method()).toBe('Copy');
+    await click(button(container, 'Save workspace'));
+    await flush();
+    expect(api.patchPolicy.mock.calls[2][0]).toEqual({ isolation: 'copy' });
+    expect(state.policy.isolation).toBe('copy');
+  });
+
+  describe('Use my config', () => {
+    const open = async (findConfig: SettingsApi['findConfig'], home: string[] = []) => {
+      const f = fakeApi();
+      f.state.policy.home_files = home;
+      const api = { ...f.api, findConfig: vi.fn(findConfig) };
+      const r = await render(<SettingsPage api={api} onBack={() => {}} />);
+      await flush();
+      await pick(r.container, '[data-part="config"]');
+      const area = () => r.container.querySelector('textarea[name="home_files"]') as HTMLTextAreaElement;
+      return { ...r, api, area };
+    };
+
+    it('adds the found paths as unsaved changes, keeping every entry there', async () => {
+      const { container, api, area } = await open(
+        async () => ({
+          paths: [
+            { path: '~/.claude/settings.json', kind: 'file', size: 123 },
+            { path: '~/.aws/config', kind: 'file', size: 40 },
+            { path: '~/.claude/skills/', kind: 'folder', size: 900, files: 12 },
+            { path: '~/.config/gh/', kind: 'folder', size: 99_000_000, files: 3, over: true },
+          ],
+        }),
+        ['~/.aws/config', '~/.netrc'],
+      );
+      await click(button(container, 'Use my config'));
+      await flush();
+      expect(api.findConfig).toHaveBeenCalledTimes(1);
+      expect(area().value).toBe('~/.aws/config\n~/.netrc\n~/.claude/settings.json\n~/.claude/skills/');
+      expect(container.querySelector('[data-found]')!.textContent).toBe('Added 2 paths. Save to keep them.');
+      // A folder too big to copy is not added, and is named beside the button.
+      expect([...container.querySelectorAll('[data-over]')].map((x) => x.textContent)).toEqual([
+        '~/.config/gh/ is too big to copy (over 10,000 files or 64 MiB).',
+      ]);
+      // Not saved: the person looks, then saves as for any setting.
+      expect(api.patchPolicy).not.toHaveBeenCalled();
+      expect(container.querySelector('[data-part="config"]')!.textContent).toContain('Unsaved');
+      await click(button(container, 'Save config'));
+      await flush();
+      expect(api.patchPolicy.mock.calls[0][0]).toEqual({ home_files: ['~/.aws/config', '~/.netrc', '~/.claude/settings.json', '~/.claude/skills/'] });
+      // Once more: nothing new, nothing changed.
+      await click(button(container, 'Use my config'));
+      await flush();
+      expect(container.querySelector('[data-found]')!.textContent).toBe('Nothing new found.');
+      expect(container.querySelector('[data-part="config"]')!.textContent).not.toContain('Unsaved');
+    });
+
+    it('keeps what the person typed before pressing it', async () => {
+      const { container, area } = await open(async () => ({ paths: [{ path: '~/.gitconfig', kind: 'file', size: 9 }], from: 'mac' }));
+      await setValue(area(), '~/.ssh/config\n');
+      await click(button(container, 'Use my config'));
+      await flush();
+      expect(area().value).toBe('~/.ssh/config\n~/.gitconfig');
+      // Folders on several machines: the line says which one it looked on.
+      expect(container.querySelector('[data-found]')!.textContent).toBe('Added 1 path from mac. Save to keep them.');
+    });
+
+    it("shows the API's words when it fails, and changes nothing", async () => {
+      const { container, area } = await open(async () => {
+        throw new Error('This control cannot list your config: 404 page not found');
+      }, ['~/.aws/config']);
+      await click(button(container, 'Use my config'));
+      await flush();
+      expect(container.querySelector('.pg-find .form-error')!.textContent).toBe('This control cannot list your config: 404 page not found');
+      expect(area().value).toBe('~/.aws/config');
+      expect(container.querySelector('[data-part="config"]')!.textContent).not.toContain('Unsaved');
+    });
+
+    it('adds and keeps paths as a list, one each', () => {
+      expect(addFound('~/a\n\n~/b\n', [{ path: '~/b', kind: 'file' }, { path: ' ~/c ', kind: 'folder' }, { path: '~/c', kind: 'folder' }, { path: '', kind: 'file' }, { path: '~/d/', kind: 'folder', over: true }])).toEqual({
+        text: '~/a\n~/b\n~/c',
+        added: ['~/c'],
+      });
+      expect(addFound('', [])).toEqual({ text: '', added: [] });
+    });
+
+    // The route is per folder: it asks with the first folder GET /api/v0/folders lists, on its machine.
+    it('asks the home of the first folder\'s machine, and says which machine when there are several', async () => {
+      const src = new LiveDataSource({ baseUrl: 'http://127.0.0.1:8787', token: 'tok' });
+      const asked: string[] = [];
+      const serve = (folders: unknown[], reply: () => Response) =>
+        vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+          asked.push(input);
+          if (input.endsWith('/api/v0/folders')) return new Response(JSON.stringify({ folders }), { status: 200 });
+          return reply();
+        }));
+      const files = [{ path: '~/.claude/settings.json', kind: 'file', size: 123 }];
+      const ok = () => new Response(JSON.stringify({ folder: 'fld_0123456789abcdef', connector: 'con_0000000000000001', files }), { status: 200 });
+      const up = { ref: 'fld_0123456789abcdef', name: 'app', connector: 'con_0000000000000001', runner: 'up' };
+
+      // One machine (the usual up): no machine named.
+      serve([up, { ref: 'fld_1111111111111111', name: 'web', connector: 'con_0000000000000001', runner: 'up' }], ok);
+      expect(await src.findConfig()).toEqual({ paths: files });
+      expect(asked).toEqual([
+        'http://127.0.0.1:8787/api/v0/folders',
+        'http://127.0.0.1:8787/api/v0/folders/fld_0123456789abcdef/home-files?connector=con_0000000000000001',
+      ]);
+      // Several machines: the first folder's, by name.
+      serve([up, { ref: 'fld_2222222222222222', name: 'vm-app', connector: 'con_0000000000000002', runner: 'vm' }], ok);
+      expect(await src.findConfig()).toEqual({ paths: files, from: 'up' });
+      // No folders yet.
+      serve([], ok);
+      await expect(src.findConfig()).rejects.toThrow('Add a folder first; AgentBus looks in the home of the machine that holds it.');
+      // The API's own words: no runner holds it, the runner could not list, offline.
+      serve([up], () => new Response(JSON.stringify({ error: 'No runner holds that folder.' }), { status: 404 }));
+      await expect(src.findConfig()).rejects.toThrow(/^No runner holds that folder\.$/);
+      serve([up], () => new Response(JSON.stringify({ error: 'the runner is offline' }), { status: 503 }));
+      await expect(src.findConfig()).rejects.toThrow(/^the runner is offline$/);
+      // An older control without the route.
+      serve([up], () => new Response('404 page not found\n', { status: 404 }));
+      await expect(src.findConfig()).rejects.toThrow('This control cannot list your config: 404 page not found');
+      vi.unstubAllGlobals();
+    });
   });
 
   it('saves the instructions', async () => {
@@ -645,7 +820,7 @@ describe('the sandbox switch offers only what the machines can build', () => {
     const r = await render(<SettingsPage api={f.api} onBack={() => {}} sandbox={sandbox} />);
     await flush();
     await flush();
-    await pick(r.container, '[data-part="sandbox"]');
+    await pick(r.container, '[data-part="isolation"]');
     return { r, f, sw: () => r.container.querySelector('button[name="sandbox.mode"]') as HTMLButtonElement };
   };
 
@@ -690,7 +865,7 @@ describe('the sandbox switch offers only what the machines can build', () => {
       const r = await render(<App dataSource={src} />);
       await flush();
       await flush();
-      await pick(r.container, '[data-part="sandbox"]');
+      await pick(r.container, '[data-part="isolation"]');
       expect((r.container.querySelector('button[name="sandbox.mode"]') as HTMLButtonElement).disabled).toBe(true);
       expect(r.container.querySelector('[data-sandbox-why]')?.textContent).toContain('up: the session has no home of its own on this runner');
     } finally {

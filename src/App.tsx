@@ -707,6 +707,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
       patchPolicy: (change, etag) => d.patchPolicy!(change, etag),
       getInstructions: () => d.getInstructions!(),
       putInstructions: (t, etag) => d.putInstructions!(t, etag),
+      findConfig: d.findConfig ? () => d.findConfig!() : undefined,
     };
   }, [dataSource]);
   // The Settings link opens Settings on its first part; an agent's sign-in

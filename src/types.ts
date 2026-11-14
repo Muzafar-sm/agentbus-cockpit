@@ -1,4 +1,4 @@
-import type { Policy, SettingsInfo, Versioned } from './data/settings';
+import type { ConfigFound, Policy, SettingsInfo, Versioned } from './data/settings';
 import type { FolderInfo } from './data/folders';
 export interface Usage {
   input_tokens: number;
@@ -598,6 +598,9 @@ export interface DataSource {
   patchPolicy?(change: Policy, etag: string): Promise<Versioned<Policy>>;
   getInstructions?(): Promise<Versioned<string>>;
   putInstructions?(text: string, etag: string): Promise<Versioned<string>>;
+  // The usual config paths in the home of a folder's machine, for Use my
+  // config on the Settings page (GET /api/v0/folders/{ref}/home-files).
+  findConfig?(): Promise<ConfigFound>;
   // A source that can start and continue sessions has these two. Each
   // rejects with an Error whose message is the API's own words. Starting
   // resolves with the session id and, from the live API, the new turn's id.

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  addFound,
   changeOf,
   flatPolicy,
   isEmpty,
@@ -19,8 +20,7 @@ import { APIKey, OpenRouterKey } from "./OpenRouterKey";
 import { SubscriptionList } from "../types";
 
 // The Settings page (/settings): control's settings, one global set for every machine.
-// Every setting of the policy is a plain control, in groups (Agents, Files, Home files, Commands, Network, Sandbox,
-// Limits); then the instructions every turn gets, the subscriptions, and the whole policy as JSON (Advanced). Each
+// Every setting of the policy is a plain control, in groups (Workspace, Config, Agents, Isolation, Limits); then the instructions every turn gets, the subscriptions, and the whole policy as JSON (Advanced). Each
 // part saves on its own, with the version it read; a change made elsewhere in between is refused, and the page
 // reads everything again.
 //
@@ -53,6 +53,7 @@ type Kind =
   | { t: "switch" }
   | { t: "onoff" } // a string key that is "on" or "off", as a switch
   | { t: "seg"; options: [string, string][] }
+  | { t: "folder" } // isolation: "none" is your folder, any other value a copy made that way
   | { t: "list"; placeholder: string; mono?: boolean }
   | { t: "number"; whole: boolean };
 
@@ -62,9 +63,10 @@ interface Control {
   line: string; // one short plain line: what it does
   kind: Kind;
   more?: string; // a second line, only where it must be said
+  head?: string; // a small heading above it, where a group holds two kinds
 }
 
-type GroupId = "agents" | "files" | "home" | "commands" | "network" | "sandbox" | "limits";
+type GroupId = "workspace" | "config" | "agents" | "isolation" | "limits";
 type Part = GroupId | "instructions" | "subscriptions" | "advanced";
 
 interface Group {
@@ -75,12 +77,49 @@ interface Group {
   side: string[];
 }
 
+// The ways a copy of your folder is made; "none" is your folder itself.
+const COPY_METHODS: [string, string][] = [["auto", "Auto"], ["overlay", "Overlay"], ["copy", "Copy"], ["git", "Git worktree"]];
+
 const GROUPS: Group[] = [
+  {
+    id: "workspace",
+    name: "Workspace",
+    sub: "Which files a turn works on",
+    controls: [
+      { key: "isolation", name: "Folder", kind: { t: "folder" },
+        line: "Where a new session's turns run. A copy leaves your folder as it is until a turn is applied." },
+      { key: "share_read_only", name: "Shared folders", kind: { t: "list", placeholder: "node_modules", mono: true },
+        line: "Not copied, read-only, such as node_modules. A turn cannot write there." },
+      { key: "read_folders", name: "Read folders", kind: { t: "list", placeholder: "~/notes", mono: true },
+        line: "Folders claude may read beyond its own, one per line." },
+    ],
+    side: [
+      "Your folder is not changed until a turn is applied, unless Folder is Your folder.",
+      "Shared folders are one name each, at the top of the session's folder.",
+    ],
+  },
+  {
+    id: "config",
+    name: "Config",
+    sub: "Your settings, skills, MCP servers and logins each conversation gets",
+    controls: [
+      { key: "home_files", name: "Copied from your home", kind: { t: "list", placeholder: "~/.aws/config", mono: true },
+        line: "Files and folders from your home, one per line, such as ~/.aws/config." },
+    ],
+    side: [
+      "Use my config adds the usual config files found on the folder's machine. Look them over, then save.",
+      "Copied at the start of each turn, with the sandbox on or off.",
+      "Hooks with absolute paths into your real home do not work under the sandbox.",
+      "What an MCP server does is outside AgentBus's record.",
+    ],
+  },
   {
     id: "agents",
     name: "Agents",
     sub: "What agents may do through AgentBus",
     controls: [
+      { key: "edit", name: "Edit", kind: { t: "seg", options: [["session", "Its own folder"], ["none", "Nowhere"]] },
+        line: "Where a turn may change files without asking." },
       { key: "agent_api.tools", name: "AgentBus tools", kind: { t: "switch" },
         line: "Agents get AgentBus's own tools to ask other agents, review and read turns." },
       { key: "subagents", name: "Subagents", kind: { t: "switch" },
@@ -95,68 +134,25 @@ const GROUPS: Group[] = [
     ],
   },
   {
-    id: "files",
-    name: "Files",
-    sub: "Where turns read, edit and run",
+    id: "isolation",
+    name: "Isolation",
+    sub: "Sandbox, network and commands",
     controls: [
-      { key: "edit", name: "Edit", kind: { t: "seg", options: [["session", "Its own folder"], ["none", "Nowhere"]] },
-        line: "Where a turn may change files without asking." },
-      { key: "read_folders", name: "Read folders", kind: { t: "list", placeholder: "~/notes", mono: true },
-        line: "Folders claude may read beyond its own, one per line." },
-      { key: "isolation", name: "Isolation",
-        kind: { t: "seg", options: [["auto", "Auto"], ["overlay", "Overlay"], ["copy", "Copy"], ["git", "Git worktree"], ["none", "Your folder"]] },
-        line: "Where a new session's turns run. Auto makes the fastest copy this machine can." },
-      { key: "share_read_only", name: "Shared folders", kind: { t: "list", placeholder: "node_modules", mono: true },
-        line: "Not copied, read-only, such as node_modules. A turn cannot write there." },
-    ],
-    side: [
-      "Your folder is not changed until a turn is applied, unless isolation is Your folder.",
-      "Shared folders are one name each, at the top of the session's folder.",
-    ],
-  },
-  {
-    id: "home",
-    name: "Home files",
-    sub: "Files each conversation gets",
-    controls: [
-      { key: "home_files", name: "Home files", kind: { t: "list", placeholder: "~/.aws/config", mono: true },
-        line: "Files from your home copied into each conversation's own home, such as ~/.aws/config." },
-    ],
-    side: ["Copied at the start of each turn, with the sandbox on or off.", "A file the conversation already has is never replaced."],
-  },
-  {
-    id: "commands",
-    name: "Commands",
-    sub: "What agents may run",
-    controls: [
-      { key: "allow", name: "Allow", kind: { t: "list", placeholder: "go test", mono: true },
+      { key: "sandbox.mode", name: "Sandbox", kind: { t: "onoff" },
+        line: "A wall around each conversation: its folder, its home, and the network only through AgentBus." },
+      { key: "network.contain", name: "Contain", head: "Network", kind: { t: "onoff" },
+        line: "Agents reach only their runner, control and the hosts below." },
+      { key: "network.allow", name: "Allow hosts", kind: { t: "list", placeholder: "github.com", mono: true },
+        line: "Hosts a contained agent may reach, one per line. *.example.com takes every name under it." },
+      { key: "allow", name: "Allow", head: "Commands", kind: { t: "list", placeholder: "go test", mono: true },
         line: "Commands claude may run without asking, one per line." },
       { key: "forbid", name: "Forbid", kind: { t: "list", placeholder: "git push", mono: true },
         line: "Commands claude and codex may never run, one per line." },
     ],
-    side: ["Forbid reads the command text. It is not a sandbox: a command built at run time is not seen."],
-  },
-  {
-    id: "network",
-    name: "Network",
-    sub: "What agents may reach",
-    controls: [
-      { key: "network.contain", name: "Contain", kind: { t: "onoff" },
-        line: "Agents reach only their runner, control and the hosts below." },
-      { key: "network.allow", name: "Allow hosts", kind: { t: "list", placeholder: "github.com", mono: true },
-        line: "Hosts a contained agent may reach, one per line. *.example.com takes every name under it." },
+    side: [
+      "A machine that cannot build the sandbox refuses the turn, and says why.",
+      "Forbid reads the command text. It is not a sandbox: a command built at run time is not seen.",
     ],
-    side: ["Linux only. On a Mac, contain refuses every turn unless the sandbox is on."],
-  },
-  {
-    id: "sandbox",
-    name: "Sandbox",
-    sub: "A wall around each session",
-    controls: [
-      { key: "sandbox.mode", name: "Run each session in a sandbox", kind: { t: "onoff" },
-        line: "Each session reads and writes only its own folder and its own home." },
-    ],
-    side: ["A machine that cannot build it refuses the turn."],
   },
   {
     id: "limits",
@@ -193,6 +189,7 @@ function draftOf(c: Control, v: unknown): string | boolean {
     case "number":
       return typeof v === "number" ? String(v) : "";
     case "seg":
+    case "folder":
       return typeof v === "string" ? v : "";
   }
 }
@@ -207,6 +204,7 @@ function valueOf(c: Control, d: string | boolean): { v: unknown } | { error: str
     case "list":
       return { v: lines(String(d)) };
     case "seg":
+    case "folder":
       return { v: d };
     case "number": {
       const t = String(d).trim();
@@ -227,13 +225,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
   const [loadError, setLoadError] = useState<string | null>(null);
   // The drafts, reset from what was read.
   const [draft, setDraft] = useState<Draft>({});
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const [policyText, setPolicyText] = useState("");
   const [instructions, setInstructions] = useState("");
   // Which part is saving, and what the last save said.
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ part: string; text: string; ok: boolean } | null>(null);
   // The part on screen.
-  const [part, setPart] = useState<Part>(atSubscriptions && subscriptions ? "subscriptions" : "agents");
+  const [part, setPart] = useState<Part>(atSubscriptions && subscriptions ? "subscriptions" : "workspace");
 
   // Which parts hold changes not saved, as of the last render: a read
   // after one part's save leaves another part's unsaved draft as it is.
@@ -457,6 +457,42 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
 
   const set = (key: string, v: string | boolean) => setDraft((cur) => ({ ...cur, [key]: v }));
 
+  // The copy method last picked, so A copy after Your folder comes back to
+  // it; before any pick, the one read, else Auto.
+  const lastCopy = useRef<string | null>(null);
+  const copyMethod = () => {
+    if (lastCopy.current) return lastCopy.current;
+    const r = flatRead.isolation;
+    return typeof r === "string" && r !== "none" && r !== "" ? r : "auto";
+  };
+
+  // Use my config: the usual config paths found on the folder's machine,
+  // added to the list as unsaved changes. What it last said, beside it.
+  const [finding, setFinding] = useState(false);
+  const [found, setFound] = useState<{ ok: boolean; text: string; over?: string[] } | null>(null);
+  const useMyConfig = async () => {
+    if (!api.findConfig || finding) return;
+    setFinding(true);
+    setFound(null);
+    try {
+      const got = await api.findConfig();
+      // The list as it is now: the person may have typed while it looked.
+      const { text, added } = addFound(String(draftRef.current.home_files ?? ""), got.paths);
+      if (added.length > 0) set("home_files", text);
+      const from = got.from ? ` from ${got.from}` : "";
+      const over = got.paths.filter((f) => f.over).map((f) => `${f.path} is too big to copy (over 10,000 files or 64 MiB).`);
+      setFound({
+        ok: true,
+        text: added.length > 0 ? `Added ${plural(added.length, "path")}${from}. Save to keep them.` : `Nothing new found${from}.`,
+        over,
+      });
+    } catch (err) {
+      setFound({ ok: false, text: (err as Error).message });
+    } finally {
+      setFinding(false);
+    }
+  };
+
   // control is one setting: its name, the control, and its one plain line.
   const control = (c: Control, error?: string) => {
     const d = draft[c.key];
@@ -481,6 +517,38 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
           />
         );
         break;
+      case "folder": {
+        const v = String(d ?? "");
+        const mine = v === "none";
+        input = (
+          <>
+            <Seg
+              label={c.name}
+              value={v === "" ? "" : mine ? "none" : "copy"}
+              options={[
+                { value: "copy", label: "A copy of your folder" },
+                { value: "none", label: "Your folder" },
+              ]}
+              onChange={(x) => set(c.key, x === "none" ? "none" : copyMethod())}
+            />
+            {!mine && v !== "" && (
+              <span className="pg-detail" data-copy-method>
+                <span className="pg-note">How the copy is made. Auto makes the fastest copy this machine can.</span>
+                <Seg
+                  label="Copy method"
+                  value={v}
+                  options={COPY_METHODS.map(([value, label]) => ({ value, label }))}
+                  onChange={(x) => {
+                    lastCopy.current = x;
+                    set(c.key, x);
+                  }}
+                />
+              </span>
+            )}
+          </>
+        );
+        break;
+      }
       case "list":
         input = (
           <textarea
@@ -509,12 +577,31 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
         );
         break;
     }
+    const home = c.key === "home_files";
     return (
-      <div className="pg-ctl" key={c.key} data-key={c.key}>
+      <React.Fragment key={c.key}>
+      {c.head && <div className="pg-ctl-h">{c.head}</div>}
+      <div className="pg-ctl" data-key={c.key}>
+        {home && api.findConfig && (
+          <span className="pg-find">
+            <Button kind="secondary" small className="pg-find-btn" disabled={finding} onClick={useMyConfig}>
+              {finding ? "Looking…" : "Use my config"}
+            </Button>
+            {found && <span className={found.ok ? "nd-note" : "form-error"} data-found>{found.text}</span>}
+            {found?.over?.map((t) => (
+              <span className="pg-why" data-over key={t}>
+                {t}
+              </span>
+            ))}
+          </span>
+        )}
         <span className="pg-ctl-n">{c.name}</span>
         <span className="pg-note">{c.line}</span>
         {c.more && <span className="nd-note">{c.more}</span>}
         {input}
+        {home && (
+          <span className="nd-note">Copied into each conversation's own home at each turn. Sign-ins are never copied; AgentBus holds them.</span>
+        )}
         {error && <span className="form-error">{error}</span>}
         {c.key === "sandbox.mode" && sandbox && !sandbox.can && (
           <p className="pg-why" data-sandbox-why>
@@ -526,6 +613,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
           <p className="nd-note">Online and able to build it: {sandbox.machines.join(", ")}.</p>
         )}
       </div>
+      </React.Fragment>
     );
   };
 

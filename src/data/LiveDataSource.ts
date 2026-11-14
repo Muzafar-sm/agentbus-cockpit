@@ -27,7 +27,7 @@ import {
   TurnList,
 } from '../types';
 import { FolderInfo } from './folders';
-import { Policy, SettingsInfo, Versioned } from './settings';
+import { ConfigFound, FoundPath, Policy, SettingsInfo, Versioned } from './settings';
 import { COMMAND_KINDS, shellRun } from './shell';
 import { ApiTurn } from './jobs';
 import { extractCleanPrompt, turnDetail, turnOrigin } from './turns';
@@ -465,6 +465,37 @@ export class LiveDataSource implements DataSource {
   async putInstructions(text: string, etag: string): Promise<Versioned<string>> {
     const r = await this.versioned<{ text: string }>('PUT', '/api/v0/settings/instructions', etag, { text });
     return { value: r.value.text ?? text, etag: r.etag };
+  }
+
+  // Use my config: the usual config paths in the home of the folders'
+  // machine. It asks with the first folder GET /api/v0/folders lists, on its
+  // machine (GET /api/v0/folders/{ref}/home-files); with folders on several
+  // machines it says which one it looked on. A refusal throws the API's
+  // words; an older control without the route says so.
+  async findConfig(): Promise<ConfigFound> {
+    const folders = await this.listFolders();
+    if (folders.length === 0) throw new Error('Add a folder first; AgentBus looks in the home of the machine that holds it.');
+    const first = folders[0];
+    const machines = new Set(folders.map((f) => f.connector ?? f.runner ?? ''));
+    const q = first.connector ? `?connector=${encodeURIComponent(first.connector)}` : '';
+    const res = await fetch(`${this.baseUrl}/api/v0/folders/${encodeURIComponent(first.ref)}/home-files${q}`, { headers: this.headers() });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      let words = '';
+      try {
+        const body = JSON.parse(text);
+        const msg = body?.error ?? body?.message;
+        if (typeof msg === 'string') words = msg;
+      } catch {
+        // Not JSON.
+      }
+      // A 404 with no words of the API's own is a control without the route.
+      if (!words && res.status === 404) words = `This control cannot list your config: ${text.trim() || 'agentbus answered 404'}`;
+      throw Object.assign(new Error(words || text.trim() || `agentbus answered ${res.status}`), { status: res.status });
+    }
+    const body = (await res.json()) as { files?: FoundPath[] };
+    const paths = Array.isArray(body?.files) ? body.files : [];
+    return machines.size > 1 ? { paths, from: first.runner ?? first.connector } : { paths };
   }
 
   // PATCH /api/v0/sessions/<id>: a new name for the session. It answers with
