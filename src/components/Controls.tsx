@@ -216,9 +216,14 @@ export const Combo: React.FC<{
 }> = ({ name, label, value, suggestions, onChange, placeholder, disabled, className, labels }) => {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
+  // The list filters by what the person typed since it opened, never by a
+  // value picked from it; a pick closes it, and focus returning does not
+  // open it again.
+  const [typed, setTyped] = useState(false);
+  const picked = useRef(false);
   const input = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const q = value.trim().toLowerCase();
+  const q = typed ? value.trim().toLowerCase() : '';
   const list = suggestions.filter(
     (s) => !q || ((s.toLowerCase().includes(q) || !!labels?.[s]?.toLowerCase().includes(q)) && s.toLowerCase() !== q),
   );
@@ -250,9 +255,17 @@ export const Combo: React.FC<{
         disabled={disabled}
         spellCheck={false}
         autoComplete="off"
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          if (picked.current) {
+            picked.current = false;
+            return;
+          }
+          setTyped(false);
+          setOpen(true);
+        }}
         onChange={(e) => {
           onChange(e.target.value);
+          setTyped(true);
           setOpen(true);
           setActive(-1);
         }}
@@ -288,6 +301,7 @@ export const Combo: React.FC<{
           onPick={(v) => {
             onChange(v);
             setOpen(false);
+            picked.current = true;
             input.current?.focus();
           }}
           menuRef={menuRef}
