@@ -167,7 +167,7 @@ describe('From the dev server', () => {
     expect(window.location.search).toBe(`?t=${CODE}`);
     expect((r.container.querySelector('input[name="address"]') as HTMLInputElement).value).toBe('http://127.0.0.1:8787');
     // The same one line on where the token comes from, without the served words.
-    expect(r.container.querySelector('.connect-hint')?.textContent).toContain('~/.local/share/agentbus/token');
+    expect(r.container.querySelector('.connect-hint')?.textContent).toContain('the file token in the data folder agentbus up printed when it started');
     expect(r.container.querySelector('.connect-hint')?.textContent).not.toContain('For a new sign-in link');
     r.unmount();
   });

@@ -92,7 +92,7 @@ const barOf = (row: Element) => row.querySelector('.quota') as HTMLElement;
 describe('the Agents column', () => {
   it('shows the longest window on the bar, in its tooltip, and the shortest on the line', async () => {
     const r = await render(
-      <AgentsColumn agents={[claude, codex]} selectedAgentId={null} onSelectAgent={() => undefined} subscriptions={subs([{ ...fiveHour, resets_at: iso(new Date(Date.now() + 2 * 3600000)) }, weekly])} />
+      <AgentsColumn agents={[claude, codex]} selectedAgentId={null} onSelectAgent={() => undefined} subscriptions={subs([{ ...fiveHour, read_at: iso(new Date()), resets_at: iso(new Date(Date.now() + 2 * 3600000)) }, { ...weekly, read_at: iso(new Date()), resets_at: iso(new Date(Date.now() + 3 * 86400000)) }])} />
     );
     const row = rowOf(r.container, 'claude');
     const bar = barOf(row);

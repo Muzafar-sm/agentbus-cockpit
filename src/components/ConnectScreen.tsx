@@ -41,10 +41,10 @@ export const ConnectScreen: React.FC<ConnectScreenProps> = ({
             </>
           ) : (
             <>
-              <code>agentbus up</code> opens a sign-in link.
+              <code>agentbus up</code> prints a sign-in link.
             </>
           )}{' '}
-          Or paste the token from <code>~/.local/share/agentbus/token</code>.
+          Or paste the token: the file <code>token</code> in the data folder <code>agentbus up</code> printed when it started.
         </p>
         <label>
           <span>{PRODUCT} address</span>
