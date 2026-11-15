@@ -88,7 +88,7 @@ describe('Markdown: the agent reply in the chat', () => {
     expect(r.container.querySelector('hr')).not.toBeNull();
     const q = r.container.querySelector('blockquote')!;
     expect(q.querySelector('strong')!.textContent).toBe('text');
-    expect(q.textContent).toBe('quoted textmore');
+    expect(q.innerHTML).toBe('<p>quoted <strong>text</strong><br>more</p>');
     r.unmount();
   });
 
@@ -100,6 +100,42 @@ describe('Markdown: the agent reply in the chat', () => {
     expect(p.querySelector('strong > em')!.textContent).toBe('both');
     expect(p.querySelector('del')!.textContent).toBe('gone');
     expect(p.textContent).toContain('my_var_name, 2 * 3 * 4');
+    r.unmount();
+  });
+
+  it('italics may hold bold: the second mark of "**" never closes the italics', async () => {
+    const r = await md('*see **this** now* and *a\\** too');
+    const p = r.container.querySelector('p')!;
+    const em = p.querySelector(':scope > em')!;
+    expect(em.textContent).toBe('see this now');
+    expect(em.querySelector('strong')!.textContent).toBe('this');
+    // An escaped mark before the closing one still closes.
+    expect(Array.from(p.querySelectorAll(':scope > em')).map((e) => e.textContent)).toEqual(['see this now', 'a*']);
+    r.unmount();
+  });
+
+  it('a quote ends at a list item, a heading or a fence that has no ">"', async () => {
+    const r = await md('> note\n- item\n\n> quoted\n# Title\n\n> lazy\ncontinues');
+    const qs = r.container.querySelectorAll('blockquote');
+    expect(Array.from(qs).map((q) => q.innerHTML)).toEqual(['<p>note</p>', '<p>quoted</p>', '<p>lazy<br>continues</p>']);
+    expect(r.container.querySelector('ul > li')!.textContent).toBe('item');
+    expect(r.container.querySelector('blockquote ul')).toBeNull();
+    expect(r.container.querySelector('h1')!.textContent).toBe('Title');
+    r.unmount();
+  });
+
+  it('thousands of nested quotes or lists render, the deepest as text', async () => {
+    const r = await md('>'.repeat(3000) + ' deep\n\n' + Array.from({ length: 2000 }, (_, n) => `${'  '.repeat(n)}- x`).join('\n'));
+    let q = r.container.querySelector('blockquote');
+    let levels = 0;
+    while (q) {
+      levels++;
+      q = q.querySelector(':scope > blockquote');
+    }
+    expect(levels).toBeGreaterThan(10);
+    expect(levels).toBeLessThan(100);
+    expect(r.container.textContent).toContain('deep');
+    expect(r.container.querySelectorAll('li').length).toBeLessThan(100);
     r.unmount();
   });
 
@@ -181,9 +217,17 @@ describe('Markdown: the agent reply in the chat', () => {
     expect(codes).toEqual(['all:\n\tgo test ./...', 'func f() {\n\treturn\n}', '\tx']);
     expect(r.container.querySelectorAll('.md-lang')[1].textContent).toBe('go');
     let copied = '';
+    // The clipboard is put back as it was, so no later test sees this one.
+    const own = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: (t: string) => { copied = t; } }, configurable: true });
-    await click(r.container.querySelector('.md-code button[aria-label="Copy"]'));
+    try {
+      await click(r.container.querySelector('.md-code button[aria-label="Copy"]'));
+    } finally {
+      if (own) Object.defineProperty(navigator, 'clipboard', own);
+      else delete (navigator as { clipboard?: unknown }).clipboard;
+    }
     expect(copied).toBe('all:\n\tgo test ./...');
+    expect(Object.getOwnPropertyDescriptor(navigator, 'clipboard')).toEqual(own);
     r.unmount();
   });
 
@@ -217,7 +261,7 @@ describe('Markdown: the agent reply in the chat', () => {
     const ps = r.container.querySelectorAll('p');
     expect(ps).toHaveLength(2);
     expect(ps[0].querySelectorAll('br')).toHaveLength(1);
-    expect(ps[0].textContent).toBe('onetwo');
+    expect(ps[0].innerHTML).toBe('one<br>two');
     expect(ps[1].textContent).toBe('three *not* em');
     expect(r.container.querySelector('em')).toBeNull();
     r.unmount();

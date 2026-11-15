@@ -106,7 +106,7 @@ export function connectView(data: Partial<ConnectView>): ConnectView {
   };
 }
 
-// Uses the client API (docs/CLIENT_API.md in the AgentBus repository).
+// Uses the client API, as its OpenAPI description (/api/v0/openapi.json) says.
 export class LiveDataSource implements DataSource {
   private baseUrl: string;
   private token?: string;
@@ -437,7 +437,7 @@ export class LiveDataSource implements DataSource {
     if (!res.ok) throw Object.assign(new Error(await apiError(res)), { status: res.status });
     // Never '*' in its place: that would overwrite a change made elsewhere.
     const tag = res.headers.get('ETag');
-    if (!tag) throw new Error('agentbus sent no ETag (an older control, or a proxy that drops it)');
+    if (!tag) throw new Error('agentbus sent no ETag (an older AgentBus, or a proxy that drops it)');
     return { value: await res.json(), etag: tag };
   }
 
@@ -490,7 +490,7 @@ export class LiveDataSource implements DataSource {
         // Not JSON.
       }
       // A 404 with no words of the API's own is a control without the route.
-      if (!words && res.status === 404) words = `This control cannot list your config: ${text.trim() || 'agentbus answered 404'}`;
+      if (!words && res.status === 404) words = `This AgentBus cannot list your config: ${text.trim() || 'agentbus answered 404'}`;
       throw Object.assign(new Error(words || text.trim() || `agentbus answered ${res.status}`), { status: res.status });
     }
     const body = (await res.json()) as { files?: FoundPath[] };

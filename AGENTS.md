@@ -36,8 +36,8 @@ with no console errors. Open it in a browser and look before saying it works.
 - **Screens get data through one interface**, `DataSource` in `src/types.ts`. Screens never know
   which implementation they have.
 - **The live source** (`src/data/LiveDataSource.ts`) uses the AgentBus client API and nothing else.
-  It never reads the service's store or files. The contract is `docs/CLIENT_API.md` in the AgentBus
-  repository, and a running service serves its OpenAPI description at `/api/v0/openapi.json`. If a
+  It never reads the service's store or files. The contract is the OpenAPI description a running
+  service generates and serves at `/api/v0/openapi.json` (and as a page at `/docs`). If a
   screen needs data the API does not offer, ask for it in the AgentBus repository. Do not work
   around it here.
 - **The replay source** (`src/data/ReplayDataSource.ts`) reads a recorded `.jsonl` file. Adding
@@ -50,7 +50,7 @@ with no console errors. Open it in a browser and look before saying it works.
   entered.
 - **One API, one address, one token.** The turn queue and reviews come from the same agentbus API
   as sessions (`src/data/jobs.ts`). Every action is on a turn: start, stop, review, diff, apply.
-  Its contract is agentbus's `docs/CLIENT_API.md`. The cockpit probes `GET /api/v0/turns`; a 404
+  Its contract is the same OpenAPI description. The cockpit probes `GET /api/v0/turns`; a 404
   there means no queue, and the cockpit then shows no Review and no CI/CD. A service with the
   turns API but no queue answers a review with 404, and the bar shows its words.
 

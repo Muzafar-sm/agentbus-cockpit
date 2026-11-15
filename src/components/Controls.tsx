@@ -159,6 +159,17 @@ export const Select: React.FC<{
       if (usable(active)) pick(options[active].value);
     } else if (e.key === 'Tab' && open) {
       setOpen(false);
+    } else if (open && e.key.length === 1 && /\S/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // A letter goes to the next option whose label starts with it.
+      const k = e.key.toLowerCase();
+      for (let n = 1; n <= options.length; n++) {
+        const i = (active + n + options.length) % options.length;
+        if (usable(i) && (typeof options[i].label === 'string' ? (options[i].label as string) : options[i].value).trim().toLowerCase().startsWith(k)) {
+          e.preventDefault();
+          setActive(i);
+          break;
+        }
+      }
     }
   };
 
@@ -260,6 +271,13 @@ export const Combo: React.FC<{
             picked.current = false;
             return;
           }
+          setTyped(false);
+          setOpen(true);
+        }}
+        // A click on the field opens the list again after Escape or a pick
+        // closed it; focus alone does not come again then.
+        onClick={() => {
+          if (open || disabled) return;
           setTyped(false);
           setOpen(true);
         }}

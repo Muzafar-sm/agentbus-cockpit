@@ -13,4 +13,14 @@ describe('turn header line', () => {
     expect(css).toMatch(/\.tb-h \.sep\s*\{[^}]*white-space:\s*nowrap/);
     expect(css).not.toMatch(/\.tb-h \.sep[^{]*\{[^}]*white-space:\s*pre/);
   });
+
+  it('a panel header\'s prompt preview shrinks with an ellipsis, in the turn and the call panel alike', () => {
+    const css = readFileSync(new URL('../styles/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css).toMatch(/#p-head \.colhead-title > \.ph-t\s*\{[^}]*min-width:\s*0[^}]*text-overflow:\s*ellipsis/);
+    for (const f of ['RightPanel', 'CallPanel']) {
+      const src = readFileSync(new URL(`../components/${f}.tsx`, import.meta.url), 'utf8');
+      expect(src, f).toMatch(/<span className="ph-n">/);
+      expect(src, f).toMatch(/<span className="ch-sub ph-t">/);
+    }
+  });
 });

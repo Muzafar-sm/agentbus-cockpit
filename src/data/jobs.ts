@@ -3,8 +3,8 @@ import { STATE } from '../words';
 // one token. Every action is on a turn. A prompt is POST /api/v0/turns, which
 // names the turn at once, even while it waits. A turn that ended can be
 // reviewed by another agent: the review is a turn too, of kind review, in a
-// session of its own. A queued or running turn can be stopped. The agentbus
-// docs/CLIENT_API.md is the contract.
+// session of its own. A queued or running turn can be stopped. agentbus's
+// OpenAPI description (/api/v0/openapi.json) is the contract.
 
 import { Usage } from '../types';
 import type { ApiOrigin } from './turns';

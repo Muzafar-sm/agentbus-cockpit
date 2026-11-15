@@ -135,7 +135,7 @@ describe('the settings routes', () => {
     expect((await src.getInstructions()).value).toBe('hi');
     // No ETag is an error, never a write that overwrites whatever is there.
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(policy()), { status: 200 })));
-    await expect(src.getPolicy()).rejects.toThrow('no ETag');
+    await expect(src.getPolicy()).rejects.toThrow('agentbus sent no ETag (an older AgentBus, or a proxy that drops it)');
     vi.unstubAllGlobals();
   });
 });
@@ -172,6 +172,33 @@ describe('the Settings page', () => {
     const { container: none } = await render(<SettingsPage api={api} onBack={() => {}} />);
     await flush();
     expect(none.querySelector('[data-part="subscriptions"]')).toBeNull();
+  });
+
+  it('a failed read of the subscriptions says why and reads again on Read again', async () => {
+    const { api } = fakeApi();
+    const subs = {
+      list: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('agentbus answered 502'))
+        .mockResolvedValue({ subscriptions: [{ harness: 'claude', connected: false, expired: false }] }),
+      connect: vi.fn(),
+      get: vi.fn(),
+      input: vi.fn(),
+    };
+    const { container } = await render(<SettingsPage api={api} onBack={() => {}} subscriptions={subs} />);
+    await flush();
+    await click(container.querySelector('[data-part="subscriptions"]'));
+    await flush();
+    expect(container.textContent).toContain('agentbus answered 502');
+    expect(container.querySelector('.connect-step')).toBeNull();
+    expect(subs.list).toHaveBeenCalledTimes(1);
+    await click(button(container, 'Read again'));
+    await flush();
+    await flush();
+    // Read again, then each Connect step reads its own row.
+    expect(subs.list.mock.calls.length).toBeGreaterThan(1);
+    expect(container.textContent).not.toContain('agentbus answered 502');
+    expect([...container.querySelectorAll('.connect-step')].map((s) => s.getAttribute('data-harness'))).toEqual(['claude']);
   });
 
   it('shows no versions, only when the settings last changed', async () => {
@@ -395,6 +422,43 @@ describe('the Settings page', () => {
     expect(container.textContent).toContain('Last changed');
   });
 
+  it('a draft kept across another part\'s save never writes back what that save changed', async () => {
+    const { api, state } = fakeApi();
+    const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
+    await flush();
+    // An Advanced draft, then a Permissions save under it.
+    await pick(container, '[data-part="advanced"]');
+    await setValue(container.querySelector('textarea[name="policy"]'), JSON.stringify({ ...policy(), forbid: ['git push', 'rm'] }));
+    await pick(container, '[data-part="permissions"]');
+    await click(sw(container, 'agent_api.apply'));
+    await click(button(container, 'Save permissions'));
+    await flush();
+    expect(state.policy.agent_api?.apply).toBe(true);
+    await pick(container, '[data-part="advanced"]');
+    expect((container.querySelector('textarea[name="policy"]') as HTMLTextAreaElement).value).toContain('"rm"');
+    await click(button(container, 'Save policy'));
+    await flush();
+    // Only what was edited in Advanced: the apply switch saved before stays on.
+    expect(api.patchPolicy).toHaveBeenLastCalledWith({ forbid: ['git push', 'rm'] }, expect.any(String));
+    expect(state.policy.agent_api?.apply).toBe(true);
+    expect(state.policy.forbid).toEqual(['git push', 'rm']);
+    // A group draft, then an Advanced save of another key in that group.
+    await pick(container, '[data-part="isolation"]');
+    await setValue(container.querySelector('textarea[name="allow"]'), 'go test');
+    await pick(container, '[data-part="advanced"]');
+    await setValue(container.querySelector('textarea[name="policy"]'), JSON.stringify({ ...state.policy, forbid: ['x'] }));
+    await click(button(container, 'Save policy'));
+    await flush();
+    expect(state.policy.forbid).toEqual(['x']);
+    await pick(container, '[data-part="isolation"]');
+    expect((container.querySelector('textarea[name="allow"]') as HTMLTextAreaElement).value).toBe('go test');
+    expect((container.querySelector('textarea[name="forbid"]') as HTMLTextAreaElement).value).toBe('x');
+    await click(button(container, 'Save isolation'));
+    await flush();
+    expect(api.patchPolicy).toHaveBeenLastCalledWith({ allow: ['go test'] }, expect.any(String));
+    expect(state.policy.forbid).toEqual(['x']);
+  });
+
   it('shows which parts hold unsaved changes, and opens Save only then', async () => {
     const { api } = fakeApi();
     const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
@@ -463,9 +527,17 @@ describe('the Settings page', () => {
     });
     expect(window.location.pathname).toBe('/settings');
     expect(ask()).not.toBeNull();
+    const entries = window.history.length;
     await click([...ask()!.querySelectorAll('button')].find((x) => x.textContent === 'Leave without saving')!);
+    // Leaving goes back to where Back went (the browser's move ends in a
+    // later task), adding no entry of its own.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
     expect(container.querySelector('#cockpit-shown')).not.toBeNull();
     expect(window.location.pathname).toBe('/');
+    expect(window.history.length).toBe(entries);
+    expect(ask()).toBeNull();
     // Gone from the page, the guard is gone too.
     const later = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(later);
@@ -596,11 +668,11 @@ describe('the Settings page', () => {
 
     it("shows the API's words when it fails, and changes nothing", async () => {
       const { container, area } = await open(async () => {
-        throw new Error('This control cannot list your config: 404 page not found');
+        throw new Error('This AgentBus cannot list your config: 404 page not found');
       }, ['~/.aws/config']);
       await click(button(container, 'Use my config'));
       await flush();
-      expect(container.querySelector('.pg-find .form-error')!.textContent).toBe('This control cannot list your config: 404 page not found');
+      expect(container.querySelector('.pg-find .form-error')!.textContent).toBe('This AgentBus cannot list your config: 404 page not found');
       expect(area().value).toBe('~/.aws/config');
       expect(container.querySelector('[data-part="config"]')!.textContent).not.toContain('Unsaved');
     });
@@ -647,7 +719,7 @@ describe('the Settings page', () => {
       await expect(src.findConfig()).rejects.toThrow(/^the runner is offline$/);
       // An older control without the route.
       serve([up], () => new Response('404 page not found\n', { status: 404 }));
-      await expect(src.findConfig()).rejects.toThrow('This control cannot list your config: 404 page not found');
+      await expect(src.findConfig()).rejects.toThrow('This AgentBus cannot list your config: 404 page not found');
       vi.unstubAllGlobals();
     });
   });
@@ -778,7 +850,7 @@ describe('the sandbox switch offers only what the machines can build', () => {
     // Before the first read, and when the read failed.
     expect(sandboxOffer(undefined)).toEqual({ can: false, why: 'Reading which machines can build it…' });
     expect(sandboxOffer(undefined, 'agentbus answered 500')).toEqual({ can: false, why: 'The machines could not be read: agentbus answered 500' });
-    expect(sandboxOffer(null).can).toBe(false);
+    expect(sandboxOffer(null)).toEqual({ can: false, why: 'This AgentBus does not list its machines, so none reports it can.' });
     // A read that fails after one that worked keeps the machines it read.
     expect(sandboxOffer([machine('mac', { sandbox: { can: true } })], 'agentbus answered 500').can).toBe(true);
   });

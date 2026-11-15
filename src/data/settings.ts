@@ -158,7 +158,7 @@ export function sandboxOffer(runners: RunnerInfo[] | null | undefined, error?: s
   if (runners === undefined) {
     return { can: false, why: error ? `The machines could not be read: ${error}` : 'Reading which machines can build it…' };
   }
-  if (runners === null) return { can: false, why: 'This control does not list its machines, so none reports it can.' };
+  if (runners === null) return { can: false, why: 'This AgentBus does not list its machines, so none reports it can.' };
   // A connector from before 0.5 takes no work, so it runs no session.
   const online = runners.filter((r) => r.online && r.role !== 'connector');
   const can = online.filter((r) => r.sandbox?.can);

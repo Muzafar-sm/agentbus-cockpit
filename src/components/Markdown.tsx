@@ -96,7 +96,12 @@ function interrupts(lines: string[], i: number): boolean {
   return FENCE.test(l) || HEADING.test(l) || RULE.test(l) || QUOTE.test(l) || itemInterrupts(l) || tableStarts(lines, i);
 }
 
-function parseBlocks(src: string): Block[] {
+// How deep quotes and lists nest before the rest is shown as text: a reply
+// of thousands of '>' would otherwise run out of stack.
+const MAX_NEST = 32;
+
+function parseBlocks(src: string, depth = 0): Block[] {
+  if (depth > MAX_NEST) return blank(src) ? [] : [{ t: 'p', text: src.trim() }];
   const lines = src.replace(/\r\n?/g, '\n').split('\n');
   const out: Block[] = [];
   let i = 0;
@@ -144,11 +149,13 @@ function parseBlocks(src: string): Block[] {
       const body: string[] = [];
       while (i < lines.length && !blank(lines[i])) {
         const q = lines[i].match(QUOTE);
-        // A line without '>' continues the quote's paragraph.
+        // A line without '>' continues the quote's paragraph, unless it
+        // starts a block of its own (a list item, a heading, a fence).
+        if (!q && interrupts(lines, i)) break;
         body.push(q ? q[1] : lines[i]);
         i++;
       }
-      out.push({ t: 'quote', blocks: parseBlocks(body.join('\n')) });
+      out.push({ t: 'quote', blocks: parseBlocks(body.join('\n'), depth + 1) });
       continue;
     }
 
@@ -190,7 +197,7 @@ function parseBlocks(src: string): Block[] {
           break;
         }
         while (body.length > 0 && blank(body[body.length - 1])) body.pop();
-        items.push(parseBlocks(body.join('\n')));
+        items.push(parseBlocks(body.join('\n'), depth + 1));
         // A blank line between two items makes the list loose.
         if (sawBlank && i < lines.length && lines[i].match(ITEM) && kind(lines[i].match(ITEM)!) === kind(first)) tight = false;
       }
@@ -276,9 +283,14 @@ function closeDelim(s: string, from: number, delim: string): number {
     }
     if (s.startsWith(delim, j) && j > from && !/\s/.test(s[j - 1])) {
       const after = s[j + delim.length];
-      // A single * or _ must not be part of a longer run (that is bold).
+      // A single * or _ must not be part of a longer run (that is bold):
+      // neither the first mark of "**" nor its second.
       if (delim.length === 1 && after === delim) {
         j += 2;
+        continue;
+      }
+      if (delim.length === 1 && s[j - 1] === delim && s[j - 2] !== '\\') {
+        j++;
         continue;
       }
       // In a run of three, "**" closes at its last two marks.

@@ -79,6 +79,33 @@ describe('Select', () => {
     expect(outer).toHaveBeenCalledTimes(1);
   });
 
+  it('a letter moves to the next option it starts, past a disabled one, and wraps', async () => {
+    const r = await render(
+      <Select
+        name="z"
+        label="Z"
+        value="a"
+        options={[...OPTIONS, { value: 'd', label: 'Gold' }, { value: 'e', label: 'beta two' }]}
+        onChange={() => {}}
+      />
+    );
+    const sel = selectIn(r.container, 'z')!;
+    await click(sel);
+    const act_ = () => menu()!.querySelector('.act')!.textContent;
+    await key(sel, 'g');
+    expect(act_()).toContain('Gamma');
+    await key(sel, 'G');
+    expect(act_()).toContain('Gold');
+    await key(sel, 'g');
+    expect(act_()).toContain('Gamma');
+    // Beta is disabled: b goes to "beta two".
+    await key(sel, 'b');
+    expect(act_()).toContain('beta two');
+    // No option starts with q: the active one stays.
+    await key(sel, 'q');
+    expect(act_()).toContain('beta two');
+  });
+
   it('closes on a click outside, and a disabled one does not open', async () => {
     const r = await render(
       <>
@@ -132,6 +159,27 @@ describe('Combo, Switch and Button', () => {
     await key(input, 'Enter');
     expect(input.value).toBe('haiku');
     expect(menu()).toBeNull();
+  });
+
+  it('Combo opens again on a click after Escape closed it', async () => {
+    const Box: React.FC = () => {
+      const [v, setV] = useState('');
+      return <Combo name="m" label="Model" value={v} onChange={setV} suggestions={['sonnet', 'opus', 'haiku']} />;
+    };
+    const r = await render(<Box />);
+    const input = r.container.querySelector('input[name="m"]') as HTMLInputElement;
+    await act(async () => input.focus());
+    expect(menu()).not.toBeNull();
+    await key(input, 'Escape');
+    expect(menu()).toBeNull();
+    // Still focused, so no focus event comes: the click alone opens it.
+    await click(input);
+    expect(menu()).not.toBeNull();
+    // A pick closes it, and a click after that opens it again too.
+    await click(menu()!.querySelector('[data-value="opus"]'));
+    expect(menu()).toBeNull();
+    await click(input);
+    expect([...menu()!.querySelectorAll('[role="option"]')].map((o) => o.getAttribute('data-value'))).toEqual(['sonnet', 'opus', 'haiku']);
   });
 
   it('Switch says its state and flips on a click', async () => {

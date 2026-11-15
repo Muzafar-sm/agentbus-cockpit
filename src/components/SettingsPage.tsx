@@ -222,6 +222,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const [policyText, setPolicyText] = useState("");
+  // The policy the Advanced draft was made from. A save of another part
+  // reads a newer policy but keeps an unsaved Advanced draft; the draft's
+  // change is what the person edited against this, never a revert of that
+  // save.
+  const [advancedBase, setAdvancedBase] = useState<Policy | null>(null);
+  // The flat policy of the last read: a kept group's untouched controls
+  // follow a newer read, so they write nothing back.
+  const lastRead = useRef<Record<string, unknown>>({});
   const [instructions, setInstructions] = useState("");
   // Which part is saving, and what the last save said.
   const [busy, setBusy] = useState<string | null>(null);
@@ -247,15 +255,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
       }));
       if (policy) {
         const flat = flatPolicy(policy.value);
+        const before = lastRead.current;
+        lastRead.current = flat;
         setDraft((cur) => {
           const next: Draft = { ...cur };
           for (const g of GROUPS) {
-            if (keep(g.id)) continue;
-            for (const c of g.controls) next[c.key] = draftOf(c, flat[c.key]);
+            const kept = keep(g.id);
+            for (const c of g.controls) {
+              if (kept && c.key in cur && cur[c.key] !== draftOf(c, before[c.key])) continue;
+              next[c.key] = draftOf(c, flat[c.key]);
+            }
           }
           return next;
         });
-        if (!keep("advanced")) setPolicyText(json(policy.value));
+        if (!keep("advanced")) {
+          setPolicyText(json(policy.value));
+          setAdvancedBase(policy.value);
+        }
       }
       if (ins && !keep("instructions")) setInstructions(ins.value);
     },
@@ -350,10 +366,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
       setMessage({ part: "advanced", text: "The policy must be one JSON object.", ok: false });
       return;
     }
-    const change = changeOf(loaded.policy.value, p);
+    const change = changeOf(advancedBase ?? loaded.policy.value, p);
     if (isEmpty(change)) {
       setMessage({ part: "advanced", text: "Nothing changed. A key left out keeps its value.", ok: true });
       setPolicyText(json(loaded.policy.value));
+      setAdvancedBase(loaded.policy.value);
       return;
     }
     save("advanced", () => api.patchPolicy(change, loaded.policy.etag), { policy: true, instructions: false });
@@ -368,7 +385,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, sandbox
     const { change, errors } = groupChange(g);
     dirty[g.id] = !!loaded && (Object.keys(change).length > 0 || Object.keys(errors).length > 0);
   }
-  dirty.advanced = !!loaded && policyText !== json(loaded.policy.value);
+  dirty.advanced = !!loaded && policyText !== json(advancedBase ?? loaded.policy.value);
   dirty.instructions = !!loaded && instructions !== loaded.instructions.value;
   // Each connect is done at once, so nothing waits to be saved.
   dirty.subscriptions = false;
@@ -797,8 +814,12 @@ const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 const SubscriptionsPart: React.FC<{ api: SubscriptionApi }> = ({ api }) => {
   const [list, setList] = useState<SubscriptionList | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  // Read again after a failed read.
+  const [reads, setReads] = useState(0);
   useEffect(() => {
     let alive = true;
+    setError(null);
+    setList(undefined);
     api.list().then(
       (l) => alive && setList(l),
       (e: Error) => alive && setError(e.message),
@@ -806,8 +827,16 @@ const SubscriptionsPart: React.FC<{ api: SubscriptionApi }> = ({ api }) => {
     return () => {
       alive = false;
     };
-  }, [api]);
-  if (error) return <Notice kind="error">{error}</Notice>;
+  }, [api, reads]);
+  if (error)
+    return (
+      <Notice kind="error">
+        {error}{" "}
+        <Button kind="link" onClick={() => setReads((n) => n + 1)}>
+          Read again
+        </Button>
+      </Notice>
+    );
   if (list === undefined) return <Loading />;
   if (list === null) return <div className="nd-note">This service keeps no subscriptions.</div>;
   return (

@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 // list row that left out the shared class, a yes/no drawn as a select.
 
 // Read from disk: the test runner gives a stylesheet no text of its own.
-const css = ['base.css', 'app.css'].map((f) => readFileSync(new URL(`../styles/${f}`, import.meta.url), 'utf8')).join('\n');
+const css = ['base.css', 'app.css', 'markdown.css', 'narrow.css'].map((f) => readFileSync(new URL(`../styles/${f}`, import.meta.url), 'utf8')).join('\n');
 const tsx = import.meta.glob(['../components/*.tsx', '../*.tsx'], { query: '?raw', import: 'default', eager: true }) as Record<
   string,
   string

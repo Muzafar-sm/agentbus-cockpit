@@ -37,13 +37,23 @@ export function usePage(): [Page, (to: Page) => void] {
   const shown = useRef(page);
   shown.current = page;
   useEffect(() => {
+    // Set while a held Back is let go: the browser goes back once more, to
+    // where Back went, and that move needs no asking.
+    let leaving = false;
     const onPop = () => {
       const to = pageOf(window.location.pathname);
+      if (leaving) {
+        leaving = false;
+        setPage(to);
+        return;
+      }
       if (to !== shown.current && guard) {
+        // The page stays: its address goes back on, as one entry after the
+        // one Back went to. Leaving goes back over it, adding none.
         window.history.pushState(null, '', PAGE_PATHS[shown.current]);
         guard(() => {
-          window.history.pushState(null, '', PAGE_PATHS[to]);
-          setPage(to);
+          leaving = true;
+          window.history.back();
         });
         return;
       }

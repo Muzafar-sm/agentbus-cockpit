@@ -49,8 +49,10 @@ export const CallPanel: React.FC<CallPanelProps> = ({ turn, call, tab, onTab, on
         onLevel={onLevel}
         onClose={onClose}
       >
-        Call {call.number} of {turn.detail?.modelCalls.length ?? call.number}
-        <span className="ch-sub">{prompt}</span>
+        <span className="ph-n">
+          Call {call.number} of {turn.detail?.modelCalls.length ?? call.number}
+        </span>
+        <span className="ch-sub ph-t">{prompt}</span>
       </PanelHead>
 
       <div id="d-head">
