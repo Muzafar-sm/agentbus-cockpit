@@ -1203,6 +1203,10 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         actions={runnerActions}
         queue={queueView ? { turns: queueView.turns, error: queueView.error } : undefined}
         onBack={() => goPage('cockpit')}
+        onRunners={loadRunners ? () => goPage('runners') : undefined}
+        onSettings={settingsApi ? openSettings : undefined}
+        runnersOnline={runnersOnline}
+        version={version ? versionLabel(version) : undefined}
       />
     );
   }
@@ -1211,6 +1215,10 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
       <SettingsPage
         api={settingsApi!}
         onBack={() => goPage('cockpit')}
+        onRunners={loadRunners ? () => goPage('runners') : undefined}
+        onSettings={settingsApi ? openSettings : undefined}
+        runnersOnline={runnersOnline}
+        version={version ? versionLabel(version) : undefined}
         sandbox={loadRunners ? sandboxOffer(runners.runners, runners.error) : undefined}
         subscriptions={subscriptionApi}
         atSubscriptions={settingsAtSubs}

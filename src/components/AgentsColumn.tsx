@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { follow, PAGE_PATHS } from '../page';
 import { SavedAgent, SubscriptionList } from '../types';
-import { FeedbackDialog } from './FeedbackDialog';
+import { FootNav } from './FootNav';
 import { PlusIcon } from './Icons';
 import { PlanUsage, usageOf } from './PlanUsage';
 import { SignInDot, signInOf } from './SignInDot';
@@ -67,7 +66,6 @@ export const AgentsColumn: React.FC<AgentsColumnProps> = ({
   // The agent whose Remove asks first, as every remove does; its answer and
   // any refusal show in the confirm.
   const [removing, setRemoving] = useState<SavedAgent | null>(null);
-  const [feedback, setFeedback] = useState(false);
 
   return (
     <aside id="agents">
@@ -149,29 +147,10 @@ export const AgentsColumn: React.FC<AgentsColumnProps> = ({
           the cockpit's own pages, then the AgentBus this cockpit reads, as one
           card: its name, its build, a live dot and where the data comes from. */}
       <div className="brand-foot">
-        {/* Quiet links to the cockpit's own pages, each at its address, and
+        {/* One foot nav list, the same on the cockpit and on every page: the
+            cockpit's own pages as equal rows (the current one left out), then
             Feedback, which opens a small box rather than a page. */}
-        <nav className="side-links" aria-label="Pages">
-          {onRunners && (
-            <a className="side-link" href={PAGE_PATHS.runners} onClick={follow(onRunners)}>
-              <span>Runners</span>
-              {runnersOnline !== undefined && (
-                <span className="sl-n" title="online">
-                  {runnersOnline}
-                </span>
-              )}
-            </a>
-          )}
-          {onSettings && (
-            <a className="side-link" href={PAGE_PATHS.settings} onClick={follow(onSettings)}>
-              <span>Settings</span>
-            </a>
-          )}
-          <button type="button" className="side-link feedback-link" onClick={() => setFeedback(true)}>
-            <span>Feedback</span>
-          </button>
-        </nav>
-        {feedback && <FeedbackDialog version={version} onClose={() => setFeedback(false)} />}
+        <FootNav current="cockpit" onRunners={onRunners} onSettings={onSettings} runnersOnline={runnersOnline} version={version} />
         <div className="bus-card">
           <span className="bc-row">
             <b className="brand">

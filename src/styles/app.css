@@ -819,6 +819,8 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .pg-body { padding: 1.2rem 1.6rem 1.6rem; gap: 0; }
 .pg-body > * { flex: none; }
 .pg-foot { flex: none; margin: 0; padding: 0.8rem 1.2rem 1rem; font-size: var(--fs-xs); line-height: 1.45; color: var(--ink3); border-top: 1px solid var(--line); }
+/* The one foot nav sits below the page's note; a small gap when a note is there. */
+.pg-foot .side-links { margin-top: 0.5rem; }
 .pg-foot code { font-size: var(--fs-xs); }
 
 /* The list rows: a name with a count, a quiet line under it; the picked one has the shared .pick look. */

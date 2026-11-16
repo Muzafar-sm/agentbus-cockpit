@@ -1,10 +1,19 @@
 import React from 'react';
-import { buttonClass } from './Controls';
-import { follow, PAGE_PATHS } from '../page';
+import { FootNav } from './FootNav';
+import type { Page } from '../page';
 
 interface PageFrameProps {
   title: string;
+  // current is the page this frame is, so the foot nav leaves its row out.
+  // onBack is the Cockpit row, the way back. onRunners and onSettings open the
+  // sibling pages, absent when the source does not have them; runnersOnline and
+  // version feed the nav's Runners count and its Feedback box.
+  current: Page;
   onBack: () => void;
+  onRunners?: () => void;
+  onSettings?: () => void;
+  runnersOnline?: number;
+  version?: string;
   // The left column: the list to pick from, and a quiet note at its foot.
   list: React.ReactNode;
   foot?: React.ReactNode;
@@ -14,20 +23,39 @@ interface PageFrameProps {
 }
 
 // PageFrame is a page of its own beside the cockpit, in the mockup's three
-// columns: a list with the page's title and a "Cockpit" link back, then what
-// was picked, then its detail. Each column scrolls on its own.
-export const PageFrame: React.FC<PageFrameProps> = ({ title, onBack, list, foot, main, side }) => (
+// columns: a list with the page's title, then what was picked, then its detail.
+// Each column scrolls on its own. The way back to the cockpit is the Cockpit row
+// in the one foot nav (FootNav), the same list the cockpit shows.
+export const PageFrame: React.FC<PageFrameProps> = ({
+  title,
+  current,
+  onBack,
+  onRunners,
+  onSettings,
+  runnersOnline,
+  version,
+  list,
+  foot,
+  main,
+  side,
+}) => (
   <div id="page" className="page" aria-label={title}>
     <aside className="pg-list">
       <header className="colhead">
         <h1 className="colhead-title">{title}</h1>
-        <a className={buttonClass('quiet', false, 'page-back')} href={PAGE_PATHS.cockpit} onClick={follow(onBack)}>
-          <BackIcon />
-          Cockpit
-        </a>
       </header>
       <div className="colbody">{list}</div>
-      {foot && <div className="pg-foot">{foot}</div>}
+      <div className="pg-foot">
+        {foot}
+        <FootNav
+          current={current}
+          onCockpit={onBack}
+          onRunners={onRunners}
+          onSettings={onSettings}
+          runnersOnline={runnersOnline}
+          version={version}
+        />
+      </div>
     </aside>
     <main className="pg-main">{main}</main>
     <section className="pg-side">{side}</section>
@@ -50,8 +78,3 @@ export const ColHead: React.FC<{ title: React.ReactNode; sub?: React.ReactNode; 
   </header>
 );
 
-const BackIcon: React.FC = () => (
-  <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M10 4L6 8l4 4" />
-  </svg>
-);
