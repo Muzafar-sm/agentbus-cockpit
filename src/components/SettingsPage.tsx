@@ -39,6 +39,11 @@ interface SettingsPageProps {
   onSettings?: () => void;
   runnersOnline?: number;
   version?: string;
+  // The AgentBus card at the foot, the same as the cockpit's.
+  sourceLabel?: string;
+  streamUp?: boolean;
+  onDisconnect?: () => void;
+  disconnectLabel?: string;
   // Whether this setup can honour the sandbox switch, from the machines'
   // own reports (sandboxOffer). Absent: the switch is offered as it is.
   sandbox?: SandboxOffer;
@@ -222,7 +227,7 @@ function valueOf(c: Control, d: string | boolean): { v: unknown } | { error: str
 const json = (p: Policy) => JSON.stringify(p, null, 2);
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, onRunners, onSettings, runnersOnline, version, sandbox, subscriptions, atSubscriptions }) => {
+export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, onRunners, onSettings, runnersOnline, version, sourceLabel, streamUp, onDisconnect, disconnectLabel, sandbox, subscriptions, atSubscriptions }) => {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // The drafts, reset from what was read.
@@ -788,18 +793,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, onRunne
     <PageFrame
       title="Settings"
       current="settings"
+      subtitle={info?.changed ? `Last changed ${new Date(info.changed).toLocaleString()}` : undefined}
       onBack={onBack}
       onRunners={onRunners}
       onSettings={onSettings}
       runnersOnline={runnersOnline}
       version={version}
+      sourceLabel={sourceLabel}
+      streamUp={streamUp}
+      onDisconnect={onDisconnect}
+      disconnectLabel={disconnectLabel}
       list={list}
-      foot={
-        <>
-          One set for every machine. Each part saves on its own.
-          {info?.changed && <> Last changed {new Date(info.changed).toLocaleString()}.</>}
-        </>
-      }
       main={main}
       side={side}
     />

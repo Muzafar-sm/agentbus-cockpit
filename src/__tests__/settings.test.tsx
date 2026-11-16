@@ -207,12 +207,12 @@ describe('the Settings page', () => {
     expect([...container.querySelectorAll('.connect-step')].map((s) => s.getAttribute('data-harness'))).toEqual(['claude']);
   });
 
-  it('shows no versions, only when the settings last changed', async () => {
+  it('shows no versions, but when the settings last changed in the header', async () => {
     const { api } = fakeApi({ version: 3, changed: '2026-11-12T09:00:00Z' });
     const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
     await flush();
     const text = container.textContent ?? '';
-    expect(text).toContain(`Last changed ${new Date('2026-11-12T09:00:00Z').toLocaleString()}.`);
+    expect(text).toContain(`Last changed ${new Date('2026-11-12T09:00:00Z').toLocaleString()}`);
     expect(text).not.toMatch(/[Vv]ersion/);
     expect(text).not.toContain('Defaults');
   });
@@ -426,7 +426,7 @@ describe('the Settings page', () => {
     await pick(container, '[data-part="isolation"]');
     expect((container.querySelector('textarea[name="network.allow"]') as HTMLTextAreaElement).value).toBe('github.com');
     expect(state.policy.network?.allow).toEqual([]);
-    // The page read the state again: it shows when the settings changed.
+    // The page read the state again: the header shows when the settings changed.
     expect(container.textContent).toContain('Last changed');
   });
 
