@@ -547,6 +547,12 @@ export interface HeldApproval {
 // answered or is being answered (HTTP 409 or 404): the card should step aside.
 export const ApprovalGone = 'approval-gone';
 
+// ApprovalDecision is how a person answers a card: once lets the commands run
+// this continuation turn only and writes nothing to the settings; always moves
+// the matched command to the allow list, from now on; refuse records the
+// decision only.
+export type ApprovalDecision = 'once' | 'always' | 'refuse';
+
 export interface DataSource {
   getSessions(): Promise<SessionSummary[]>;
   // The sessions with the cursor they were taken at. A source without it is
@@ -585,10 +591,11 @@ export interface DataSource {
   // ask entry of permissions.toml, so the gateway refused it and recorded it.
   // null when the service has no such route.
   listApprovals?(): Promise<HeldApproval[] | null>;
-  // Answer one (POST /api/v0/approvals/<id>): allow moves it to the allow list
-  // and continues the session; refuse records the decision. Rejects with
-  // ApprovalGone when another answer already took it (409).
-  decideApproval?(id: string, allow: boolean): Promise<void>;
+  // Answer one (POST /api/v0/approvals/<id>): once runs the commands this
+  // continuation turn only (settings unchanged); always moves the matched
+  // command to the allow list and continues; refuse records the decision.
+  // Rejects with ApprovalGone when another answer already took it (409).
+  decideApproval?(id: string, decision: ApprovalDecision): Promise<void>;
   // GET /api/v0/version: which build the service is. Read once.
   getVersion?(): Promise<VersionInfo>;
   listAgents?(): Promise<SavedAgent[]>;

@@ -1,26 +1,27 @@
 import React, { useState } from 'react';
-import { HeldApproval, ApprovalGone } from '../types';
+import { HeldApproval, ApprovalGone, ApprovalDecision } from '../types';
 import { harnessName } from '../words';
 import { Notice } from './Notice';
 
-// One card for a command an agent wanted to run that matched an ask entry of
-// permissions.toml: the gateway refused it and is waiting for a person. Allow
-// means "allow from now on" (it moves to the allow list and the session
-// continues so the agent can run it); Refuse records the decision. When another
+// One card for a command an agent wanted to run that the gateway held for a
+// person: a command on the ask list, or one on none of the lists under the ask
+// default. Allow once lets exactly these commands run for the continuation turn
+// only, writing nothing to the settings; Always allow moves the matched command
+// to the allow list, from now on; Refuse records the decision. When another
 // answer already took it (409), the card steps aside.
 export const ApprovalCard: React.FC<{
   approval: HeldApproval;
-  decide: (id: string, allow: boolean) => Promise<void>;
+  decide: (id: string, decision: ApprovalDecision) => Promise<void>;
 }> = ({ approval, decide }) => {
-  const [busy, setBusy] = useState<'' | 'allow' | 'refuse'>('');
+  const [busy, setBusy] = useState<'' | ApprovalDecision>('');
   const [gone, setGone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const answer = async (allow: boolean) => {
-    setBusy(allow ? 'allow' : 'refuse');
+  const answer = async (decision: ApprovalDecision) => {
+    setBusy(decision);
     setError(null);
     try {
-      await decide(approval.id, allow);
+      await decide(approval.id, decision);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg === ApprovalGone) setGone(true);
@@ -50,14 +51,20 @@ export const ApprovalCard: React.FC<{
       </ul>
       {error && <Notice kind="error">{error}</Notice>}
       <div className="ask-card-actions">
-        <button type="button" className="ask-allow" disabled={busy !== ''} onClick={() => answer(true)}>
-          {busy === 'allow' ? '…' : 'Allow'}
+        <button type="button" className="ask-allow" disabled={busy !== ''} onClick={() => answer('once')}>
+          {busy === 'once' ? '…' : 'Allow once'}
         </button>
-        <button type="button" className="ask-refuse" disabled={busy !== ''} onClick={() => answer(false)}>
+        <button type="button" className="ask-always" disabled={busy !== ''} onClick={() => answer('always')}>
+          {busy === 'always' ? '…' : 'Always allow'}
+        </button>
+        <button type="button" className="ask-refuse" disabled={busy !== ''} onClick={() => answer('refuse')}>
           {busy === 'refuse' ? '…' : 'Refuse'}
         </button>
       </div>
-      <div className="ask-card-note">Allow runs it and allows it from now on. Refuse records the decision.</div>
+      <div className="ask-card-note">
+        Allow once runs it this turn only. Always allow adds it to the allow list, from now on. Refuse records the
+        decision.
+      </div>
     </div>
   );
 };
