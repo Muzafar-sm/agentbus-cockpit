@@ -47,6 +47,11 @@ function button(c: HTMLElement, text: string): HTMLButtonElement | undefined {
   return [...c.querySelectorAll('button')].find((b) => b.textContent?.trim() === text);
 }
 
+// The Cockpit row in the foot nav: the way back from a page, in place of the
+// old separate back link.
+const cockpitLink = (c: HTMLElement): HTMLElement | undefined =>
+  [...c.querySelectorAll('.side-link')].find((el) => el.textContent?.trim() === 'Cockpit') as HTMLElement | undefined;
+
 const sw = (c: HTMLElement, key: string) => c.querySelector(`button[name="${key}"]`) as HTMLButtonElement;
 
 // A settings API in memory, with versions as ETags, that refuses a stale one
@@ -504,7 +509,7 @@ describe('the Settings page', () => {
     // A link's click, as a browser sends it: cancelable, so the page keeps it.
     const back = () =>
       act(async () => {
-        container.querySelector('.page-back')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+        cockpitLink(container)!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
       });
     await click(sw(container, 'agent_api.apply'));
     // A reload or a closed tab asks through the browser.
@@ -568,7 +573,7 @@ describe('the Settings page', () => {
     });
     await click(button(container, 'Save permissions'));
     await act(async () => {
-      container.querySelector('.page-back')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+      cockpitLink(container)!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
     });
     expect(document.querySelector('[role="alertdialog"]')).not.toBeNull();
     await act(async () => release());
@@ -588,7 +593,7 @@ describe('the Settings page', () => {
     const { container } = await render(<Pages />);
     await flush();
     await act(async () => {
-      container.querySelector('.page-back')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+      cockpitLink(container)!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
     });
     expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     expect(container.querySelector('#cockpit-shown')).not.toBeNull();
