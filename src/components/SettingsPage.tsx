@@ -137,7 +137,7 @@ const GROUPS: Group[] = [
       { key: "allow", name: "Allow", head: "Commands", kind: { t: "list", placeholder: "go test", mono: true },
         line: "Commands agents may run without asking, one per line. Anything else is held for you (below)." },
       { key: "ask", name: "Ask", kind: { t: "list", placeholder: "git push", mono: true },
-        line: "Commands that wait for you: the agent is told to wait, and Allow lets it run them from then on." },
+        line: "Commands that wait for you: the agent is held, and you answer Allow once, Always allow or Refuse on the card." },
       { key: "forbid", name: "Refuse", kind: { t: "list", placeholder: "git push", mono: true },
         line: "Commands Claude Code and Codex may never run, one per line." },
       { key: "unlisted", name: "Anything else", kind: { t: "seg", options: [["ask", "Ask"], ["refuse", "Refuse"]] },

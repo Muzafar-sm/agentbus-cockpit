@@ -587,9 +587,9 @@ export interface DataSource {
   approveMachine?(id: string, code: string): Promise<void>;
   refuseMachine?(id: string): Promise<void>;
   removeRunner?(id: string): Promise<void>;
-  // The commands waiting for a person (GET /api/v0/approvals): an agent hit an
-  // ask entry of permissions.toml, so the gateway refused it and recorded it.
-  // null when the service has no such route.
+  // The commands waiting for a person (GET /api/v0/approvals): the gateway held
+  // a command on the ask list, or one on none of the lists under the ask
+  // default, and recorded it. null when the service has no such route.
   listApprovals?(): Promise<HeldApproval[] | null>;
   // Answer one (POST /api/v0/approvals/<id>): once runs the commands this
   // continuation turn only (settings unchanged); always moves the matched
