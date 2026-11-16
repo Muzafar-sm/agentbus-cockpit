@@ -19,6 +19,7 @@ import { formatDuration } from '../utils/format';
 import { commandsAfter } from '../data/shell';
 import { BackButton } from './BackButton';
 import { TOO_BIG } from './Changes';
+import { endTop, followsEnd, replyStartTop } from '../utils/autoscroll';
 
 interface ConvoColumnProps {
   session: SessionDetail;
@@ -311,15 +312,71 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
     }
   };
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  // Sending scrolls the session to its newest message, the one just sent.
+  // The scroll container of the chat (#c-msgs) and the content inside it
+  // (.c-in). The view follows the end of a streaming turn and repositions when
+  // it ends; the rules are in utils/autoscroll.
   const msgsRef = useRef<HTMLDivElement>(null);
-  const [sentTick, setSentTick] = useState(0);
+  const contentRef = useRef<HTMLDivElement>(null);
+  // Whether the view still follows the end. A scroll up by the person turns it
+  // off; a scroll back to the end turns it on. The code's own scrolls to the
+  // end land at the end, so they keep it on.
+  const followRef = useRef(true);
+  // Each turn's block, by turn id, so a turn that just ended can be brought to
+  // the top of the view.
+  const turnEls = useRef(new Map<string, HTMLDivElement>());
+
+  const scrollToEnd = () => {
+    const el = msgsRef.current;
+    if (!el) return;
+    el.scrollTop = endTop(el);
+  };
+  // Bring a turn's reply to the top of the view, its start first. Falls back to
+  // the whole turn block when the reply is not on screen (an error, no reply).
+  // The move is instant on purpose: an animation up from the end would, for its
+  // first stretch, still read as being at the end, and a content growth caught
+  // mid-animation would pin the view back to the bottom.
+  const scrollReplyToTop = (turnId: string) => {
+    const el = msgsRef.current;
+    const turnEl = turnEls.current.get(turnId);
+    if (!el || !turnEl) return;
+    const reply = (turnEl.querySelector('.m-agent') as HTMLElement | null) ?? turnEl;
+    const replyTop = el.scrollTop + (reply.getBoundingClientRect().top - el.getBoundingClientRect().top);
+    el.scrollTop = replyStartTop(replyTop, el);
+  };
+
+  // The person scrolled: follow the end again only once they are back at it.
+  const onMsgsScroll = () => {
+    const el = msgsRef.current;
+    if (el) followRef.current = followsEnd(el);
+  };
+
+  // While a turn runs, the content grows (a live line arrives, a queued message
+  // is added, the reply lands); keep the end in view each time, unless the
+  // person has scrolled up. It sticks only while a turn runs, so a height change
+  // after the turn ended — a reply preview expanding to the full reply when the
+  // turn is opened, an image loading — does not pull the view to the bottom.
   useEffect(() => {
     const el = msgsRef.current;
-    if (!sentTick || !el) return;
-    if (typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-    else el.scrollTop = el.scrollHeight;
+    const content = contentRef.current;
+    if (!el || !content || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (followRef.current && runningNowRef.current !== null) el.scrollTop = endTop(el);
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, []);
+
+  // Sending scrolls the session to its newest message, the one just sent, and
+  // starts following the end again.
+  const [sentTick, setSentTick] = useState(0);
+  useLayoutEffect(() => {
+    if (!sentTick) return;
+    followRef.current = true;
+    scrollToEnd();
   }, [sentTick]);
+  // The follow and reposition transitions, keyed on the newest turn's running
+  // state, are further down: that state is read with the turns.
+
   // The message box grows with its text, wrapped lines too, up to its CSS
   // max-height (about ten lines), and then scrolls inside.
   useLayoutEffect(() => {
@@ -390,6 +447,53 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
     pending.every((p) => p.state === 'failed') &&
     lastState === 'running' &&
     (lastStatus ? lastStatus.state !== 'starting' && lastStatus.state !== 'model' && lastStatus.state !== 'tools' && lastStatus.state !== 'agent' : !!(lastTurn?.detail?.agentResponse || lastTurn?.reply));
+
+  // The scroll is driven by one signal only: the id of the turn that is running,
+  // or null. The turn list is authoritative and a turn never returns to running
+  // once it ends, so a start and an end are read cleanly from it. Turns run one
+  // at a time, so there is at most one; it is found by state, not taken as the
+  // last turn, since a queued turn can sit after the running one. The reply
+  // text, the live status and whether `live` is set are all deliberately left
+  // out — each flickers within a turn (an intermediate call returns text, a tool
+  // follows it, the stream resets and repopulates), and reading a scroll off any
+  // of them moved the view mid-turn.
+  const runningId = session.turnsList.find((t) => t.state === 'running')?.id ?? null;
+  const prevRunningRef = useRef<string | null>(runningId);
+  // The observer reads this: it follows the end only while a turn runs, so a
+  // reply that grows after its turn ended (a preview expanding to the full
+  // reply when the turn is opened, an image loading) is never pinned down. The
+  // layout effects below keep it in step before any observer callback fires.
+  const runningNowRef = useRef<string | null>(runningId);
+
+  // A switch to another session shows its latest message and follows its end.
+  useLayoutEffect(() => {
+    followRef.current = true;
+    scrollToEnd();
+    // Adopt the new session's running turn without treating it as a start or an
+    // end: the transitions below are within one shown session.
+    runningNowRef.current = runningId;
+    prevRunningRef.current = runningId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.id]);
+
+  // A turn that starts (Send, a switch to a running session, Ask's Allow)
+  // follows its end. A turn that ends brings its reply's start to the top —
+  // but only if the person was still at the end; if they had scrolled up to
+  // read, they are left where they are. A layout effect, so it runs before the
+  // content observer's callback for the same frame.
+  useLayoutEffect(() => {
+    const prev = prevRunningRef.current;
+    if (runningId && runningId !== prev) {
+      followRef.current = true;
+      scrollToEnd();
+    } else if (!runningId && prev && followRef.current) {
+      scrollReplyToTop(prev);
+    }
+    runningNowRef.current = runningId;
+    prevRunningRef.current = runningId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runningId]);
+
   // A message sent while a turn runs is queued behind it, so a running turn
   // never blocks Send. Only a session the service cannot continue does.
   const active = pending.filter((p) => p.state !== 'failed').length;
@@ -631,8 +735,8 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
         />
       )}
 
-      <div id="c-msgs" ref={msgsRef}>
-        <div className="c-in">
+      <div id="c-msgs" ref={msgsRef} onScroll={onMsgsScroll}>
+        <div className="c-in" ref={contentRef}>
           {approvals}
           {placed.get(-1)?.map((r) => <ShellEntry key={r.id} run={r} />)}
           {refusedAfter(0).map(pendingRow)}
@@ -682,7 +786,14 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
             return (
               <React.Fragment key={turn.id}>
                 {ti > 0 && <div className="tsep" />}
-                <div className={`tb pick ${mark}`} onClick={() => onSelectTurn(turn)}>
+                <div
+                  className={`tb pick ${mark}`}
+                  ref={(el) => {
+                    if (el) turnEls.current.set(turn.id, el);
+                    else turnEls.current.delete(turn.id);
+                  }}
+                  onClick={() => onSelectTurn(turn)}
+                >
                   <div className="tb-h">
                     <b>Turn {turn.turnNumber}</b>
                     {facts.length > 0 && (
