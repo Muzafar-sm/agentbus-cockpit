@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { HeldApproval, ApprovalGone } from '../types';
+import { harnessName } from '../words';
 import { Notice } from './Notice';
 
 // One card for a command an agent wanted to run that matched an ask entry of
@@ -39,7 +40,7 @@ export const ApprovalCard: React.FC<{
 
   return (
     <div className="ask-card" role="group" aria-label="A command to approve">
-      <div className="ask-card-head">{approval.agent || 'An agent'} wants to run:</div>
+      <div className="ask-card-head">{approval.agent ? harnessName(approval.agent) : 'An agent'} wants to run:</div>
       <ul className="ask-card-cmds">
         {approval.commands.map((c, i) => (
           <li key={i}>
