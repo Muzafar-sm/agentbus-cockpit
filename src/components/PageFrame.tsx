@@ -10,7 +10,7 @@ interface PageFrameProps {
   // shared foot (ColumnFoot): the Runners count, the Feedback box, and the
   // AgentBus card (build, live dot, address, Disconnect).
   current: Page;
-  // subtitle is a small, muted note after the title, such as when the settings
+  // subtitle is a small, muted note just above the column foot, such as when the settings
   // last changed.
   subtitle?: React.ReactNode;
   onBack: () => void;
@@ -54,12 +54,10 @@ export const PageFrame: React.FC<PageFrameProps> = ({
   <div id="page" className="page" aria-label={title}>
     <aside className="pg-list">
       <header className="colhead">
-        <h1 className="colhead-title">
-          {title}
-          {subtitle && <span className="ch-sub">{subtitle}</span>}
-        </h1>
+        <h1 className="colhead-title">{title}</h1>
       </header>
       <div className="colbody">{list}</div>
+      {subtitle && <p className="pg-foot-note">{subtitle}</p>}
       <ColumnFoot
         current={current}
         onCockpit={onBack}
