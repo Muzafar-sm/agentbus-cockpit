@@ -887,7 +887,7 @@ describe('the sandbox switch offers only what the machines can build', () => {
     const { r, sw } = await openSandbox({ can: true, machines: ['mac', 'vm'] });
     expect(sw().disabled).toBe(false);
     expect(r.container.querySelector('[data-sandbox-why]')).toBeNull();
-    expect(r.container.textContent).toContain('Online and able to build it: mac, vm.');
+    expect(r.container.textContent).toContain('Experimental');
     await click(sw());
     expect(sw().getAttribute('aria-checked')).toBe('true');
   });

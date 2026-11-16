@@ -605,7 +605,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, onRunne
           </p>
         )}
         {c.key === "sandbox.mode" && sandbox?.can && sandbox.machines && (
-          <p className="nd-note">Online and able to build it: {sandbox.machines.join(", ")}.</p>
+          <p className="nd-note">Experimental</p>
         )}
       </div>
       </React.Fragment>
