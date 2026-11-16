@@ -1207,6 +1207,10 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         onSettings={settingsApi ? openSettings : undefined}
         runnersOnline={runnersOnline}
         version={version ? versionLabel(version) : undefined}
+        sourceLabel={sourceLabel}
+        streamUp={dataSource.subscribe ? streamUp ?? false : undefined}
+        onDisconnect={onDisconnect}
+        disconnectLabel={disconnectLabel}
       />
     );
   }
@@ -1219,6 +1223,10 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         onSettings={settingsApi ? openSettings : undefined}
         runnersOnline={runnersOnline}
         version={version ? versionLabel(version) : undefined}
+        sourceLabel={sourceLabel}
+        streamUp={dataSource.subscribe ? streamUp ?? false : undefined}
+        onDisconnect={onDisconnect}
+        disconnectLabel={disconnectLabel}
         sandbox={loadRunners ? sandboxOffer(runners.runners, runners.error) : undefined}
         subscriptions={subscriptionApi}
         atSubscriptions={settingsAtSubs}

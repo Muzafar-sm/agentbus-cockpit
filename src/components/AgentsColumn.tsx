@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { SavedAgent, SubscriptionList } from '../types';
-import { FootNav } from './FootNav';
+import { ColumnFoot } from './ColumnFoot';
 import { PlusIcon } from './Icons';
 import { PlanUsage, usageOf } from './PlanUsage';
 import { SignInDot, signInOf } from './SignInDot';
 import { Button } from './Controls';
 import { ConfirmDialog } from './Dialog';
-import { PRODUCT } from '../words';
 
 interface AgentsColumnProps {
   agents: SavedAgent[];
@@ -143,43 +142,20 @@ export const AgentsColumn: React.FC<AgentsColumnProps> = ({
         />
       )}
 
-      {/* The foot stays put while the list above it scrolls: the links to
-          the cockpit's own pages, then the AgentBus this cockpit reads, as one
-          card: its name, its build, a live dot and where the data comes from. */}
-      <div className="brand-foot">
-        {/* One foot nav list, the same on the cockpit and on every page: the
-            cockpit's own pages as equal rows (the current one left out), then
-            Feedback, which opens a small box rather than a page. */}
-        <FootNav current="cockpit" onRunners={onRunners} onSettings={onSettings} runnersOnline={runnersOnline} version={version} />
-        <div className="bus-card">
-          <span className="bc-row">
-            <b className="brand">
-              {PRODUCT}
-              {version && " "}
-              {version && (
-                <span className="bc-v" title="its build">
-                  {version}
-                </span>
-              )}
-            </b>
-          </span>
-          <span className="bc-a gw">
-            {streamUp !== undefined && (
-              <i
-                className={`live${streamUp ? '' : ' down'}`}
-                title={streamUp ? 'Live' : 'Reconnecting'}
-                aria-label={streamUp ? 'Live' : 'Reconnecting'}
-              />
-            )}
-            <span className="bc-addr">{sourceLabel}</span>
-            {onDisconnect && (
-              <Button kind="link" className="disconnect" onClick={onDisconnect}>
-                {disconnectLabel}
-              </Button>
-            )}
-          </span>
-        </div>
-      </div>
+      {/* The foot stays put while the list above it scrolls: the one foot nav
+          and the AgentBus card, the same here and on every page (ColumnFoot).
+          On the cockpit the Cockpit row is left out — you are on it. */}
+      <ColumnFoot
+        current="cockpit"
+        onRunners={onRunners}
+        onSettings={onSettings}
+        runnersOnline={runnersOnline}
+        version={version}
+        sourceLabel={sourceLabel}
+        streamUp={streamUp}
+        onDisconnect={onDisconnect}
+        disconnectLabel={disconnectLabel}
+      />
     </aside>
   );
 };
