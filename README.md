@@ -29,7 +29,7 @@ This repository is for working on the cockpit itself, with its dev server.
 
 ## Demo
 
-[![AgentBus cockpit demo](https://img.youtube.com/vi/si0HHQFcCD0/maxresdefault.jpg)](https://youtu.be/si0HHQFcCD0)
+https://github.com/user-attachments/assets/674686dc-394d-4431-9e0b-a48ef3d8ef9d
 
 ## Work on the cockpit
 
