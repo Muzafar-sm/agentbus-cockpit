@@ -15,6 +15,7 @@ function policy(): Policy {
   return {
     read_folders: [],
     allow: [],
+    ask: [],
     forbid: ['git push'],
     edit: 'session',
     isolation: 'auto',
@@ -231,7 +232,7 @@ describe('the Settings page', () => {
       ['Workspace', "Each session's copy of your folder"],
       ['Config', 'Settings, skills and MCP servers each session gets'],
       ['Permissions', 'What agents may do through AgentBus'],
-      ['Isolation', 'Sandbox, network and commands'],
+      ['Isolation', 'Sandbox and network'],
       ['Limits', 'How much agents may ask for'],
     ]);
     // No OS differences anywhere on the page.
@@ -250,8 +251,8 @@ describe('the Settings page', () => {
     const groups: Record<string, string[]> = {
       workspace: ['share_read_only', 'read_folders'],
       config: ['home_files'],
-      permissions: ['agent_api.tools', 'subagents', 'agent_api.apply'],
-      isolation: ['sandbox.mode', 'network.contain', 'network.allow', 'allow', 'forbid'],
+      permissions: ['agent_api.tools', 'subagents', 'agent_api.apply', 'allow', 'ask', 'forbid'],
+      isolation: ['sandbox.mode', 'network.contain', 'network.allow'],
       limits: ['limits.max_depth', 'limits.max_jobs_per_turn', 'limits.max_jobs_per_tree', 'limits.max_cost_usd_per_tree'],
     };
     for (const [g, keys] of Object.entries(groups)) {
@@ -274,8 +275,10 @@ describe('the Settings page', () => {
     expect(container.querySelector('[aria-label="Folder"]')).toBeNull();
     expect(container.querySelector('[aria-label="Copy method"]')).toBeNull();
     await pick(container, '[data-part="isolation"]');
-    expect([...container.querySelectorAll('.pg-main .pg-ctl-h')].map((x) => x.textContent)).toEqual(['Network', 'Commands']);
+    expect([...container.querySelectorAll('.pg-main .pg-ctl-h')].map((x) => x.textContent)).toEqual(['Network']);
     expect(container.textContent).toContain('A wall around each session: its folder, its home, and the network only through AgentBus.');
+    await pick(container, '[data-part="permissions"]');
+    expect([...container.querySelectorAll('.pg-main .pg-ctl-h')].map((x) => x.textContent)).toEqual(['Commands']);
     expect((container.querySelector('textarea[name="forbid"]') as HTMLTextAreaElement).value).toBe('git push');
     await pick(container, '[data-part="limits"]');
     expect((container.querySelector('input[name="limits.max_depth"]') as HTMLInputElement).value).toBe('2');
@@ -406,7 +409,7 @@ describe('the Settings page', () => {
     await pick(container, '[data-part="instructions"]');
     await setValue(container.querySelector('textarea[name="instructions"]'), 'Draft, not saved.');
     await pick(container, '[data-part="isolation"]');
-    await setValue(container.querySelector('textarea[name="allow"]'), 'go test');
+    await setValue(container.querySelector('textarea[name="network.allow"]'), 'github.com');
     await pick(container, '[data-part="permissions"]');
     await click(sw(container, 'agent_api.apply'));
     await click(button(container, 'Save permissions'));
@@ -416,8 +419,8 @@ describe('the Settings page', () => {
     expect((container.querySelector('textarea[name="instructions"]') as HTMLTextAreaElement).value).toBe('Draft, not saved.');
     expect(api.getInstructions).toHaveBeenCalledTimes(1);
     await pick(container, '[data-part="isolation"]');
-    expect((container.querySelector('textarea[name="allow"]') as HTMLTextAreaElement).value).toBe('go test');
-    expect(state.policy.allow).toEqual([]);
+    expect((container.querySelector('textarea[name="network.allow"]') as HTMLTextAreaElement).value).toBe('github.com');
+    expect(state.policy.network?.allow).toEqual([]);
     // The page read the state again: it shows when the settings changed.
     expect(container.textContent).toContain('Last changed');
   });
@@ -443,17 +446,17 @@ describe('the Settings page', () => {
     expect(state.policy.agent_api?.apply).toBe(true);
     expect(state.policy.forbid).toEqual(['git push', 'rm']);
     // A group draft, then an Advanced save of another key in that group.
-    await pick(container, '[data-part="isolation"]');
+    await pick(container, '[data-part="permissions"]');
     await setValue(container.querySelector('textarea[name="allow"]'), 'go test');
     await pick(container, '[data-part="advanced"]');
     await setValue(container.querySelector('textarea[name="policy"]'), JSON.stringify({ ...state.policy, forbid: ['x'] }));
     await click(button(container, 'Save policy'));
     await flush();
     expect(state.policy.forbid).toEqual(['x']);
-    await pick(container, '[data-part="isolation"]');
+    await pick(container, '[data-part="permissions"]');
     expect((container.querySelector('textarea[name="allow"]') as HTMLTextAreaElement).value).toBe('go test');
     expect((container.querySelector('textarea[name="forbid"]') as HTMLTextAreaElement).value).toBe('x');
-    await click(button(container, 'Save isolation'));
+    await click(button(container, 'Save permissions'));
     await flush();
     expect(api.patchPolicy).toHaveBeenLastCalledWith({ allow: ['go test'] }, expect.any(String));
     expect(state.policy.forbid).toEqual(['x']);

@@ -15,6 +15,8 @@ import {
   RunnerInfo,
   RunnersRead,
   VersionInfo,
+  HeldApproval,
+  ApprovalGone,
   SessionList,
   SessionSummary,
   ShellRun,
@@ -708,6 +710,27 @@ export class LiveDataSource implements DataSource {
       method: 'POST',
       headers: this.headers(),
     });
+    if (!res.ok) throw new Error(await apiError(res));
+  }
+
+  // GET /api/v0/approvals: the commands waiting for a person.
+  async listApprovals(): Promise<HeldApproval[] | null> {
+    const res = await fetch(`${this.baseUrl}/api/v0/approvals`, { headers: this.headers() });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(await apiError(res));
+    const data = await res.json();
+    return Array.isArray(data.approvals) ? (data.approvals as HeldApproval[]) : [];
+  }
+
+  // POST /api/v0/approvals/{id}: allow or refuse. 409 or 404 means another
+  // answer already took it.
+  async decideApproval(id: string, allow: boolean): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/api/v0/approvals/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      headers: { ...this.headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision: allow ? 'allow' : 'refuse' }),
+    });
+    if (res.status === 409 || res.status === 404) throw new Error(ApprovalGone);
     if (!res.ok) throw new Error(await apiError(res));
   }
 

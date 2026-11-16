@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import rawSessionsJsonl from '../testdata/sessions-v0.jsonl?raw';
 import { AgentsColumn } from './components/AgentsColumn';
 import { agentNameOf, ConvoColumn, Pending, PendingUpdate } from './components/ConvoColumn';
+import { ApprovalsPanel } from './components/ApprovalsPanel';
 import { AgentsDialog } from './components/AgentsDialog';
 import { SettingsPage } from './components/SettingsPage';
 import { RunnersPage } from './components/RunnersPage';
@@ -1368,6 +1369,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           unapplied={!previewTooBig && shownPreview?.p?.unapplied ? shownPreview.p.count || shownPreview.p.files.length : 0}
           onExport={exportSession}
           commands={commandsBySession[sessionView.id]}
+          approvals={<ApprovalsPanel dataSource={dataSource} sessionId={sessionView.id} />}
           onBack={() => columns.back('convo')}
         />
       ) : (

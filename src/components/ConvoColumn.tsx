@@ -88,6 +88,9 @@ interface ConvoColumnProps {
   // files, and Review, which opens the apply preview in the right panel.
   // tooBig: the copy has too many files to track, so no count and no Review.
   applyBar?: { count: number; onReview: () => void; tooBig?: boolean } | null;
+  // approvals, when set, is the commands of this session waiting for a person,
+  // shown at the top of the conversation (the ask approvals card).
+  approvals?: React.ReactNode;
   // The session's "!" commands from before AgentBus 0.5, oldest first, shown
   // read-only between its turns. A "!" message now goes to the agent like
   // any other: it runs the command with its own shell tool.
@@ -270,6 +273,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   onPending,
   onRename,
   applyBar,
+  approvals,
   commands,
   onBack,
   onCloseSession,
@@ -629,6 +633,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
 
       <div id="c-msgs" ref={msgsRef}>
         <div className="c-in">
+          {approvals}
           {placed.get(-1)?.map((r) => <ShellEntry key={r.id} run={r} />)}
           {refusedAfter(0).map(pendingRow)}
           {session.turnsList.map((turn, ti) => {
