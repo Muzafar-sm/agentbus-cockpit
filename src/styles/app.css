@@ -1,5 +1,5 @@
 /* The cockpit's own styles, on top of base.css. */
-:root { --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; --bad: #B8321A; --bad-bg: #FBECE8; }
+:root { --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; --bad: #B8321A; --bad-bg: #FBECE8; --col-side: 14.5rem; }
 code, pre, textarea.prompt { font-family: var(--mono); }
 code { font-size: .86em; }
 .sep { color: #C4C4BE; margin: 0 0.375rem; }
@@ -312,7 +312,7 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .up-hint { font-size: var(--fs-xs); color: #8A93A3; }
 
 /* ---------- column widths and list rows ---------- */
-#agents { width: 14.5rem; }
+#agents { width: var(--col-side); }
 #sessions { width: 13.8rem; }
 /* The two list columns: a tighter right edge so the title and its + button share the row. */
 #agents .colhead, #sessions .colhead { padding: 0 0.75rem 0 1.25rem; gap: 0.5rem; }
@@ -563,6 +563,8 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .bc-row { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; }
 .bc-row .brand { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .bus-card .disconnect { flex: none; font-size: var(--fs-xs); }
+.bus-card .bc-a .bc-addr { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bus-card .bc-a .disconnect { margin-left: auto; padding-left: 0.5rem; }
 /* The stream's dot: green while the live stream is up, grey while it
    reconnects. Recorded data has no stream and no dot. */
 .bus-card .bc-a .live.down { background: var(--line2); box-shadow: none; }
@@ -808,7 +810,7 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .page .colhead { height: 3.6rem; padding: 0 1.6rem; }
 .page .colhead-title { display: flex; align-items: center; height: auto; margin: 0; font-size: 1rem; line-height: 1.4rem; }
 .page .ch-sub { font-size: var(--fs-s); line-height: 1; font-weight: 400; color: var(--ink3); margin-left: 0.6rem; }
-.pg-list { width: 17rem; flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--side); border-right: 1px solid var(--line); }
+.pg-list { width: var(--col-side); flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--side); border-right: 1px solid var(--line); }
 .pg-list .colhead { padding: 0 0.8rem 0 1.2rem; }
 .pg-list .colbody { padding: 1.2rem 0.8rem; gap: 0.4rem; }
 .pg-list .colbody > * { flex: none; }
@@ -1064,7 +1066,8 @@ input.invalid, textarea.invalid { border-color: var(--bad); }
 
 /* Ask approvals: a command an agent wanted to run that matched an ask entry,
    waiting for a person, shown at the top of the conversation. */
-.ask-panel { margin: 0.75rem 0; display: flex; flex-direction: column; gap: 0.5rem; }
+/* Pinned above the input: the same column as the Changes bar and the box. */
+.ask-panel { box-sizing: border-box; max-width: 45.6rem; margin: 0 0 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
 .ask-card { border: 1.5px solid var(--run); border-radius: 0.5rem; background: var(--panel); padding: 0.625rem 0.75rem; }
 .ask-card-gone { border: 1.5px solid var(--line2); border-radius: 0.5rem; padding: 0.5rem 0.75rem; color: var(--ink3); font-size: var(--fs-s); }
 .ask-card-head { font-size: var(--fs-s); color: var(--ink2); font-weight: 600; margin-bottom: 0.375rem; }

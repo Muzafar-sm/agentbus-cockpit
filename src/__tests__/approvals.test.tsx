@@ -11,7 +11,7 @@ const ap = (over: Partial<HeldApproval> = {}): HeldApproval => ({
   id: 'ap1',
   session: 's1',
   turn: 't_1',
-  agent: 'Bash',
+  agent: 'claude',
   commands: ['git push'],
   rule: 'git push',
   requested: '2026-11-16T00:00:00Z',
@@ -32,6 +32,8 @@ describe('the approval card', () => {
     );
     expect(container.textContent).toContain('git push');
     expect(container.textContent).toContain('npm publish');
+    // The header shows the agent's product name, not the harness id or the tool.
+    expect(container.textContent).toContain('Claude Code wants to run');
     await click(findBtn(container, 'Allow'));
     await flush();
     expect(calls).toEqual([['ap1', true]]);
