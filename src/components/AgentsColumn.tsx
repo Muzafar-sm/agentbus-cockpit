@@ -183,11 +183,6 @@ export const AgentsColumn: React.FC<AgentsColumnProps> = ({
                 </span>
               )}
             </b>
-            {onDisconnect && (
-              <Button kind="link" className="disconnect" onClick={onDisconnect}>
-                {disconnectLabel}
-              </Button>
-            )}
           </span>
           <span className="bc-a gw">
             {streamUp !== undefined && (
@@ -197,7 +192,12 @@ export const AgentsColumn: React.FC<AgentsColumnProps> = ({
                 aria-label={streamUp ? 'Live' : 'Reconnecting'}
               />
             )}
-            <span>{sourceLabel}</span>
+            <span className="bc-addr">{sourceLabel}</span>
+            {onDisconnect && (
+              <Button kind="link" className="disconnect" onClick={onDisconnect}>
+                {disconnectLabel}
+              </Button>
+            )}
           </span>
         </div>
       </div>
