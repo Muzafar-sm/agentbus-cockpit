@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { DataSource, HeldApproval } from '../types';
+import { DataSource, HeldApproval, ApprovalDecision } from '../types';
 import { ApprovalCard } from './ApprovalCard';
 
 // How often to re-read the commands waiting for a person.
@@ -38,8 +38,8 @@ export const ApprovalsPanel: React.FC<{
   const shown = sessionId ? approvals.filter((a) => a.session === sessionId) : approvals;
   if (shown.length === 0) return null;
 
-  const answer = async (id: string, allow: boolean) => {
-    await dataSource.decideApproval!(id, allow);
+  const answer = async (id: string, decision: ApprovalDecision) => {
+    await dataSource.decideApproval!(id, decision);
     reload();
   };
 

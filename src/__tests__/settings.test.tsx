@@ -17,6 +17,7 @@ function policy(): Policy {
     allow: [],
     ask: [],
     forbid: ['git push'],
+    unlisted: 'ask',
     edit: 'session',
     isolation: 'auto',
     share_read_only: [],
@@ -256,7 +257,7 @@ describe('the Settings page', () => {
     const groups: Record<string, string[]> = {
       workspace: ['share_read_only', 'read_folders'],
       config: ['home_files'],
-      permissions: ['agent_api.tools', 'subagents', 'agent_api.apply', 'allow', 'ask', 'forbid'],
+      permissions: ['agent_api.tools', 'subagents', 'agent_api.apply', 'allow', 'ask', 'forbid', 'unlisted'],
       isolation: ['sandbox.mode', 'network.contain', 'network.allow'],
       limits: ['limits.max_depth', 'limits.max_jobs_per_turn', 'limits.max_jobs_per_tree', 'limits.max_cost_usd_per_tree'],
     };
