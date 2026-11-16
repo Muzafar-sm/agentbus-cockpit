@@ -531,6 +531,22 @@ export interface SubscriptionList {
   api_keys?: Record<string, { set: boolean; set_at?: string }>;
 }
 
+// One command (or several, from one reply) a person must allow or refuse, as
+// GET /api/v0/approvals lists it.
+export interface HeldApproval {
+  id: string;
+  session: string;
+  turn?: string;
+  agent?: string;
+  commands: string[];
+  rule: string;
+  requested: string;
+}
+
+// ApprovalGone is thrown by decideApproval when the command was already
+// answered or is being answered (HTTP 409 or 404): the card should step aside.
+export const ApprovalGone = 'approval-gone';
+
 export interface DataSource {
   getSessions(): Promise<SessionSummary[]>;
   // The sessions with the cursor they were taken at. A source without it is
@@ -565,6 +581,14 @@ export interface DataSource {
   approveMachine?(id: string, code: string): Promise<void>;
   refuseMachine?(id: string): Promise<void>;
   removeRunner?(id: string): Promise<void>;
+  // The commands waiting for a person (GET /api/v0/approvals): an agent hit an
+  // ask entry of permissions.toml, so the gateway refused it and recorded it.
+  // null when the service has no such route.
+  listApprovals?(): Promise<HeldApproval[] | null>;
+  // Answer one (POST /api/v0/approvals/<id>): allow moves it to the allow list
+  // and continues the session; refuse records the decision. Rejects with
+  // ApprovalGone when another answer already took it (409).
+  decideApproval?(id: string, allow: boolean): Promise<void>;
   // GET /api/v0/version: which build the service is. Read once.
   getVersion?(): Promise<VersionInfo>;
   listAgents?(): Promise<SavedAgent[]>;
