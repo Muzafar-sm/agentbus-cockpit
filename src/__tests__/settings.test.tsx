@@ -3,7 +3,7 @@ import React, { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { ReplayDataSource } from '../data/ReplayDataSource';
-import { SETTINGS_CONTROLS, SettingsPage } from '../components/SettingsPage';
+import { SETTINGS_CONTROLS, SettingsPage, shortWhen } from '../components/SettingsPage';
 import { LiveDataSource } from '../data/LiveDataSource';
 import { addFound, changeOf, flatPolicy, homeFilesOf, isEmpty, lines, nestPolicy, Policy, sandboxOffer, SettingsApi, SettingsInfo } from '../data/settings';
 import { RunnerInfo } from '../types';
@@ -212,7 +212,7 @@ describe('the Settings page', () => {
     const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
     await flush();
     const text = container.textContent ?? '';
-    expect(text).toContain(`Last changed ${new Date('2026-11-12T09:00:00Z').toLocaleString()}`);
+    expect(text).toContain(`Last changed ${shortWhen('2026-11-12T09:00:00Z')}`);
     expect(text).not.toMatch(/[Vv]ersion/);
     expect(text).not.toContain('Defaults');
   });

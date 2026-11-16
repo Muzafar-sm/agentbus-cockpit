@@ -793,7 +793,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, onRunne
     <PageFrame
       title="Settings"
       current="settings"
-      subtitle={info?.changed ? `Last changed ${new Date(info.changed).toLocaleString()}` : undefined}
+      subtitle={info?.changed ? `Last changed ${shortWhen(info.changed)}` : undefined}
       onBack={onBack}
       onRunners={onRunners}
       onSettings={onSettings}
@@ -870,3 +870,12 @@ const SubscriptionsPart: React.FC<{ api: SubscriptionApi }> = ({ api }) => {
     </div>
   );
 };
+
+// shortWhen is a date and time short enough for one line of the side column:
+// "16 Nov, 15:47" in the reader's own locale and clock.
+export function shortWhen(iso: string): string {
+  const d = new Date(iso);
+  const day = d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return `${day}, ${time}`;
+}
