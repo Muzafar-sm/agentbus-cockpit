@@ -737,7 +737,6 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
 
       <div id="c-msgs" ref={msgsRef} onScroll={onMsgsScroll}>
         <div className="c-in" ref={contentRef}>
-          {approvals}
           {placed.get(-1)?.map((r) => <ShellEntry key={r.id} run={r} />)}
           {refusedAfter(0).map(pendingRow)}
           {session.turnsList.map((turn, ti) => {
@@ -880,6 +879,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
       </div>
 
       <div id="c-reply">
+        {approvals}
         {applyBar?.tooBig ? (
           <div className="apply-bar too-big">
             <span className="ab-dot" aria-hidden="true">
