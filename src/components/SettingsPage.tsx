@@ -126,14 +126,14 @@ const GROUPS: Group[] = [
       { key: "allow", name: "Allow", head: "Commands", kind: { t: "list", placeholder: "go test", mono: true },
         line: "Commands Claude Code may run without asking, one per line. Others are refused." },
       { key: "ask", name: "Ask", kind: { t: "list", placeholder: "git push", mono: true },
-        line: "Commands that wait for you: the agent's call is held until you allow or refuse it, and refused if no one answers in time." },
-      { key: "forbid", name: "Forbid", kind: { t: "list", placeholder: "git push", mono: true },
+        line: "Commands that wait for you: the agent is told to wait, and Allow lets it run them from then on." },
+      { key: "forbid", name: "Refuse", kind: { t: "list", placeholder: "git push", mono: true },
         line: "Commands Claude Code and Codex may never run, one per line." },
     ],
     side: [
       "Agents may always read, list agents, start, review, stop and rename work within the request they belong to.",
       "The limits cap how much they ask for.",
-      "Commands read the command text. They are not a sandbox: a command built at run time is not seen. Forbid wins over Ask, Ask over Allow.",
+      "Commands read the command text. They are not a sandbox: a command built at run time is not seen. Refuse wins over Ask, Ask over Allow.",
     ],
   },
   {
