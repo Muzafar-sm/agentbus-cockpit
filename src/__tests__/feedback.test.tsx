@@ -43,12 +43,12 @@ describe('Feedback box', () => {
     document.body.innerHTML = '';
   });
 
-  it('is a quiet link at the foot of the Agents column, after Runners and Settings', async () => {
+  it('is a quiet link at the foot of the Agents column, after Cockpit, Runners and Settings', async () => {
     await render(
       <AgentsColumn agents={[]} selectedAgentId={null} onSelectAgent={() => {}} onRunners={() => {}} onSettings={() => {}} />
     );
     const names = [...document.querySelectorAll('#agents .brand-foot .side-links .side-link')].map((x) => x.textContent);
-    expect(names).toEqual(['Runners', 'Settings', 'Feedback']);
+    expect(names).toEqual(['Cockpit', 'Runners', 'Settings', 'Feedback']);
   });
 
   it('shows the question, the fields and the line about what is sent', async () => {

@@ -257,8 +257,11 @@ describe('the links at the foot of the Agents column', () => {
     const b = await render(<AgentsColumn agents={[]} selectedAgentId={null} onSelectAgent={() => {}} />);
     expect(link(b.container, 'Runners')).toBeUndefined();
     expect(link(b.container, 'Settings')).toBeUndefined();
-    // Feedback is the one link every cockpit has.
-    expect([...b.container.querySelectorAll('.side-links .side-link')].map((x) => x.textContent)).toEqual(['Feedback']);
+    // The current page's row stays, marked; Feedback is the one link every cockpit has.
+    expect([...b.container.querySelectorAll('.side-links .side-link')].map((x) => x.textContent)).toEqual(['Cockpit', 'Feedback']);
+    const here = b.container.querySelector('.side-links [aria-current="page"]')!;
+    expect(here.textContent).toBe('Cockpit');
+    expect(here.tagName).toBe('SPAN');
   });
 
   it('leaves a click with a modifier key to the browser', async () => {

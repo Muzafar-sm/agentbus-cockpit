@@ -5,7 +5,7 @@ import { FootNav } from './FootNav';
 import type { Page } from '../page';
 
 interface ColumnFootProps {
-  // The page on screen; its own nav row is left out.
+  // The page on screen; its nav row is shown as the current one.
   current: Page;
   // The nav targets: the cockpit (the way back from a page) and the sibling
   // pages, each absent when the source does not have it.
@@ -25,8 +25,8 @@ interface ColumnFootProps {
 // ColumnFoot is the left column's foot, the same on the cockpit and on every
 // page: the one foot nav (FootNav) then the AgentBus card — its name and build,
 // a live dot, where the data comes from, and Disconnect. One component in one
-// container, so the foot is identical everywhere; only which nav row is hidden
-// changes. It stays put while the list above it scrolls.
+// container, so the foot is identical everywhere; only which nav row is
+// marked current changes. It stays put while the list above it scrolls.
 export const ColumnFoot: React.FC<ColumnFootProps> = ({
   current,
   onCockpit,
