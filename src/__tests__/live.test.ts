@@ -221,6 +221,25 @@ describe('LiveDataSource', () => {
     expect(paths[0]).toBe('/api/v0/turns/T1?session=abc');
   });
 
+  it('getTurnChanges pages a turn\'s file changes, sending before only when given', async () => {
+    const paths: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string) => {
+        const u = new URL(input);
+        paths.push(u.pathname + u.search);
+        return json({ count: 2, changes: [{ path: 'a.txt', change: 'modified', size: 1 }], next_before: 1 });
+      })
+    );
+    const src = new LiveDataSource({ baseUrl: BASE });
+    const p = await src.getTurnChanges('abc', 'T1');
+    expect(p.count).toBe(2);
+    expect(p.changes[0].path).toBe('a.txt');
+    await src.getTurnChanges('abc', 'T1', 1);
+    expect(paths[0]).toBe('/api/v0/turns/T1/changes?session=abc');
+    expect(paths[1]).toBe('/api/v0/turns/T1/changes?session=abc&before=1');
+  });
+
   it('getTurn starts over once on 409, and is null for a turn with no events', async () => {
     let reads = 0;
     vi.stubGlobal(

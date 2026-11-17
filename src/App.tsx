@@ -673,6 +673,10 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   );
   // One turn's own diff, for the turn panel's Changes tab.
   const loadTurnDiff = useCallback((sessionId: string, turnId: string) => dataSource.getTurnDiff!(sessionId, turnId), [dataSource]);
+  const loadTurnChanges = useCallback(
+    (sessionId: string, turnId: string, before?: number) => dataSource.getTurnChanges!(sessionId, turnId, before),
+    [dataSource]
+  );
   const loadContext = useMemo(
     () => (dataSource.getCallContext ? (t: string, x: string, full: boolean) => dataSource.getCallContext!(t, x, full) : undefined),
     [dataSource]
@@ -1530,6 +1534,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         onClose={closePanel}
         escRef={panelEscRef}
         loadDiff={dataSource.getTurnDiff ? loadTurnDiff : undefined}
+        loadChanges={dataSource.getTurnChanges ? loadTurnChanges : undefined}
         tooBig={previewTooBig}
         tabs={panelTabs}
       />

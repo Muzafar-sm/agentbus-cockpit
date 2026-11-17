@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { ApplyPanel, TOO_BIG, TurnChangesTab, turnTooBig } from '../components/Changes';
 import { LiveDataSource } from '../data/LiveDataSource';
-import { ApplyPreview, ApplyState, TurnDiff } from '../types';
+import { ApplyPreview, ApplyState, TurnChangesPage, TurnDiff } from '../types';
 import { click, ev, flush, liveReplay, panelOpen, render } from './helpers';
 
 const finished = [
@@ -39,11 +39,16 @@ const diff: TurnDiff = {
   turn: 'T1',
   session: 'c1',
   state: 'finished',
-  files: { isolated: true, count: 1, changes: [{ path: 'a.txt', change: 'modified', size: 4, diff: A_DIFF }] },
+  files: { isolated: true, count: 1 },
   model_calls: { count: 1 },
   tools: { count: 1 },
-  commands: ['go test ./...'],
   apply: { state: 'none' },
+};
+
+const changesPage: TurnChangesPage = {
+  count: 1,
+  changes: [{ path: 'a.txt', change: 'modified', size: 4, diff: A_DIFF }],
+  next_before: null,
 };
 
 const bar = (c: HTMLElement) => c.querySelector('#c-reply .apply-bar') as HTMLElement | null;
@@ -280,7 +285,8 @@ describe('The apply preview', () => {
 describe("A turn's Changes tab", () => {
   it('sits beside Result and shows the turn\'s own diff, read-only', async () => {
     const getTurnDiff = vi.fn(async () => diff);
-    const { r } = await open({ getTurnDiff, applyTurn: vi.fn() });
+    const getTurnChanges = vi.fn(async () => changesPage);
+    const { r } = await open({ getTurnDiff, getTurnChanges, applyTurn: vi.fn() });
     await click(r.container.querySelector('#convo .tb'));
     await flush();
     const tabs = Array.from(r.container.querySelectorAll('#d-tabs .tab')).map((t) => t.textContent);
@@ -289,11 +295,51 @@ describe("A turn's Changes tab", () => {
     await click(Array.from(r.container.querySelectorAll('#d-tabs .tab')).find((t) => t.textContent === 'Changes'));
     await flush();
     expect(getTurnDiff).toHaveBeenCalledWith('c1', 'T1');
+    expect(getTurnChanges).toHaveBeenCalledWith('c1', 'T1', undefined);
     const body = r.container.querySelector('#d-body')!;
     expect(body.querySelector('.tab-sum')!.textContent).toContain('1 file');
     expect(body.querySelector('.ch-diff .dl.add')!.textContent).toBe('+two');
-    expect(body.textContent).toContain('Commands');
     expect(button(body, 'Apply to my folder')).toBeUndefined();
+    r.unmount();
+  });
+
+  it('pages a long changes list with Load more, and shows it sorted by path', async () => {
+    const page1: TurnChangesPage = {
+      count: 3,
+      changes: [
+        { path: 'y.txt', change: 'added', size: 1 },
+        { path: 'z.txt', change: 'added', size: 1 },
+      ],
+      next_before: 2,
+    };
+    const page2: TurnChangesPage = { count: 3, changes: [{ path: 'a.txt', change: 'added', size: 1 }], next_before: null };
+    const loadChanges = vi.fn(async (before?: number) => (before ? page2 : page1));
+    const big: TurnDiff = { ...diff, files: { isolated: true, count: 3 } };
+    const r = await render(<TurnChangesTab turnId="T1" loadDiff={async () => big} loadChanges={loadChanges} />);
+    await flush();
+    const paths = () => Array.from(r.container.querySelectorAll('.ch-path code')).map((e) => e.textContent);
+    expect(paths()).toEqual(['y.txt', 'z.txt']);
+    await click(button(r.container, 'Load more'));
+    await flush();
+    expect(loadChanges).toHaveBeenCalledWith(2);
+    expect(paths()).toEqual(['a.txt', 'y.txt', 'z.txt']);
+    expect(button(r.container, 'Load more')).toBeUndefined();
+    r.unmount();
+  });
+
+  it('shows the API words when Load more fails, and keeps the files already loaded', async () => {
+    const page1: TurnChangesPage = { count: 3, changes: [{ path: 'z.txt', change: 'added', size: 1 }], next_before: 2 };
+    const loadChanges = vi.fn(async (before?: number) => {
+      if (before) throw new Error('the machine is offline');
+      return page1;
+    });
+    const big: TurnDiff = { ...diff, files: { isolated: true, count: 3 } };
+    const r = await render(<TurnChangesTab turnId="T1" loadDiff={async () => big} loadChanges={loadChanges} />);
+    await flush();
+    await click(button(r.container, 'Load more'));
+    await flush();
+    expect(r.container.textContent).toContain('offline');
+    expect(Array.from(r.container.querySelectorAll('.ch-path code')).map((e) => e.textContent)).toEqual(['z.txt']);
     r.unmount();
   });
 
@@ -370,26 +416,25 @@ describe('A folder too big to track (over 200,000 files)', () => {
   });
 
   it("a turn's Changes tab says so in place of its count when the cut is the copy's", async () => {
-    const cut: TurnDiff = { ...diff, files: { isolated: true, count: 1, truncated: true, changes: diff.files!.changes } };
-    const r = await render(<TurnChangesTab turnId="T1" loadDiff={async () => cut} />);
+    const page: TurnChangesPage = { count: 1, truncated: true, changes: changesPage.changes, next_before: null };
+    const r = await render(<TurnChangesTab turnId="T1" loadDiff={async () => diff} loadChanges={async () => page} tooBig />);
     await flush();
     expect(r.container.textContent).toBe(TOO_BIG);
     expect(r.container.querySelector('.tab-sum')).toBeNull();
     r.unmount();
   });
 
-  it('a list cut past 1,000 files is not the copy: it counts, unless the preview said the copy is too big', async () => {
-    const many = { count: 32692, truncated: true, changes: new Array(1000).fill({}) };
-    expect(turnTooBig(many)).toBe(false);
-    expect(turnTooBig(many, true)).toBe(true);
-    expect(turnTooBig({ ...many, truncated: false }, true)).toBe(false);
-    expect(turnTooBig({ count: 3, truncated: true, changes: [{}, {}, {}] })).toBe(true);
-    const cut: TurnDiff = { ...diff, files: { isolated: true, ...many, changes: diff.files!.changes } };
-    const a = await render(<TurnChangesTab turnId="T1" loadDiff={async () => cut} />);
+  it('a cut list still counts, unless the preview said the copy is too big', async () => {
+    expect(turnTooBig(true)).toBe(false);
+    expect(turnTooBig(true, true)).toBe(true);
+    expect(turnTooBig(false, true)).toBe(false);
+    const big: TurnDiff = { ...diff, files: { isolated: true, count: 32692 } };
+    const page: TurnChangesPage = { count: 32692, truncated: true, changes: changesPage.changes, next_before: null };
+    const a = await render(<TurnChangesTab turnId="T1" loadDiff={async () => big} loadChanges={async () => page} />);
     await flush();
     expect(a.container.querySelector('.tab-sum')!.textContent).toContain('32692 files');
     a.unmount();
-    const b = await render(<TurnChangesTab turnId="T1" loadDiff={async () => cut} tooBig />);
+    const b = await render(<TurnChangesTab turnId="T1" loadDiff={async () => big} loadChanges={async () => page} tooBig />);
     await flush();
     expect(b.container.textContent).toBe(TOO_BIG);
     b.unmount();

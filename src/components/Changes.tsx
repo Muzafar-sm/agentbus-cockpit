@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ApplyPreview, ApplyState, TurnDiff } from '../types';
+import { ApplyPreview, ApplyState, TurnChangesPage, TurnDiff, TurnDiffFile } from '../types';
 import { PanelHead } from './PanelHead';
 import { Button } from './Controls';
 import { Loading, Notice } from './Notice';
@@ -34,13 +34,12 @@ export function refusedTooBig(msg?: string | null): boolean {
   return !!msg && msg.includes('more files than a checkpoint holds');
 }
 
-// A turn's changes were cut because the copy was too big. truncated alone
-// also means the list was cut (past 1,000 files, or to fit), so it counts
-// only when every counted file is listed, or when the session's preview
-// already said its copy is too big.
-export function turnTooBig(f: { count: number; truncated?: boolean; changes: unknown[] } | null | undefined, sessionTooBig?: boolean): boolean {
-  if (!f?.truncated) return false;
-  return !!sessionTooBig || f.changes.length >= f.count;
+// A turn's changes list is incomplete (truncated) for two reasons: the copy
+// was too big to read, or the record simply kept at most its finish bound.
+// Only the first warrants the "too big" notice, and the session's preview is
+// what tells them apart, so the notice shows only when the preview said so.
+export function turnTooBig(truncated: boolean | undefined, sessionTooBig?: boolean): boolean {
+  return !!truncated && !!sessionTooBig;
 }
 
 // One changed file: its path, kind and line counts, and its diff, which
@@ -109,34 +108,57 @@ function lineKind(l: string): string {
 
 const files = (n: number) => `${n} ${n === 1 ? 'file' : 'files'}`;
 
-// The turn panel's Changes tab: what this one turn changed, read-only, from
-// GET /api/v0/turns/<id>/diff. Applying is done for the whole conversation,
-// from the bar above the message box.
-export const TurnChangesTab: React.FC<{ turnId: string; loadDiff: () => Promise<TurnDiff>; tooBig?: boolean }> = ({
-  turnId,
-  loadDiff,
-  tooBig,
-}) => {
+// The turn panel's Changes tab: what this one turn changed, read-only. The
+// summary is GET /api/v0/turns/<id>/diff; the files page from
+// GET /api/v0/turns/<id>/changes, with Load more. Applying is done for the
+// whole conversation, from the bar above the message box.
+type loaded = {
+  turn: string;
+  files: TurnDiffFile[];
+  nextBefore: number | null;
+  truncated: boolean;
+  diffsCut: boolean;
+};
+export const TurnChangesTab: React.FC<{
+  turnId: string;
+  loadDiff: () => Promise<TurnDiff>;
+  loadChanges?: (before?: number) => Promise<TurnChangesPage>;
+  tooBig?: boolean;
+}> = ({ turnId, loadDiff, loadChanges, tooBig }) => {
   const [diff, setDiff] = useState<{ turn: string; d: TurnDiff } | null>(null);
+  const [changes, setChanges] = useState<loaded | null>(null);
   const [error, setError] = useState<{ turn: string; msg: string } | null>(null);
-  const loadRef = useRef(loadDiff);
-  loadRef.current = loadDiff;
+  const [moreError, setMoreError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const diffRef = useRef(loadDiff);
+  diffRef.current = loadDiff;
+  const changesRef = useRef(loadChanges);
+  changesRef.current = loadChanges;
+  // A generation guards every async read: it is bumped on each turn change,
+  // so a response for an earlier turn (an in-flight Load more, say) is ignored.
+  const gen = useRef(0);
   useEffect(() => {
-    let active = true;
-    loadRef.current().then(
-      (d) => active && setDiff({ turn: turnId, d }),
-      (err) => active && setError({ turn: turnId, msg: (err as Error).message })
+    const mine = ++gen.current;
+    setChanges(null);
+    setError(null);
+    setMoreError(null);
+    setLoadingMore(false);
+    Promise.all([diffRef.current(), changesRef.current ? changesRef.current() : Promise.resolve(null)]).then(
+      ([d, page]) => {
+        if (mine !== gen.current) return;
+        setDiff({ turn: turnId, d });
+        if (page) setChanges({ turn: turnId, files: page.changes, nextBefore: page.next_before, truncated: !!page.truncated, diffsCut: !!page.diffs_cut });
+      },
+      (err) => mine === gen.current && setError({ turn: turnId, msg: (err as Error).message })
     );
-    return () => {
-      active = false;
-    };
   }, [turnId]);
   const d = diff?.turn === turnId ? diff.d : null;
+  const ch = changes?.turn === turnId ? changes : null;
   const err = error?.turn === turnId ? error.msg : null;
   if (err) return <Notice kind="error">{err}</Notice>;
   if (!d) return <Loading />;
   const f = d.files;
-  if (turnTooBig(f, tooBig)) {
+  if (turnTooBig(ch?.truncated, tooBig)) {
     return (
       <div className="turn-changes">
         <Notice kind="warn" className="too-big">
@@ -145,25 +167,44 @@ export const TurnChangesTab: React.FC<{ turnId: string; loadDiff: () => Promise<
       </div>
     );
   }
+  const loadMore = () => {
+    if (!ch || ch.nextBefore == null || !changesRef.current || loadingMore) return;
+    const mine = gen.current;
+    setLoadingMore(true);
+    setMoreError(null);
+    changesRef.current(ch.nextBefore).then(
+      (page) => {
+        if (mine !== gen.current) return;
+        setChanges((c) =>
+          c && c.turn === turnId
+            ? { turn: turnId, files: [...c.files, ...page.changes], nextBefore: page.next_before, truncated: c.truncated || !!page.truncated, diffsCut: c.diffsCut || !!page.diffs_cut }
+            : c
+        );
+        setLoadingMore(false);
+      },
+      (e) => {
+        if (mine !== gen.current) return;
+        setMoreError((e as Error).message);
+        setLoadingMore(false);
+      }
+    );
+  };
+  // The route pages the path-sorted list from the end, so sort what is loaded
+  // back into path order for the screen.
+  const shown = ch ? [...ch.files].sort((a, b) => a.path.localeCompare(b.path)) : [];
   return (
     <div className="turn-changes">
       <div className="tab-sum">
         <b>{f && f.count > 0 ? files(f.count) : 'No files'}</b>
         <span className="sep"> · </span>
         {f && f.count > 0 ? 'changed by this turn' : 'this turn changed no files'}
-        {d.commands.length > 0 && (
-          <>
-            <span className="sep"> · </span>
-            {d.commands.length} {d.commands.length === 1 ? 'command' : 'commands'}
-          </>
-        )}
       </div>
-      {f && f.count > 0 && <FileList files={f.changes} truncated={f.truncated} />}
-      {d.commands.length > 0 && (
-        <details className="ch-cmds">
-          <summary>Commands</summary>
-          <pre>{d.commands.join('\n')}</pre>
-        </details>
+      {f && f.count > 0 && ch && <FileList files={shown} truncated={ch.truncated} diffsCut={ch.diffsCut} />}
+      {moreError && <Notice kind="error">{moreError}</Notice>}
+      {ch && ch.nextBefore != null && (
+        <Button kind="quiet" small onClick={loadMore} disabled={loadingMore}>
+          {loadingMore ? 'Loading…' : 'Load more'}
+        </Button>
       )}
     </div>
   );

@@ -402,6 +402,9 @@ export interface ApplyPreview {
   why?: string;
 }
 
+// GET /api/v0/turns/<id>/diff: the turn's summary. Each list is on its own
+// paged route: the file changes at /changes, the model calls at /calls, the
+// tool calls (with their commands) at /tools.
 export interface TurnDiff {
   turn: string;
   session: string;
@@ -409,14 +412,21 @@ export interface TurnDiff {
   files: {
     isolated: boolean;
     count: number;
-    truncated?: boolean;
-    changes: TurnDiffFile[];
-    git_diff?: string;
   } | null;
   model_calls: { count: number };
   tools: { count: number };
-  commands: string[];
   apply: ApplyState;
+}
+
+// GET /api/v0/turns/<id>/changes: a page of the turn's changed files. Page
+// older files with before set to the previous page's next_before.
+export interface TurnChangesPage {
+  count: number;
+  truncated?: boolean;
+  diffs_cut?: boolean;
+  content_left_out?: boolean;
+  changes: TurnDiffFile[];
+  next_before: number | null;
 }
 
 // The reply to POST /api/v0/turns: the session, and the turn it started.
@@ -669,6 +679,7 @@ export interface DataSource {
   // API's answer on 200, 202 and 409 (a refusal names each file); any other
   // failure rejects with the API's words.
   getTurnDiff?(sessionId: string, turnId: string): Promise<TurnDiff>;
+  getTurnChanges?(sessionId: string, turnId: string, before?: number): Promise<TurnChangesPage>;
   applyTurn?(turnId: string): Promise<ApplyState>;
   // What applying the whole conversation now would do (a dry run): the files
   // not yet in the person's folder, their diffs and conflicts. Rejects with
