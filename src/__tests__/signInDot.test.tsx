@@ -12,7 +12,7 @@ import { choose, click, ev, flush, liveReplay, render, unmountAll } from './help
 const SAVED: SavedAgent[] = [
   { id: 'claude', name: 'Claude Code', harness: 'claude', access: 'subscription' },
   { id: 'codex', name: 'Codex', harness: 'codex', access: 'subscription' },
-  { id: 'or', name: 'Router', harness: 'claude', access: 'openrouter', key_env: 'OPENROUTER_API_KEY', key_set: false },
+  { id: 'or', name: 'Router', harness: 'claude', access: 'openrouter', key_env: 'OPENROUTER_API_KEY' },
 ];
 
 const SUBS: SubscriptionList = {
@@ -92,12 +92,17 @@ describe('signInOf', () => {
   });
   it('is green for an OpenRouter agent with a key set in Settings or in its environment variable', () => {
     expect(signInOf(router, SUBS)).toEqual({ ok: false, title: 'OpenRouter key is not set — open Settings to add it' });
-    expect(signInOf(router, { ...SUBS, openrouter_key: { set: true } })).toEqual({ ok: true, title: 'OpenRouter key is set' });
-    expect(signInOf({ ...router, key_set: true }, undefined)?.ok).toBe(true);
-    expect(signInOf({ ...router, key_set: undefined }, undefined)).toBeUndefined();
+    expect(signInOf(router, { ...SUBS, api_keys: { openrouter: { set: true } } })).toEqual({ ok: true, title: 'OpenRouter key is set' });
+    // Its key_env being set where control runs shows it set, from env_keys.
+    expect(signInOf(router, { ...SUBS, env_keys: { OPENROUTER_API_KEY: true } })).toEqual({ ok: true, title: 'OpenRouter key is set' });
+    expect(signInOf(router, { ...SUBS, env_keys: { OPENROUTER_API_KEY: false } })?.ok).toBe(false);
+    expect(signInOf(router, undefined)).toBeUndefined();
   });
-  it('shows nothing for an agent of another access', () => {
-    expect(signInOf({ ...claude, access: 'api' }, SUBS)).toBeUndefined();
+  it('shows an api agent from its vendor key in subscriptions', () => {
+    const api = { ...claude, access: 'api' };
+    expect(signInOf(api, SUBS)).toEqual({ ok: false, title: 'Anthropic API key is not set — open Settings to add it' });
+    expect(signInOf(api, { ...SUBS, api_keys: { anthropic: { set: true } } })).toEqual({ ok: true, title: 'Anthropic API key is set' });
+    expect(signInOf(api, undefined)).toBeUndefined();
   });
 });
 
@@ -120,7 +125,7 @@ describe('the sign-in dot in the cockpit', () => {
   });
 
   it('turns an OpenRouter agent green when a key is set in Settings', async () => {
-    const { src } = source({ ...SUBS, openrouter_key: { set: true } });
+    const { src } = source({ ...SUBS, api_keys: { openrouter: { set: true } } });
     const r = await render(<App dataSource={src} />);
     await waitFor(() => rowDot(r.container, 'or') !== null, 'the dot');
     expect(rowDot(r.container, 'or')!.getAttribute('data-signin')).toBe('ok');
@@ -153,9 +158,8 @@ describe('the sign-in dot in the cockpit', () => {
   });
 
   it('reads the agents again with the subscriptions on coming back, so a key set in Settings shows', async () => {
-    let keySet = false;
     let subs: SubscriptionList = SUBS;
-    const { src } = source(SUBS, () => SAVED.map((a) => (a.id === 'or' ? { ...a, key_set: keySet } : a)));
+    const { src } = source(SUBS);
     src.listSubscriptions = async () => subs;
     const r = await render(<App dataSource={src} />);
     await waitFor(() => rowDot(r.container, 'or') !== null, 'the dot');
@@ -163,19 +167,16 @@ describe('the sign-in dot in the cockpit', () => {
     await click(rowDot(r.container, 'or'));
     await flush();
     expect(window.location.pathname).toBe('/settings');
-    // The key is set in Settings: the agent's key_set says so, and the
-    // subscriptions read says so too.
-    keySet = true;
-    subs = { ...SUBS, openrouter_key: { set: true } };
+    // The key is now set in Settings: the subscriptions read says so.
+    subs = { ...SUBS, api_keys: { openrouter: { set: true } } };
     await act(async () => {
       window.history.replaceState(null, '', '/');
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
     await waitFor(() => rowDot(r.container, 'or')?.getAttribute('data-signin') === 'ok', 'the dot turning green');
-    // And removed: both reads say so, and the dot turns yellow again.
+    // And removed: the read says so, and the dot turns yellow again.
     await click(rowDot(r.container, 'or'));
     await flush();
-    keySet = false;
     subs = SUBS;
     await act(async () => {
       window.history.replaceState(null, '', '/');

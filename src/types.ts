@@ -325,7 +325,6 @@ export interface AgentFields {
 // A saved agent, from GET /api/v0/agents. A turn names it by id.
 export interface SavedAgent extends AgentFields {
   id: string;
-  key_set?: boolean;
   created?: string;
   updated?: string;
 }
@@ -523,12 +522,14 @@ export interface PlanReading {
 }
 export interface SubscriptionList {
   subscriptions: SubscriptionState[];
-  // Whether an OpenRouter key is set on control. Never the key. Absent: a
-  // control too old to keep one.
-  openrouter_key?: { set: boolean; set_at?: string };
-  // Whether each vendor's API key (anthropic, openai, gemini) is set on
-  // control, by name. Never a key. Absent: a control too old to keep them.
+  // Whether each vendor's key (anthropic, openai, gemini, openrouter) is set
+  // on control, by name. The one place a stored key's "is it set" is answered.
+  // Never a key. Absent: a control too old to keep them.
   api_keys?: Record<string, { set: boolean; set_at?: string }>;
+  // Whether each environment variable a saved openrouter agent names in
+  // key_env is set where control runs, by name. Never a value. Absent: a
+  // control too old to report it.
+  env_keys?: Record<string, boolean>;
 }
 
 // One command (or several, from one reply) a person must allow or refuse, as

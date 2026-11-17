@@ -181,6 +181,37 @@ describe('the Settings page', () => {
     expect(none.querySelector('[data-part="subscriptions"]')).toBeNull();
   });
 
+  // OpenRouter is one of api_keys now, so the vendor-key loop must not render
+  // it a second time beside its own OpenRouter key card.
+  it('shows the OpenRouter key once, not again from the api_keys loop', async () => {
+    const { api } = fakeApi();
+    const subs = {
+      list: vi.fn(async () => ({
+        subscriptions: [{ harness: 'claude', connected: true, expired: false }],
+        api_keys: { anthropic: { set: true }, openrouter: { set: true } },
+      })),
+      connect: vi.fn(),
+      get: vi.fn(),
+      input: vi.fn(),
+      setKey: vi.fn(),
+      removeKey: vi.fn(),
+      setAPIKey: vi.fn(),
+      removeAPIKey: vi.fn(),
+    };
+    const { container } = await render(<SettingsPage api={api} onBack={() => {}} subscriptions={subs} />);
+    await flush();
+    await click(container.querySelector('[data-part="subscriptions"]'));
+    await flush();
+    await flush();
+    const text = container.textContent ?? '';
+    // The OpenRouter key has its own card; the loop does not add a second,
+    // which would carry the fallback label "openrouter API key".
+    expect(text).not.toContain('openrouter API key');
+    expect([...text.matchAll(/OpenRouter key/g)]).toHaveLength(1);
+    // Other vendor keys still show.
+    expect(text).toContain('Anthropic API key');
+  });
+
   it('a failed read of the subscriptions says why and reads again on Read again', async () => {
     const { api } = fakeApi();
     const subs = {

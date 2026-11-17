@@ -341,10 +341,6 @@ export class LiveDataSource implements DataSource {
     const data = await res.json();
     const subs: SubscriptionState[] = Array.isArray(data.subscriptions) ? data.subscriptions : [];
     const out: SubscriptionList = { subscriptions: subs.map((s) => (s.connect ? { ...s, connect: connectView(s.connect) } : s)) };
-    const k = data.openrouter_key;
-    if (k && typeof k === 'object' && typeof k.set === 'boolean') {
-      out.openrouter_key = { set: k.set, ...(typeof k.set_at === 'string' ? { set_at: k.set_at } : {}) };
-    }
     const ak = data.api_keys;
     if (ak && typeof ak === 'object') {
       out.api_keys = {};
@@ -352,6 +348,13 @@ export class LiveDataSource implements DataSource {
         if (v && typeof v === 'object' && typeof v.set === 'boolean') {
           out.api_keys[name] = { set: v.set, ...(typeof v.set_at === 'string' ? { set_at: v.set_at } : {}) };
         }
+      }
+    }
+    const ek = data.env_keys;
+    if (ek && typeof ek === 'object') {
+      out.env_keys = {};
+      for (const [name, v] of Object.entries(ek as Record<string, unknown>)) {
+        if (typeof v === 'boolean') out.env_keys[name] = v;
       }
     }
     return out;

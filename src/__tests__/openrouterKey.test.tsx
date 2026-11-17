@@ -16,7 +16,7 @@ function fakeApi(set = false) {
   let kept: string | null = set ? FAKE_KEY : null;
   const list = async (): Promise<SubscriptionList> => ({
     subscriptions: [{ harness: 'claude', connected: false, expired: false }],
-    openrouter_key: kept ? { set: true, set_at: '2026-11-13T10:00:00Z' } : { set: false },
+    api_keys: { openrouter: kept ? { set: true, set_at: '2026-11-13T10:00:00Z' } : { set: false } },
   });
   const api: SubscriptionApi = {
     list: vi.fn(list),
@@ -243,7 +243,7 @@ describe('LiveDataSource and the OpenRouter key', () => {
       vi.fn(async (input: string, init?: RequestInit) => {
         seen.push({ method: init?.method ?? 'GET', url: input, body: init?.body as string | undefined });
         if (input.endsWith('/api/v0/subscriptions')) {
-          return new Response(JSON.stringify({ subscriptions: [], openrouter_key: { set: true, set_at: '2026-11-13T10:00:00Z' } }), { status: 200 });
+          return new Response(JSON.stringify({ subscriptions: [], api_keys: { openrouter: { set: true, set_at: '2026-11-13T10:00:00Z' } } }), { status: 200 });
         }
         return new Response(null, { status: 204 });
       }),
@@ -255,7 +255,7 @@ describe('LiveDataSource and the OpenRouter key', () => {
     expect(seen[0]).toEqual({ method: 'PUT', url: `${BASE}/api/v0/subscriptions/openrouter/key`, body: JSON.stringify({ key: FAKE_KEY }) });
     expect(seen[1]).toMatchObject({ method: 'DELETE', url: `${BASE}/api/v0/subscriptions/openrouter/key` });
     expect(seen.every((s) => !s.url.includes(FAKE_KEY))).toBe(true);
-    expect(list?.openrouter_key).toEqual({ set: true, set_at: '2026-11-13T10:00:00Z' });
+    expect(list?.api_keys?.openrouter).toEqual({ set: true, set_at: '2026-11-13T10:00:00Z' });
   });
 
   it('shows the API words when the key is refused', async () => {

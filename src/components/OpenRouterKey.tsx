@@ -217,7 +217,7 @@ export const OpenRouterKey: React.FC<{ api: SubscriptionApi }> = ({ api }) => (
     label="OpenRouter key"
     placeholder="sk-or-…"
     note="Used by agents on OpenRouter."
-    stateOf={(l) => l.openrouter_key}
+    stateOf={(l) => l.api_keys?.openrouter}
     set={api.setKey}
     remove={api.removeKey}
     cls="or"
