@@ -91,7 +91,7 @@ describe('The API key agent form', () => {
       runners: [],
       access: [
         { kind: 'subscription', label: 'Claude subscription', models: [], any_model: true },
-        { kind: 'api', label: 'Anthropic API key', models: [], any_model: true, key_set: false, key_name: 'anthropic' },
+        { kind: 'api', label: 'Anthropic API key', models: [], any_model: true, key_name: 'anthropic' },
       ],
     } as Harness,
   ];
@@ -127,7 +127,7 @@ describe('The models of an API key agent', () => {
         label: 'Claude Code',
         found: true,
         runners: [],
-        access: [{ kind: 'api', label: 'Anthropic API key', models: [], any_model: true, key_set: false, key_name: 'anthropic' }],
+        access: [{ kind: 'api', label: 'Anthropic API key', models: [], any_model: true, key_name: 'anthropic' }],
       } as Harness,
     ];
     const loadModels = vi.fn(async (harness: string, access: string) => ({

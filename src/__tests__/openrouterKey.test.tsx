@@ -181,7 +181,7 @@ describe('The OpenRouter agent form', () => {
       runners: [],
       access: [
         { kind: 'subscription', label: 'Subscription', models: [], any_model: true },
-        { kind: 'openrouter', label: 'OpenRouter key', models: ['deepseek/deepseek-v4.1-flash'], any_model: true, key_env: 'OPENROUTER_API_KEY', key_set: false },
+        { kind: 'openrouter', label: 'OpenRouter key', models: ['deepseek/deepseek-v4.1-flash'], any_model: true, key_env: 'OPENROUTER_API_KEY' },
       ],
     } as Harness,
   ];

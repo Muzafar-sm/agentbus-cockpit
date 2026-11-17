@@ -271,7 +271,7 @@ async function mount(svc: ReturnType<typeof fakeService>) {
 
 const ACCESS = (subModels: string[]) => [
   { kind: 'subscription', label: 'Subscription', models: subModels },
-  { kind: 'openrouter', label: 'OpenRouter key', models: ['deepseek/deepseek-v4.1-flash'], any_model: true, key_env: 'OPENROUTER_API_KEY', key_set: true },
+  { kind: 'openrouter', label: 'OpenRouter key', models: ['deepseek/deepseek-v4.1-flash'], any_model: true, key_env: 'OPENROUTER_API_KEY' },
   { kind: 'api', label: 'API key', disabled: true, models: [] },
 ];
 const AGENTS = [
