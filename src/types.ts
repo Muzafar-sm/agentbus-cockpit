@@ -228,10 +228,9 @@ export interface AccessOption {
   // subscription. A name the vendor refuses fails the turn in its words.
   any_model?: boolean;
   key_env?: string;
-  // Whether key_env is set where the service runs, or for api whether the
-  // vendor's key is set in Settings. Never its value.
-  key_set?: boolean;
   // For api: the key it uses, as Settings names it (anthropic, openai, gemini).
+  // Whether a key is set is on GET /api/v0/subscriptions (api_keys, env_keys),
+  // not here.
   key_name?: string;
 }
 
