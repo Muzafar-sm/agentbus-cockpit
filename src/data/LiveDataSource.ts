@@ -494,8 +494,8 @@ export class LiveDataSource implements DataSource {
     const folders = await this.listFolders();
     if (folders.length === 0) throw new Error('Add a folder first; AgentBus looks in the home of the machine that holds it.');
     const first = folders[0];
-    const machines = new Set(folders.map((f) => f.connector ?? f.runner ?? ''));
-    const q = first.connector ? `?connector=${encodeURIComponent(first.connector)}` : '';
+    const machines = new Set(folders.map((f) => f.machine ?? f.runner ?? ''));
+    const q = first.machine ? `?machine=${encodeURIComponent(first.machine)}` : '';
     const res = await fetch(`${this.baseUrl}/api/v0/folders/${encodeURIComponent(first.ref)}/home-files${q}`, { headers: this.headers() });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
@@ -513,7 +513,7 @@ export class LiveDataSource implements DataSource {
     }
     const body = (await res.json()) as { files?: FoundPath[] };
     const paths = Array.isArray(body?.files) ? body.files : [];
-    return machines.size > 1 ? { paths, from: first.runner ?? first.connector } : { paths };
+    return machines.size > 1 ? { paths, from: first.runner ?? first.machine } : { paths };
   }
 
   // PATCH /api/v0/sessions/<id>: a new name for the session. It answers with

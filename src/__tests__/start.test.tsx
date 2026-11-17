@@ -341,8 +341,8 @@ describe('New session', () => {
 
   it('on a service that lists folders, none is picked for the person; the one picked goes by folder_ref and connector', async () => {
     const folders = [
-      { ref: 'fld_00000000000000a1', name: 'app', connector: 'con_1', runner: 'run_1' },
-      { ref: 'fld_00000000000000b2', name: 'site', connector: 'con_2', runner: 'run_2' },
+      { ref: 'fld_00000000000000a1', name: 'app', machine: 'con_1', runner: 'run_1' },
+      { ref: 'fld_00000000000000b2', name: 'site', machine: 'con_2', runner: 'run_2' },
     ];
     localStorage.setItem('agentbus.folders', JSON.stringify(['/Users/ana/old']));
     const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS, folders });
@@ -365,7 +365,7 @@ describe('New session', () => {
     expect((dialog.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(false);
     await setValue(dialog.querySelector('textarea[name="prompt"]'), 'read the README');
     await submitForm(dialog);
-    expect(sentBody(svc)).toEqual({ agent: 'claude', folder_ref: 'fld_00000000000000b2', connector: 'con_2', isolate: true, prompt: 'read the README' });
+    expect(sentBody(svc)).toEqual({ agent: 'claude', folder_ref: 'fld_00000000000000b2', machine: 'con_2', isolate: true, prompt: 'read the README' });
     expect(r.container.querySelector('.new-dialog')).toBeNull();
     // A folder by reference is not a path to remember.
     expect(JSON.parse(localStorage.getItem('agentbus.folders') ?? '[]')).toEqual(['/Users/ana/old']);
@@ -373,7 +373,7 @@ describe('New session', () => {
   });
 
   it('a path typed over a listed folder is sent as a path', async () => {
-    const folders = [{ ref: 'fld_00000000000000a1', name: 'app', connector: 'con_1' }];
+    const folders = [{ ref: 'fld_00000000000000a1', name: 'app', machine: 'con_1' }];
     const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS, folders });
     const r = await mount(svc);
     await click(r.container.querySelector('#sessions button.new-session'));
@@ -710,10 +710,10 @@ describe('New session: name, no first message, folders', () => {
   });
 
   it('a refused typed folder shows plain words, never the service text, and the field stays', async () => {
-    const folders = [{ ref: 'fld_00000000000000a1', name: 'app', connector: 'con_1' }];
+    const folders = [{ ref: 'fld_00000000000000a1', name: 'app', machine: 'con_1' }];
     const answers = [
       'folder must be an absolute path to an existing directory, at most 4096 bytes',
-      'this server has no folders of its own: name folder_ref and connector from GET /api/v0/folders, which lists the folders its runners own',
+      'this server has no folders of its own: name folder_ref and machine from GET /api/v0/folders, which lists the folders its runners own',
     ];
     const svc = fakeService({
       sessions: [row('s1')],
@@ -1816,11 +1816,11 @@ describe('The sessions list and rename', () => {
 });
 
 describe('New session: the machine, then a folder on it', () => {
-  const machine = (name: string, connector: string, online: boolean) => ({
+  const machine = (name: string, id: string, online: boolean) => ({
     id: `run_${name}`,
     name,
     role: 'runner',
-    connector,
+    machine: id,
     online,
     last_seen: '2026-11-12T08:00:00Z',
     labels: [],
@@ -1834,8 +1834,8 @@ describe('New session: the machine, then a folder on it', () => {
     { ...machine('old', 'con_d', true), role: 'connector' },
   ];
   const FOLDERS = [
-    { ref: 'fld_00000000000000a1', name: 'app', connector: 'con_a', runner: 'run_mac' },
-    { ref: 'fld_00000000000000c1', name: 'infra', connector: 'con_c', runner: 'run_vm' },
+    { ref: 'fld_00000000000000a1', name: 'app', machine: 'con_a', runner: 'run_mac' },
+    { ref: 'fld_00000000000000c1', name: 'infra', machine: 'con_c', runner: 'run_vm' },
   ];
   async function openDialog(svc: ReturnType<typeof fakeService>) {
     const r = await mount(svc);
@@ -1876,7 +1876,7 @@ describe('New session: the machine, then a folder on it', () => {
     await setValue(dialog.querySelector('input[name="folder"]'), '/work/new');
     await setValue(dialog.querySelector('textarea[name="prompt"]'), 'x');
     await submitForm(dialog);
-    expect(sentBody(svc)).toEqual({ agent: 'claude', folder: '/work/new', connector: 'con_c', prompt: 'x' });
+    expect(sentBody(svc)).toEqual({ agent: 'claude', folder: '/work/new', machine: 'con_c', prompt: 'x' });
     expect(JSON.parse(localStorage.getItem('agentbus.folders.con_c') ?? '[]')).toEqual(['/work/new']);
     expect(localStorage.getItem('agentbus.folders')).toBeNull();
     expect(localStorage.getItem('agentbus.machine')).toBe('con_c');

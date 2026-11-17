@@ -260,9 +260,9 @@ export interface RunnerInfo {
   // runner: the one program of its machine, which holds its folders and runs
   // their sessions. connector: one from before 0.5, which takes no work.
   role: string;
-  // The machine's id: a new session on it names it as connector. Absent
+  // The machine's id: a new session on it names it as machine. Absent
   // before its first report, and from a service before 0.5.
-  connector?: string;
+  machine?: string;
   // It asked control for work in the last minute.
   online: boolean;
   last_seen: string;
@@ -330,13 +330,13 @@ export interface SavedAgent extends AgentFields {
 
 // POST /api/v0/turns: a saved agent and a folder, with the first message.
 // The service gives the session its own copy of the folder. The folder is a
-// path typed for the machine in connector, or a listed folder by folder_ref
-// and connector (GET /api/v0/folders). The session runs on that machine.
+// path typed for the machine in machine, or a listed folder by folder_ref
+// and machine (GET /api/v0/folders). The session runs on that machine.
 export interface RunRequest {
   agent: string;
   folder?: string;
   folder_ref?: string;
-  connector?: string;
+  machine?: string;
   isolate?: boolean;
   prompt: string;
   model?: string;

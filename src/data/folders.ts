@@ -52,7 +52,7 @@ export function rememberMachine(machine: string): void {
 export interface FolderInfo {
   ref: string;
   name: string;
-  connector?: string;
+  machine?: string;
   runner?: string;
 }
 

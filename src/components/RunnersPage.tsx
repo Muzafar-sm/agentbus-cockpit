@@ -303,11 +303,11 @@ const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: (
                 <td>{new Date(r.enrolled).toLocaleString()}</td>
               </tr>
             )}
-            {r.connector && (
+            {r.machine && (
               <tr>
                 <td>Machine</td>
                 <td>
-                  <code>{r.connector}</code>
+                  <code>{r.machine}</code>
                 </td>
               </tr>
             )}

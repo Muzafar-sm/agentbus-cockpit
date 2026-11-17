@@ -736,18 +736,18 @@ describe('the Settings page', () => {
           return reply();
         }));
       const files = [{ path: '~/.claude/settings.json', kind: 'file', size: 123 }];
-      const ok = () => new Response(JSON.stringify({ folder: 'fld_0123456789abcdef', connector: 'con_0000000000000001', files }), { status: 200 });
-      const up = { ref: 'fld_0123456789abcdef', name: 'app', connector: 'con_0000000000000001', runner: 'up' };
+      const ok = () => new Response(JSON.stringify({ folder: 'fld_0123456789abcdef', machine: 'con_0000000000000001', files }), { status: 200 });
+      const up = { ref: 'fld_0123456789abcdef', name: 'app', machine: 'con_0000000000000001', runner: 'up' };
 
       // One machine (the usual up): no machine named.
-      serve([up, { ref: 'fld_1111111111111111', name: 'web', connector: 'con_0000000000000001', runner: 'up' }], ok);
+      serve([up, { ref: 'fld_1111111111111111', name: 'web', machine: 'con_0000000000000001', runner: 'up' }], ok);
       expect(await src.findConfig()).toEqual({ paths: files });
       expect(asked).toEqual([
         'http://127.0.0.1:8787/api/v0/folders',
-        'http://127.0.0.1:8787/api/v0/folders/fld_0123456789abcdef/home-files?connector=con_0000000000000001',
+        'http://127.0.0.1:8787/api/v0/folders/fld_0123456789abcdef/home-files?machine=con_0000000000000001',
       ]);
       // Several machines: the first folder's, by name.
-      serve([up, { ref: 'fld_2222222222222222', name: 'vm-app', connector: 'con_0000000000000002', runner: 'vm' }], ok);
+      serve([up, { ref: 'fld_2222222222222222', name: 'vm-app', machine: 'con_0000000000000002', runner: 'vm' }], ok);
       expect(await src.findConfig()).toEqual({ paths: files, from: 'up' });
       // No folders yet.
       serve([], ok);

@@ -43,7 +43,7 @@ export function folderRefusal(message: string): string | null {
 
 // The folder a new session starts in: a listed folder by its reference, or
 // a path typed for the machine picked.
-type Where = { ref: string; connector?: string } | { path: string };
+type Where = { ref: string; machine?: string } | { path: string };
 
 // A new session is a saved agent and a folder, with an optional name and an
 // optional first message. The service isolates it: the session works on its own copy of the folder,
@@ -64,14 +64,14 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
   const [agent, setAgent] = useState(initialAgent ?? '');
   // The machines a session can start on: each runner that reports its
   // machine. A connector from before 0.5 takes no work.
-  const usable = machines.filter((m) => m.role !== 'connector' && !!m.connector);
+  const usable = machines.filter((m) => m.role !== 'connector' && !!m.machine);
   const byMachine = usable.length > 0;
   // The machine: the one used last while it is online, else the first online
   // one. Picked once, when the list first has one, unless the person chose.
   const firstMachine = (list: RunnerInfo[]) => {
     const on = list.filter((m) => m.online);
     const last = lastMachine();
-    return (on.find((m) => m.connector === last) ?? on[0])?.connector ?? '';
+    return (on.find((m) => m.machine === last) ?? on[0])?.machine ?? '';
   };
   const [machine, setMachine] = useState(() => firstMachine(usable));
   const [machineTouched, setMachineTouched] = useState(false);
@@ -81,11 +81,11 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
     if (m) setMachine(m);
     // usable is derived from machines each render.
   }, [machines, machineTouched, machine]);
-  const picked = usable.find((m) => m.connector === machine);
+  const picked = usable.find((m) => m.machine === machine);
   // The listed folders and the recent paths of the machine picked; all of
   // them on a service that names no machine. At most five recent paths,
   // newest first (recentFolders keeps no more).
-  const folders = byMachine ? allFolders.filter((f) => f.connector === machine) : allFolders;
+  const folders = byMachine ? allFolders.filter((f) => f.machine === machine) : allFolders;
   const recent = useMemo(() => recentFolders(byMachine ? machine : undefined), [byMachine, machine]);
   // No folder is picked for the person: the session runs where they say,
   // so Start waits for a listed folder, a recent one or a typed path. A
@@ -148,8 +148,8 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
     try {
       const at =
         'ref' in where!
-          ? { folder_ref: where!.ref, connector: where!.connector }
-          : { folder: where!.path.trim(), ...(byMachine ? { connector: machine } : {}) };
+          ? { folder_ref: where!.ref, machine: where!.machine }
+          : { folder: where!.path.trim(), ...(byMachine ? { machine: machine } : {}) };
       await onStart({ agent, ...at, prompt: prompt.trim() === '' ? '' : prompt }, name.trim() || undefined);
     } catch (err) {
       const msg = (err as Error).message;
@@ -198,7 +198,7 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
               value={picked ? machine : ''}
               placeholder="Pick a machine"
               options={usable.map((m) => ({
-                value: m.connector!,
+                value: m.machine!,
                 label: m.name,
                 hint: m.online ? undefined : 'offline',
                 disabled: !m.online,
@@ -234,7 +234,7 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
                 key={f.ref}
                 className={`pick${where && 'ref' in where && where.ref === f.ref ? ' on' : ''}`}
                 title={f.ref}
-                onClick={() => pick({ ref: f.ref, connector: f.connector })}
+                onClick={() => pick({ ref: f.ref, machine: f.machine })}
               >
                 <code>{f.name || f.ref}</code>
               </button>

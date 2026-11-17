@@ -17,7 +17,7 @@ function json(body: unknown, status = 200): Response {
 
 afterEach(() => vi.unstubAllGlobals());
 
-const folders = [{ ref: 'fld_3f1c0a9b2e4d5f60', name: 'shop', connector: 'con_8a7b6c5d4e3f2a10', runner: 'run_1' }];
+const folders = [{ ref: 'fld_3f1c0a9b2e4d5f60', name: 'shop', machine: 'con_8a7b6c5d4e3f2a10', runner: 'run_1' }];
 
 describe('folders by reference', () => {
   it('names a folder by its reference when the API lists it, else by its path', () => {
