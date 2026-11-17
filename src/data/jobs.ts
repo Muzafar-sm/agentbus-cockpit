@@ -37,10 +37,10 @@ export interface ApiTurn {
   folder: string;
   folder_ref?: string;
   origin?: ApiOrigin;
-  prompt: string;
-  prompt_truncated?: boolean;
+  // The whole prompt and reply are not on the list: GET /api/v0/turns/{id}
+  // serves them, read from the record. The list carries facts only.
+  prompt?: string;
   reply?: string;
-  reply_truncated?: boolean;
   model?: string;
   model_calls?: number;
   started_seq?: number;

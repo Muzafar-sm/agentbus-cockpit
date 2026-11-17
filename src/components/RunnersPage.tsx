@@ -33,7 +33,7 @@ interface RunnersPageProps extends RunnersState {
   disconnectLabel?: string;
   // The turn list, when the service keeps a queue: its queued and running
   // turns make the Queue column. Undefined when it keeps none.
-  queue?: { turns: ApiTurn[]; error: string | null };
+  queue?: { turns: ApiTurn[]; error: string | null; titleOf?: (session: string) => string | undefined };
   // Undefined: a source that cannot decide, and the page shows no buttons.
   actions?: RunnerActions;
 }
@@ -367,7 +367,7 @@ const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: (
 };
 
 // Queue is the turns still waiting for a runner, and those running now.
-const Queue: React.FC<{ queue?: { turns: ApiTurn[]; error: string | null } }> = ({ queue }) => {
+const Queue: React.FC<{ queue?: { turns: ApiTurn[]; error: string | null; titleOf?: (session: string) => string | undefined } }> = ({ queue }) => {
   if (!queue) {
     return (
       <>
@@ -380,9 +380,12 @@ const Queue: React.FC<{ queue?: { turns: ApiTurn[]; error: string | null } }> = 
   }
   const waiting = queue.turns.filter((t) => t.state === 'queued');
   const running = queue.turns.filter((t) => t.state === 'running');
+  // A queue view is built from GET /turns, which carries facts only. It names
+  // a turn by its session (its title from GET /sessions where the cockpit has
+  // it, else the id) and its agent, never the turn's prompt or reply.
   const what = (t: ApiTurn) => (
     <>
-      <span className="rn-prompt">{t.prompt || t.id}</span>
+      <span className="rn-prompt">{queue.titleOf?.(t.session) || t.session}</span>
       <div className="note">
         {t.agent ? harnessName(t.agent) : 'agent'}
         {t.number ? ` · turn ${t.number}` : ''}
