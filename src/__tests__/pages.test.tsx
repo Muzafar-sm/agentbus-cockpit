@@ -157,7 +157,7 @@ describe('the Runners page in three columns', () => {
   });
 
   it('shows the machine a session names, with no boilerplate about what a runner is', async () => {
-    const r = await render(<RunnersPage runners={[{ ...full, connector: 'con_8a7b6c5d4e3f2a10' }]} error={null} onBack={() => {}} />);
+    const r = await render(<RunnersPage runners={[{ ...full, machine: 'con_8a7b6c5d4e3f2a10' }]} error={null} onBack={() => {}} />);
     const machine = [...r.container.querySelectorAll('.pg-main .pg-kv tr')].find((x) => x.textContent!.startsWith('Machine'))!;
     expect(machine.textContent).toBe('Machinecon_8a7b6c5d4e3f2a10');
     expect(r.container.textContent).not.toContain('One runner per machine.');

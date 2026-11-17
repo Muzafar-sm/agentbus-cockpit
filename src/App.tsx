@@ -837,14 +837,14 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     // A listed folder goes by its reference; a typed path goes with the
     // machine picked, whose runner checks it. The session runs there.
     const at = req.folder_ref
-      ? { folder_ref: req.folder_ref, connector: req.connector, isolate: true }
-      : { folder: req.folder, ...(req.connector ? { connector: req.connector } : {}) };
+      ? { folder_ref: req.folder_ref, machine: req.machine, isolate: true }
+      : { folder: req.folder, ...(req.machine ? { machine: req.machine } : {}) };
     // POST /api/v0/turns names the turn at once, even while it waits for a
     // runner. With the queue, the session gets its own copy of the folder.
     const started = await dataSource.startRun!(queue ? { ...req, ...at, isolate: true } : { ...req, ...at });
     refreshQueue?.();
-    if (req.folder) rememberFolder(req.folder, req.connector);
-    if (req.connector) rememberMachine(req.connector);
+    if (req.folder) rememberFolder(req.folder, req.machine);
+    if (req.machine) rememberMachine(req.machine);
     if (title && dataSource.renameSession) {
       // The session runs either way; a refused name leaves the first message as its title.
       dataSource
