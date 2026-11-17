@@ -53,11 +53,15 @@ function fakeAgentbus(codeWorks = true) {
     if (url.pathname === '/api/v0/turns' && url.searchParams.get('session') === 'live-abc') {
       return json({
         store: 'st_1', seq: 3,
-        turns: [{ id: 'T1', session: 'live-abc', agent: 'claude', folder: '/w', prompt: 'live prompt', started_seq: 2,
+        turns: [{ id: 'T1', session: 'live-abc', agent: 'claude', folder: '/w', started_seq: 2,
           started: events[1].time, ended: events[2].time, state: 'finished', outcome: 'finished', usage: null,
           cost_usd: 0, cost_complete: false }],
         next_before: null,
       });
+    }
+    // The single turn carries the whole prompt and reply (the list carries neither).
+    if (/^\/api\/v0\/turns\/[^/]+$/.test(url.pathname)) {
+      return json({ store: 'st_1', seq: 3, turn: { id: 'T1', session: 'live-abc', state: 'finished', prompt: 'live prompt' } });
     }
     if (url.pathname === '/api/v0/sessions/live-abc/events') return json({ store: 'st_1', events: events.slice(1), next_after: null });
     return json({}, 404);

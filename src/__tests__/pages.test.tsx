@@ -165,14 +165,18 @@ describe('the Runners page in three columns', () => {
     expect(r.container.textContent).not.toContain('A connector owns');
   });
 
-  it('shows the queue: what waits and why, and what runs', async () => {
+  it('shows the queue by session fact, never a turn\'s prompt (a list view carries facts only)', async () => {
+    // Every turn carries a prompt that must never reach the screen: the queue
+    // is built from GET /turns (facts only), so it names a turn by its session
+    // -- its title where the cockpit has it, else the id -- and its agent.
     const turns = [
-      turn({ id: 'q1', prompt: 'fix the test', ahead: 2, asked: new Date(Date.now() - 120_000).toISOString() }),
-      turn({ id: 'q2', prompt: 'write docs', ahead: 0 }),
-      turn({ id: 'r1', prompt: 'refactor', state: 'running', number: 3 }),
-      turn({ id: 'f1', prompt: 'done', state: 'finished' }),
+      turn({ id: 'q1', session: 's1', prompt: 'MUST NOT RENDER', ahead: 2, asked: new Date(Date.now() - 120_000).toISOString() }),
+      turn({ id: 'q2', session: 's2', prompt: 'MUST NOT RENDER', ahead: 0 }),
+      turn({ id: 'r1', session: 's1', prompt: 'MUST NOT RENDER', state: 'running', number: 3 }),
+      turn({ id: 'f1', session: 's1', prompt: 'MUST NOT RENDER', state: 'finished' }),
     ];
-    const r = await render(<RunnersPage runners={runners} error={null} onBack={() => {}} queue={{ turns, error: null }} />);
+    const titleOf = (s: string) => (s === 's1' ? 'The login fix' : undefined);
+    const r = await render(<RunnersPage runners={runners} error={null} onBack={() => {}} queue={{ turns, error: null, titleOf }} />);
     const side = r.container.querySelector('.pg-side')!;
     expect(side.querySelector('.tab-sum')!.textContent).toBe('2 waiting·1 running');
     const waiting = side.querySelector('[aria-label="Waiting"]')!;
@@ -181,9 +185,13 @@ describe('the Runners page in three columns', () => {
     expect(waiting.querySelector('[data-turn="q1"]')!.textContent).toContain('2 min ago');
     expect(waiting.querySelector('[data-turn="q2"]')!.textContent).toContain('for a free runner');
     const running = side.querySelector('[aria-label="Running"]')!;
-    expect(running.textContent).toContain('refactor');
     expect(running.textContent).toContain('turn 3');
-    expect(side.textContent).not.toContain('done');
+    // A turn is named by its session title where known, else the session id.
+    expect(waiting.querySelector('[data-turn="q1"]')!.textContent).toContain('The login fix');
+    expect(waiting.querySelector('[data-turn="q2"]')!.textContent).toContain('s2');
+    // The rule, pinned: no prompt or reply from the list ever renders here, so
+    // a third list view cannot regress to showing turn content.
+    expect(side.textContent).not.toContain('MUST NOT RENDER');
     r.unmount();
     const none = await render(<RunnersPage runners={runners} error={null} onBack={() => {}} />);
     expect(none.container.querySelector('.pg-side')!.textContent).toContain('This service keeps no queue.');

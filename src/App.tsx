@@ -116,6 +116,10 @@ interface Shown {
   session: SessionDetail;
   cursor: ListCursor;
   details: Record<string, TurnDetail>;
+  // The whole prompt and reply of each shown turn, loaded from the single
+  // turn (getTurnText); the turn list carries no text. Keyed by turn id, it
+  // survives a turn-list refresh so a turn's text is read once.
+  texts: Record<string, { prompt: string; reply?: string }>;
 }
 
 // Add streamed events to the loaded turns they belong to.
@@ -257,6 +261,13 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     [allSessions, closedIds]
   );
   const loading = allSessions === null;
+  // A session's title, from the sessions the cockpit holds (GET /sessions).
+  // Overview views (the queue) name a turn by this session fact, not by its
+  // prompt, which the turn list no longer carries.
+  const titleOf = useMemo(() => {
+    const byId = new Map((allSessions ?? []).map((s) => [s.id, s.title]));
+    return (session: string) => byId.get(session);
+  }, [allSessions]);
   // Bumped on each snapshot the stream starts from: read the shown session again.
   const [reloadKey, setReloadKey] = useState(0);
   // Bumped when a session's summary changed: fetch the sessions again.
@@ -301,6 +312,46 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // so a busy stream costs one read at a time and the last read is never
   // older than the last event. A list replaces the shown one only if it is
   // for the session still shown and not older (by store and seq).
+  // Each shown turn's whole prompt and reply, loaded from the single turn
+  // (the list carries neither). Kept by session and turn so an ended turn's
+  // text is read once; a running turn is read again, as its reply grows. A
+  // recorded source has no getTurnText and carries the text on its rows.
+  const turnTexts = useRef<Record<string, { prompt: string; reply?: string }>>({});
+  const loadTexts = useCallback(
+    async (sessionId: string, rows: Turn[]): Promise<Record<string, { prompt: string; reply?: string }>> => {
+      const load = dataSource.getTurnText?.bind(dataSource);
+      const cache = turnTexts.current;
+      const out: Record<string, { prompt: string; reply?: string }> = {};
+      const missing: { id: string; ended: boolean }[] = [];
+      for (const t of rows) {
+        // A running turn is never read from the cache: its reply is still
+        // growing. Only an ended turn's text is final and cacheable.
+        const ended = t.state !== 'running';
+        const hit = ended ? cache[`${sessionId}\n${t.id}`] : undefined;
+        if (hit) out[t.id] = hit;
+        else if (load) missing.push({ id: t.id, ended });
+      }
+      if (load && missing.length > 0) {
+        await Promise.all(
+          missing.map(async ({ id, ended }) => {
+            try {
+              const text = await load(sessionId, id);
+              out[id] = text;
+              // Cache only a turn that had ended when the fetch started, so a
+              // running turn's text never poisons the ended-turn cache and the
+              // final reply is read once the turn ends.
+              if (ended) cache[`${sessionId}\n${id}`] = text;
+            } catch (err) {
+              console.warn(`Reading turn ${id} text failed:`, err);
+            }
+          })
+        );
+      }
+      return out;
+    },
+    [dataSource]
+  );
+
   const turnReads = useRef<Map<string, boolean>>(new Map());
   const refreshTurns = useRef<(sessionId: string) => void>(() => {});
   refreshTurns.current = (sessionId: string) => {
@@ -312,10 +363,16 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     reads.set(sessionId, false);
     dataSource
       .getTurns(sessionId)
-      .then((list) => {
+      .then(async (list) => {
+        const texts = await loadTexts(sessionId, list.turns);
         setShown((s) =>
           s && s.session.id === sessionId && isNewerList(s.cursor, list)
-            ? { ...s, session: { ...s.session, turnsList: list.turns }, cursor: { store: list.store, seq: list.seq } }
+            ? {
+                ...s,
+                session: { ...s.session, turnsList: list.turns },
+                cursor: { store: list.store, seq: list.seq },
+                texts: { ...s.texts, ...texts },
+              }
             : s
         );
       })
@@ -1050,13 +1107,17 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         if (!active) return;
         details[pick.id] = d ?? turnDetail([]);
       }
+      // Each shown turn's text comes from the single turn; load it before
+      // the turns go on screen, so they show with their prompt and reply.
+      const texts = await loadTexts(sessionId, list.turns);
+      if (!active) return;
       // Events streamed while the turns were in flight join their turn; one
       // that changed the list after its cursor reads the list again.
       const streamed = streamedRef.current ?? [];
       streamedRef.current = null;
       const cursor = { store: list.store, seq: list.seq };
       const row = allSessionsRef.current?.find((s) => s.id === sessionId) ?? emptyRow(sessionId);
-      setShown({ session: { ...row, turnsList: list.turns }, cursor, details: mergeIntoDetails(details, streamed) });
+      setShown({ session: { ...row, turnsList: list.turns }, cursor, details: mergeIntoDetails(details, streamed), texts });
       loadedSessionRef.current = sessionId;
       // Navigation belongs to the session on screen. A click made in the old
       // session while this one loaded acted on the old one; this session
@@ -1078,10 +1139,26 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
 
   // The turns on screen, each with its events when they are loaded.
   const turns = useMemo(
-    () => (shown ? shown.session.turnsList.map((t) => (shown.details[t.id] ? { ...t, detail: shown.details[t.id] } : t)) : []),
+    () =>
+      shown
+        ? shown.session.turnsList.map((t) => {
+            // The turn's text comes from the single turn (texts); when a turn's
+            // detail is loaded its own text is the fallback, so a failed text
+            // fetch does not leave the prompt empty.
+            const text = shown.texts[t.id];
+            const detail = shown.details[t.id];
+            const row = {
+              ...t,
+              prompt: text?.prompt ?? detail?.prompt ?? t.prompt,
+              reply: text?.reply ?? detail?.agentResponse ?? t.reply,
+            };
+            return detail ? { ...row, detail } : row;
+          })
+        : [],
     [shown]
   );
   const selectedTurn = turns.find((t) => t.id === selectedTurnId) ?? null;
+
 
   // A stop is over once the shown turn list says its turn is not running.
   useEffect(() => {
@@ -1201,7 +1278,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         pending={runners.pending}
         reload={runners.reload}
         actions={runnerActions}
-        queue={queueView ? { turns: queueView.turns, error: queueView.error } : undefined}
+        queue={queueView ? { turns: queueView.turns, error: queueView.error, titleOf } : undefined}
         onBack={() => goPage('cockpit')}
         onRunners={loadRunners ? () => goPage('runners') : undefined}
         onSettings={settingsApi ? openSettings : undefined}

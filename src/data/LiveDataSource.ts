@@ -72,10 +72,10 @@ function turnRow(t: ApiTurn, n: number): Turn {
     startedAt: t.started ?? '',
     endedAt: t.ended,
     durationMs: isNaN(endMs - startMs) ? undefined : Math.max(0, endMs - startMs),
-    prompt: extractCleanPrompt(t.prompt),
-    promptTruncated: t.prompt_truncated === true,
-    reply: t.reply || undefined,
-    replyTruncated: t.reply_truncated === true,
+    // The list carries facts only. The whole prompt and reply come from the
+    // single turn (getTurnText), loaded for each turn the cockpit shows.
+    prompt: '',
+    reply: undefined,
     model: t.model || undefined,
     modelCalls: typeof t.model_calls === 'number' ? t.model_calls : undefined,
     agent: t.agent || undefined,
@@ -292,6 +292,18 @@ export class LiveDataSource implements DataSource {
     const failed = ended && !started && t.state !== 'finished';
     const why = t.error || (t.state === 'stopped' ? 'stopped before it started' : `the turn ${t.state}`);
     return { ended, failed, why: failed ? why : undefined };
+  }
+
+  // GET /api/v0/turns/<id>?session=<id>: the whole prompt and reply of one
+  // turn, read from the record. The turn list carries neither, so the cockpit
+  // loads each shown turn's text from here. The prompt has system reminders
+  // taken out, as the former list preview did.
+  async getTurnText(session: string, turn: string): Promise<{ prompt: string; reply?: string }> {
+    const params = new URLSearchParams({ session });
+    const res = await fetch(`${this.baseUrl}/api/v0/turns/${encodeURIComponent(turn)}?${params}`, { headers: this.headers() });
+    if (!res.ok) throw new Error(await apiError(res));
+    const t = ((await res.json()) as { turn?: ApiTurn }).turn;
+    return { prompt: extractCleanPrompt(t?.prompt ?? ''), reply: t?.reply || undefined };
   }
 
   // GET /api/v0/agents: the saved agents, in the order they were made.

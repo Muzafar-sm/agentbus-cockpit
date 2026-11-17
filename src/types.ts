@@ -92,15 +92,15 @@ export interface Turn {
   endedAt?: string;
   // From start to end; undefined while the turn runs.
   durationMs?: number;
-  // The person's words with system reminders taken out. From the list this
-  // is a preview of the first 500 characters; promptTruncated says it was cut.
+  // The person's words with system reminders taken out. The list carries no
+  // text, so this is loaded from the single turn (getTurnText) for a live
+  // turn, or from the recorded events for a file; empty until it is loaded.
   prompt: string;
   promptTruncated?: boolean;
-  // From the list, for a turn whose events are not loaded: the reply to the
-  // turn's last model call (its first 500 characters; replyTruncated says it
-  // was cut), the model that call asked for, and how many model calls the
-  // turn made. Undefined when the source does not give them. A loaded turn
-  // reads all three from its detail instead.
+  // The reply to the turn's last model call, loaded from the single turn or
+  // the record; and the model that call asked for and how many calls the
+  // turn made (facts the list carries). Undefined when not loaded. A loaded
+  // turn reads the reply from its detail instead.
   reply?: string;
   replyTruncated?: boolean;
   model?: string;
@@ -565,6 +565,11 @@ export interface DataSource {
   getTurns(sessionId: string): Promise<TurnList>;
   // One turn's events, paired. null when the turn has no events.
   getTurn(sessionId: string, turnId: string): Promise<TurnDetail | null>;
+  // The whole prompt and reply of one turn, read from the single turn (GET
+  // /api/v0/turns/{id}). The turn list carries neither, so the cockpit loads
+  // each shown turn's text from here. A source whose list already carries the
+  // text (a recorded file) leaves this out.
+  getTurnText?(sessionId: string, turnId: string): Promise<{ prompt: string; reply?: string }>;
   // A source that keeps saved agents has these: the harnesses they can run
   // on, and the agents to list, save, edit and remove. Each rejects with the
   // API's own words.

@@ -259,7 +259,6 @@ interface TurnTabProps {
 // last, with its state, verdict and findings.
 export const TurnTab: React.FC<TurnTabProps> = ({ turn, row, reviews, onStop }) => {
   const now = useQueueClock(row ? [row, ...reviews] : reviews);
-  const [open, setOpen] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const counts = { passed: 0, failed: 0, running: 0 };
   for (const r of reviews) {
@@ -306,8 +305,6 @@ export const TurnTab: React.FC<TurnTabProps> = ({ turn, row, reviews, onStop }) 
       </div>
       {reviews.map((r, i) => {
         const o = outcome(r);
-        const isOpen = open === r.id;
-        const reply = r.reply;
         return (
           <div key={r.id} className={`job-row s-${o.cls}`}>
             <div className="job-h">
@@ -327,13 +324,10 @@ export const TurnTab: React.FC<TurnTabProps> = ({ turn, row, reviews, onStop }) 
             )}
             <TurnFacts row={r} now={now} />
             {r.findings && r.findings.length > 0 && <FindingList findings={r.findings} />}
-            <div className="job-acts">
-              {reply && (
-                <button type="button" className="lnk" onClick={() => setOpen(isOpen ? null : r.id)}>
-                  {isOpen ? 'Hide the reply' : 'Show the reply'}
-                </button>
-              )}
-              {!ended(r) && onStop && (
+            {/* The reviewer's whole reply is read by opening its own turn; the
+                turn list this view reads carries no reply text. */}
+            {!ended(r) && onStop && (
+              <div className="job-acts">
                 <button
                   type="button"
                   className="lnk"
@@ -344,13 +338,7 @@ export const TurnTab: React.FC<TurnTabProps> = ({ turn, row, reviews, onStop }) 
                 >
                   Stop
                 </button>
-              )}
-            </div>
-            {isOpen && reply && (
-              <pre className="term job-reply">
-                {reply}
-                {r.reply_truncated ? '…' : ''}
-              </pre>
+              </div>
             )}
           </div>
         );

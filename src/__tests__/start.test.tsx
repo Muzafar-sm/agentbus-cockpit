@@ -64,7 +64,8 @@ function apiTurns(events: CockpitEvent[]) {
       session,
       agent: t.agent ?? '',
       folder: t.folder ?? '',
-      prompt: t.detail!.rawPrompt ?? '',
+      model: t.model,
+      model_calls: t.modelCalls,
       idempotency_key: t.detail!.events.find((e) => e.kind === 'turn.started')?.idempotency_key,
       started_seq: t.startedSeq!,
       started: t.startedAt,
@@ -176,6 +177,34 @@ function fakeService(opts: {
       const page = older.slice(0, opts.turnPage ?? 100);
       const more = older.length > page.length;
       return json({ store: 'st_1', seq, turns: page, next_before: more ? page[page.length - 1].started_seq : null });
+    }
+    // GET /api/v0/turns/<id>: the single turn, with its whole prompt and reply
+    // (the list carries neither). The cockpit loads each shown turn's text here.
+    const tm = p.match(/^\/api\/v0\/turns\/([^/]+)$/);
+    if (tm && method === 'GET') {
+      const turnId = tm[1];
+      const named = url.searchParams.get('session');
+      for (const s of named ? [named] : Object.keys(state.events)) {
+        const t = buildTurns(s, state.events[s] ?? []).find((x) => x.id === turnId);
+        if (t) {
+          return json({
+            store: 'st_1',
+            seq,
+            turn: {
+              id: t.id,
+              session: s,
+              state: t.state,
+              started_seq: t.startedSeq,
+              prompt: t.detail!.rawPrompt ?? '',
+              reply: t.detail!.agentResponse,
+              model: t.model,
+              model_calls: t.modelCalls,
+              ...opts.turnFields?.[t.id],
+            },
+          });
+        }
+      }
+      return json({ error: 'no such turn' }, 404);
     }
     const m = p.match(/^\/api\/v0\/sessions\/([^/]+)\/events$/);
     if (m && method === 'GET' && url.searchParams.has('turn')) {
@@ -1490,6 +1519,7 @@ describe('The turn list from the API', () => {
     expect(turnReads(svc)).toBe(before);
     r.unmount();
   });
+
 });
 
 // A second turn whose turn.started carries the given extra fields.

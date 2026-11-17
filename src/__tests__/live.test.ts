@@ -104,7 +104,6 @@ describe('LiveDataSource', () => {
     expect(t3.state).toBe('running');
     expect(t3.durationMs).toBeUndefined();
     expect(t3.usage).toBeNull();
-    expect(t3.promptTruncated).toBe(true);
     expect(t3.detail).toBeUndefined();
   });
 
@@ -183,7 +182,7 @@ describe('LiveDataSource', () => {
     expect(d.events).toHaveLength(5);
   });
 
-  it('getTurns reads each turn\'s reply, model and model calls from the list', async () => {
+  it('getTurns reads each turn\'s model and model calls from the list (facts only, no text)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
@@ -191,8 +190,8 @@ describe('LiveDataSource', () => {
           store: 'st_1',
           seq: 9,
           turns: [
-            apiTurn('T3', 30, { reply: 'é'.repeat(500), reply_truncated: true, model: 'claude-opus-5-5', model_calls: 7 }),
-            apiTurn('T2', 20, { reply: '', model: '', model_calls: 0 }),
+            apiTurn('T3', 30, { model: 'claude-opus-5-5', model_calls: 7 }),
+            apiTurn('T2', 20, { model: '', model_calls: 0 }),
             // A service older than these fields sends none of them.
             apiTurn('T1', 10),
           ],
@@ -201,9 +200,25 @@ describe('LiveDataSource', () => {
       )
     );
     const [t1, t2, t3] = (await new LiveDataSource({ baseUrl: BASE }).getTurns('abc')).turns;
-    expect([t3.reply?.length, t3.replyTruncated, t3.model, t3.modelCalls]).toEqual([500, true, 'claude-opus-5-5', 7]);
-    expect([t2.reply, t2.replyTruncated, t2.model, t2.modelCalls]).toEqual([undefined, false, undefined, 0]);
-    expect([t1.reply, t1.replyTruncated, t1.model, t1.modelCalls]).toEqual([undefined, false, undefined, undefined]);
+    // The list carries facts only: the model and the call count, never text.
+    expect([t3.model, t3.modelCalls, t3.prompt, t3.reply]).toEqual(['claude-opus-5-5', 7, '', undefined]);
+    expect([t2.model, t2.modelCalls]).toEqual([undefined, 0]);
+    expect([t1.model, t1.modelCalls]).toEqual([undefined, undefined]);
+  });
+
+  it('getTurnText reads one turn\'s whole prompt and reply from the single turn', async () => {
+    const paths: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string) => {
+        const u = new URL(input);
+        paths.push(u.pathname + u.search);
+        return json({ store: 'st_1', seq: 9, turn: { id: 'T1', session: 'abc', prompt: 'the whole prompt', reply: 'the whole reply' } });
+      })
+    );
+    const text = await new LiveDataSource({ baseUrl: BASE }).getTurnText('abc', 'T1');
+    expect(text).toEqual({ prompt: 'the whole prompt', reply: 'the whole reply' });
+    expect(paths[0]).toBe('/api/v0/turns/T1?session=abc');
   });
 
   it('getTurn starts over once on 409, and is null for a turn with no events', async () => {

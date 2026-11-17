@@ -213,7 +213,6 @@ describe('Review', () => {
       ended: '2026-11-08T10:11:40Z',
       verdict: 'fail',
       findings: [{ severity: 'P1', file: 'app.go', line: 40, summary: 'the retry never stops' }],
-      reply: 'Looks wrong.\n{"verdict":"fail"}',
       cost_usd: 0.25,
     });
     await waitFor(() => /Checked by claude · sonnet: failed, 1 finding/.test(bar(r.container)!.textContent ?? ''), 'the verdict');
@@ -232,8 +231,6 @@ describe('Review', () => {
     expect(finding.textContent).toContain('P1');
     expect(finding.textContent).toContain('app.go:40');
     expect(finding.textContent).toContain('the retry never stops');
-    await click(Array.from(body.querySelectorAll('button')).find((b) => b.textContent === 'Show the reply'));
-    expect(body.querySelector('.job-reply')?.textContent).toContain('Looks wrong.');
 
     // A second review of the same turn: the newest shows, the first is kept.
     await click(bar(r.container)!.querySelector('.rb-go'));
