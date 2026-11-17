@@ -17,8 +17,7 @@ function fakeApi() {
   const kept: Record<string, string> = {};
   const list = async (): Promise<SubscriptionList> => ({
     subscriptions: [],
-    openrouter_key: { set: false },
-    api_keys: Object.fromEntries(['anthropic', 'gemini', 'openai'].map((n) => [n, kept[n] ? { set: true, set_at: '2026-11-13T10:00:00Z' } : { set: false }])),
+    api_keys: Object.fromEntries(['anthropic', 'gemini', 'openai', 'openrouter'].map((n) => [n, kept[n] ? { set: true, set_at: '2026-11-13T10:00:00Z' } : { set: false }])),
   });
   const api: SubscriptionApi = {
     list: vi.fn(list),
@@ -76,7 +75,7 @@ describe('APIKey', () => {
 
   it('shows no row for a control too old to list the vendor keys', async () => {
     const f = fakeApi();
-    f.api.list = vi.fn(async () => ({ subscriptions: [], openrouter_key: { set: false } }));
+    f.api.list = vi.fn(async () => ({ subscriptions: [] }));
     const { container } = await render(<APIKey api={f.api} name="anthropic" />);
     await flush();
     expect(container.querySelector('.key-row')).toBeNull();
@@ -157,10 +156,11 @@ describe('The models of an API key agent', () => {
 });
 
 describe('signInOf and API key agents', () => {
-  it('says whether the vendor key is set, from the agent', () => {
+  it('says whether the vendor key is set, from the subscriptions', () => {
     const a = { id: 'a', name: 'x', harness: 'claude', access: 'api', created: '', updated: '' };
-    expect(signInOf({ ...a, key_set: true } as never, null)?.ok).toBe(true);
-    expect(signInOf({ ...a, key_set: false } as never, null)?.ok).toBe(false);
+    expect(signInOf(a as never, { subscriptions: [], api_keys: { anthropic: { set: true } } })?.ok).toBe(true);
+    expect(signInOf(a as never, { subscriptions: [], api_keys: { anthropic: { set: false } } })?.ok).toBe(false);
+    expect(signInOf(a as never, { subscriptions: [] })?.ok).toBe(false);
     expect(signInOf(a as never, null)).toBeUndefined();
   });
 });

@@ -864,8 +864,11 @@ const SubscriptionsPart: React.FC<{ api: SubscriptionApi }> = ({ api }) => {
       {list.subscriptions.map((s) => (
         <ConnectStep key={s.harness} harness={s.harness} api={api} />
       ))}
+      {/* OpenRouter has its own card; its api_keys entry is shown there, not
+          again by the vendor-key loop below. */}
       <OpenRouterKey api={api} />
       {Object.keys(list.api_keys ?? {})
+        .filter((name) => name !== 'openrouter')
         .sort()
         .map((name) => (
           <APIKey key={name} api={api} name={name} />

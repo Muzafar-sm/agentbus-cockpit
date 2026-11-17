@@ -737,8 +737,8 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
       active = false;
     };
   }, [dataSource, agentsDialog, agentsKey, page]);
-  // Read with the agents, so an agent's key_set and the OpenRouter key kept
-  // on control are read at the same moment; then when a subscription
+  // Read with the agents, so the subscriptions (each agent's key-set, from
+  // api_keys and env_keys) are read at the same moment; then when a subscription
   // agent's turn ends (the stream calls readSubsRef), for how much of its
   // plan is left, and once a minute in case no turn tells.
   useEffect(() => {
