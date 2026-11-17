@@ -100,12 +100,20 @@ describe('the turn header', () => {
 });
 
 describe('the rename pencil', () => {
-  it('is always shown, quiet, the same on the session card and in the header', () => {
+  it('shows on hover of its card or header and on keyboard focus, quiet, the same in both', () => {
+    // His call, 2026-11-17: clicking the name renames, so the pencil stays out
+    // of sight until its card or the header is hovered, or it has keyboard focus.
     const all = rules(css);
-    const pencil = all.filter(([sel]) => /\.(s|c)-rename\b/.test(sel));
-    // Never hidden until hover.
-    expect(pencil.filter(([, body]) => /opacity:\s*0\b|visibility:\s*hidden|display:\s*none/.test(body))).toEqual([]);
-    expect(all.find(([sel]) => sel === '.s-rename, .c-rename')?.[1]).toMatch(/color:\s*var\(--ink3\)/);
+    const base = all.filter(([sel]) => sel === '.s-rename, .c-rename').map(([, body]) => body).join(';');
+    expect(base).toMatch(/opacity:\s*0\b/);
+    expect(base).toMatch(/color:\s*var\(--ink3\)/);
+    const shown = all.find(([sel, body]) => sel.includes('.sess-row:hover .s-rename') && /opacity:\s*1\b/.test(body))?.[0] ?? '';
+    for (const sel of ['.sess-row:hover .s-rename', '#c-head:hover .c-rename', '.s-rename:focus-visible', '.c-rename:focus-visible']) {
+      expect(shown).toContain(sel);
+    }
+    // Still in the page, so it can be reached by keyboard: never removed.
+    const removed = all.filter(([sel, body]) => /\.(s|c)-rename\b/.test(sel) && /visibility:\s*hidden|display:\s*none/.test(body));
+    expect(removed).toEqual([]);
   });
 });
 
