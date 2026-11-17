@@ -32,7 +32,7 @@ import { folderLabel, useFolders } from '../data/folders';
 import { turnToolbox } from '../data/toolbox';
 import { McpTab } from './McpTab';
 import { TurnChangesTab } from './Changes';
-import { TurnDiff } from '../types';
+import { TurnChangesPage, TurnDiff } from '../types';
 
 interface RightPanelProps {
   turn: Turn | null;
@@ -78,6 +78,7 @@ interface RightPanelProps {
   escRef?: React.MutableRefObject<(() => boolean) | null>;
   // Given when the source keeps each turn's diff: the Changes tab reads it.
   loadDiff?: (sessionId: string, turnId: string) => Promise<TurnDiff>;
+  loadChanges?: (sessionId: string, turnId: string, before?: number) => Promise<TurnChangesPage>;
   // The session's apply preview said its copy is too big to track: a turn's
   // cut changes say so instead of a count.
   tooBig?: boolean;
@@ -189,6 +190,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
   onFix,
   loadAgents,
   loadDiff,
+  loadChanges,
   tooBig,
 }) => {
   // A running turn's status from its events, read each second while it runs.
@@ -596,7 +598,12 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
         {tab === 'cicd' && <TurnTab turn={turn} row={row} reviews={reviews} onStop={onStopQueued} />}
 
         {tab === 'changes' && loadDiff && (
-          <TurnChangesTab turnId={turn.id} loadDiff={() => loadDiff(turn.sessionId, turn.id)} tooBig={tooBig} />
+          <TurnChangesTab
+            turnId={turn.id}
+            loadDiff={() => loadDiff(turn.sessionId, turn.id)}
+            loadChanges={loadChanges ? (before?: number) => loadChanges(turn.sessionId, turn.id, before) : undefined}
+            tooBig={tooBig}
+          />
         )}
 
         {tab === 'result' && (

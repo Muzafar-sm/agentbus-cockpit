@@ -26,6 +26,7 @@ import {
   ApplyState,
   Turn,
   TurnDiff,
+  TurnChangesPage,
   TurnDetail,
   TurnList,
 } from '../types';
@@ -623,10 +624,23 @@ export class LiveDataSource implements DataSource {
     return 'stopping';
   }
 
-  // GET /api/v0/turns/<id>/diff: the turn's files, calls and commands.
+  // GET /api/v0/turns/<id>/diff: the turn's summary (counts, cost, apply).
   async getTurnDiff(sessionId: string, turnId: string): Promise<TurnDiff> {
     const res = await fetch(
       `${this.baseUrl}/api/v0/turns/${encodeURIComponent(turnId)}/diff?session=${encodeURIComponent(sessionId)}`,
+      { headers: this.headers() }
+    );
+    if (!res.ok) throw new Error(await apiError(res));
+    return res.json();
+  }
+
+  // GET /api/v0/turns/<id>/changes: a page of the turn's changed files. before
+  // is the previous page's next_before; absent for the newest page.
+  async getTurnChanges(sessionId: string, turnId: string, before?: number): Promise<TurnChangesPage> {
+    const q = new URLSearchParams({ session: sessionId });
+    if (before != null) q.set('before', String(before));
+    const res = await fetch(
+      `${this.baseUrl}/api/v0/turns/${encodeURIComponent(turnId)}/changes?${q.toString()}`,
       { headers: this.headers() }
     );
     if (!res.ok) throw new Error(await apiError(res));
