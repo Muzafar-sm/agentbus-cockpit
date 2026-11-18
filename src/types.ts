@@ -499,6 +499,21 @@ export interface Composition {
   note: string;
 }
 
+// How full a prompt is against the model's window, and where the vendor's
+// harness compacts. The practical number of the context view.
+export interface ContextWindow {
+  model: string;
+  harness: string;
+  window_tokens: number;
+  window_known: boolean;
+  used_tokens: number;
+  percent_full: number;
+  compaction_point?: number; // share (0..1); absent for an unknown harness
+  compaction_pct?: number; // rounded percent of the window
+  compaction_source?: string; // 'vendor' | 'default'
+  compaction_is_default: boolean;
+}
+
 // One turn's context: its size, cache split and what its largest prompt holds.
 export interface TurnContext {
   store: string;
@@ -506,6 +521,7 @@ export interface TurnContext {
   turn: string;
   session: string;
   model: string;
+  window: ContextWindow | null;
   calls: number;
   context_tokens: number;
   cache_read_tokens: number;

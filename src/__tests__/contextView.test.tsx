@@ -9,7 +9,19 @@ const turnCtx: TurnContext = {
   seq: 10,
   turn: 'T2',
   session: 's1',
-  model: 'claude',
+  model: 'claude-opus-5-5',
+  window: {
+    model: 'claude-opus-5-5',
+    harness: 'claude',
+    window_tokens: 200000,
+    window_known: true,
+    used_tokens: 50000,
+    percent_full: 25,
+    compaction_point: 0.8,
+    compaction_pct: 80,
+    compaction_source: 'default',
+    compaction_is_default: true,
+  },
   calls: 2,
   context_tokens: 250,
   cache_read_tokens: 200,
@@ -63,9 +75,11 @@ describe('ContextView', () => {
     );
     await flush();
     const text = r.container.textContent ?? '';
-    // The headline context size.
-    expect(text).toContain('250');
-    // The cache split is shown.
+    // The headline is how full the context is against the window, and where it
+    // compacts — the practical number, not the raw tokens.
+    expect(text).toContain('25%');
+    expect(text).toMatch(/compacts at ~80%/);
+    // The cache split is still shown, now secondary.
     expect(text).toMatch(/From cache/);
     expect(text).toMatch(/Fresh/);
     // The made_of parts, largest first, in plain names.
@@ -87,6 +101,19 @@ describe('ContextView', () => {
     );
     await flush();
     expect(r.container.textContent).toMatch(/no model call/i);
+    r.unmount();
+  });
+
+  it('falls back to raw tokens when the turn has no window', async () => {
+    const noWindow: TurnContext = { ...turnCtx, window: null };
+    const r = await render(
+      <ContextView session="s1" turn="T2" loadTurn={async () => noWindow} loadSession={async () => sessionCtx} />
+    );
+    await flush();
+    const text = r.container.textContent ?? '';
+    // No meter: the raw context size stands in.
+    expect(text).toContain('250');
+    expect(r.container.querySelector('.ctxm')).toBeNull();
     r.unmount();
   });
 
@@ -161,19 +188,19 @@ describe('ContextView', () => {
     await act(async () => {
       r.root.render(el(0));
     });
-    // Resolve the NEWER read first (333), then the OLDER one (111).
+    // Resolve the NEWER read first (33% full), then the OLDER one (11%).
     await act(async () => {
-      resolvers[1]?.({ ...turnCtx, context_tokens: 333 });
+      resolvers[1]?.({ ...turnCtx, window: { ...turnCtx.window!, percent_full: 33 } });
       await Promise.resolve();
     });
     await act(async () => {
-      resolvers[0]?.({ ...turnCtx, context_tokens: 111 });
+      resolvers[0]?.({ ...turnCtx, window: { ...turnCtx.window!, percent_full: 11 } });
       await Promise.resolve();
     });
     await flush();
-    // The newer result stands; the stale 111 was discarded.
-    expect(r.container.textContent).toContain('333');
-    expect(r.container.textContent).not.toContain('111');
+    // The newer result stands; the stale 11% was discarded.
+    expect(r.container.textContent).toContain('33%');
+    expect(r.container.textContent).not.toContain('11%');
     r.unmount();
   });
 
@@ -197,7 +224,7 @@ describe('ContextView', () => {
       </StrictMode>
     );
     await flush();
-    expect(r.container.textContent).toContain('250');
+    expect(r.container.textContent).toContain('25%');
     expect(r.container.textContent).not.toMatch(/^Loading/);
     r.unmount();
   });

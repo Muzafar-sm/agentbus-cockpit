@@ -1141,6 +1141,24 @@ input.invalid, textarea.invalid { border-color: var(--bad); }
 .ctxv-cols { display: flex; align-items: flex-end; gap: 2px; height: 5rem; padding: 0.25rem; border: 1px solid var(--line); border-radius: 0.5rem; background: #FBFBFA; }
 .ctxv-col { flex: 1 1 0; min-width: 2px; background: var(--line2); border-radius: 2px 2px 0 0; transition: background .15s; }
 .ctxv-col.here { background: var(--ink2); }
+.ctxv-model { font-family: var(--mono); font-size: var(--fs-xs); font-weight: 500; overflow-wrap: anywhere; }
+
+/* The context meter: how full against the window, and where it compacts. A
+   reusable element in the cockpit's theme (see the live-status sketch). */
+.ctxm { margin-bottom: 0.5rem; }
+.ctxm-head { display: flex; align-items: baseline; gap: 0.9rem; flex-wrap: wrap; }
+.ctxm-big { display: flex; align-items: baseline; gap: 0.3rem; }
+.ctxm-pct { font-size: 1.9rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--run); }
+.ctxm-pct.near { color: var(--amber); }
+.ctxm-pct.over { color: var(--bad); }
+.ctxm-big > span { font-size: var(--fs-s); color: var(--ink3); font-weight: 550; }
+.ctxm-sub { font-size: var(--fs-s); color: var(--ink2); line-height: 1.4; }
+.ctxm-track { position: relative; height: 0.9rem; margin-top: 0.5rem; border-radius: 0.45rem; background: var(--line); overflow: hidden; }
+.ctxm-fill { height: 100%; background: var(--run); border-radius: 0.45rem; transition: width .2s var(--ease); }
+.ctxm-track.near .ctxm-fill { background: var(--amber); }
+.ctxm-track.over .ctxm-fill { background: var(--bad); }
+.ctxm-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }
+.ctxm-note { margin: 0.4rem 0 0; font-size: var(--fs-xs); line-height: 1.5; }
 .ctxv-growth-foot { display: flex; gap: 1.25rem; margin-top: 0.4rem; font-size: var(--fs-s); flex-wrap: wrap; }
 /* part colours, shared by the bars and the swatches */
 .cp-cache { background: #0F7A49; }
