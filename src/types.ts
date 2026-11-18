@@ -652,17 +652,13 @@ export const ApprovalGone = 'approval-gone';
 // decision only.
 export type ApprovalDecision = 'once' | 'always' | 'refuse';
 
-// An app's effect: it only reads, or it does something (starts work or changes
-// files). The gate allows a reads call by default and asks for a does-something
-// one; a person's rule overrides.
-export type AppEffect = 'reads' | 'does-something';
-
 // AppSummary is an app as the list carries it (GET /api/v0/tools): facts only.
-// The full definition is read from GET /api/v0/tools/{name}.
+// The full definition is read from GET /api/v0/tools/{name}. An app carries no
+// effect: nothing about it is trusted, and a call is decided by its name
+// against the rules (his decision, 2026-11-18).
 export interface AppSummary {
   name: string;
   description: string;
-  effect: AppEffect;
   // Where a call runs: 'control' in 0.6.
   where: string;
 }

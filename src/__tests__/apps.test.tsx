@@ -1,15 +1,14 @@
 // @vitest-environment jsdom
 import { act } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { AppsPage, AppsApi, effectLabel, whereLabel } from '../components/AppsPage';
+import { AppsPage, AppsApi, whereLabel } from '../components/AppsPage';
 import { AppDef } from '../types';
 import { click, flush, render, unmountAll } from './helpers';
 
-function def(name: string, effect: 'reads' | 'does-something', extra: Partial<AppDef> = {}): AppDef {
+function def(name: string, extra: Partial<AppDef> = {}): AppDef {
   return {
     name,
     description: `${name} description`,
-    effect,
     where: 'control',
     inputs: { type: 'object', properties: {} },
     run: { kind: 'api', method: 'GET', path: '/api/v0/turns' },
@@ -25,7 +24,7 @@ function fakeApi(initial: AppDef[]) {
   const api: AppsApi = {
     listApps: async () => {
       calls.list++;
-      return [...store.values()].map(({ name, description, effect, where }) => ({ name, description, effect, where }));
+      return [...store.values()].map(({ name, description, where }) => ({ name, description, where }));
     },
     getApp: async (name) => {
       calls.got.push(name);
@@ -64,31 +63,30 @@ afterEach(() => {
 });
 
 describe('the Apps page', () => {
-  it('lists the apps with their effect, read once', async () => {
-    const { api, calls } = fakeApi([def('list_turns', 'reads'), def('apply_turn', 'does-something')]);
+  it('lists the apps by name, read once (no effect column)', async () => {
+    const { api, calls } = fakeApi([def('list_turns'), def('apply_turn')]);
     const r = await render(<AppsPage api={api} onBack={() => {}} />);
     await flush();
     const list = rows(r.container);
     expect(list.map((x) => x.querySelector('.apps-row-name')!.textContent)).toEqual(['list_turns', 'apply_turn']);
-    expect(list[0].querySelector('.apps-tag')!.textContent).toBe('Reads');
-    expect(list[1].querySelector('.apps-tag')!.textContent).toBe('Does something');
-    expect(list[1].querySelector('.apps-tag')!.className).toContain('does');
+    // An app carries no effect, so the row shows none.
+    expect(r.container.querySelector('.apps-tag')).toBeNull();
     expect(calls.list).toBe(1);
   });
 
   it('loads the full definition from the single app on a pick', async () => {
-    const withInputs = def('apply_turn', 'does-something', {
+    const withInputs = def('apply_turn', {
       run: { kind: 'api', method: 'POST', path: '/api/v0/turns/{id}/apply' },
       inputs: { type: 'object', properties: { turn: { type: 'string', description: 'the turn' } }, required: ['turn'] },
     });
-    const { api, calls } = fakeApi([def('list_turns', 'reads'), withInputs]);
+    const { api, calls } = fakeApi([def('list_turns'), withInputs]);
     const r = await render(<AppsPage api={api} onBack={() => {}} />);
     await flush();
     await click(rows(r.container)[1]);
     await flush();
     // The middle column: the app's facts.
     expect(r.container.querySelector('.apps-desc')!.textContent).toContain('apply_turn');
-    expect(r.container.querySelector('.apps-facts')!.textContent).toContain('Does something');
+    expect(r.container.querySelector('.apps-facts')!.textContent).toContain('AgentBus');
     // The right column: what it runs and its inputs, from getApp.
     expect(calls.got).toEqual(['apply_turn']);
     expect(r.container.querySelector('.apps-run')!.textContent).toContain('POST');
@@ -101,7 +99,7 @@ describe('the Apps page', () => {
   it('shows a crafted app whose input type and description are not strings, without crashing', async () => {
     // The registry's schema check does not pin a property's type or description
     // to a string. A bare render of an object throws and clears the page.
-    const crafted = def('odd_tool', 'reads', {
+    const crafted = def('odd_tool', {
       inputs: {
         type: 'object',
         properties: { q: { type: { nested: true }, description: { text: 'a filter' } } },
@@ -121,13 +119,13 @@ describe('the Apps page', () => {
   });
 
   it('adds a custom app and selects it', async () => {
-    const { api, store } = fakeApi([def('list_turns', 'reads')]);
+    const { api, store } = fakeApi([def('list_turns')]);
     const r = await render(<AppsPage api={api} onBack={() => {}} />);
     await flush();
     await click(button(r.container, '+ App'));
     const ta = r.container.querySelector('textarea.apps-text');
     expect(ta).not.toBeNull();
-    await setTextarea(ta, JSON.stringify(def('my_tool', 'reads')));
+    await setTextarea(ta, JSON.stringify(def('my_tool')));
     await click(button(r.container, 'Add app'));
     await flush();
     expect(store.has('my_tool')).toBe(true);
@@ -142,7 +140,7 @@ describe('the Apps page', () => {
     let releaseFirst: (v: ReturnType<typeof listOf>) => void = () => {};
     const store = new Map<string, AppDef>();
     const listOf = () =>
-      [...store.values()].map(({ name, description, effect, where }) => ({ name, description, effect, where }));
+      [...store.values()].map(({ name, description, where }) => ({ name, description, where }));
     let calls = 0;
     const api: AppsApi = {
       listApps: async () => {
@@ -161,7 +159,7 @@ describe('the Apps page', () => {
     await flush();
     // The initial list is still pending; add an app (its refresh is read #2).
     await click(button(r.container, '+ App'));
-    await setTextarea(r.container.querySelector('textarea.apps-text'), JSON.stringify(def('my_tool', 'reads')));
+    await setTextarea(r.container.querySelector('textarea.apps-text'), JSON.stringify(def('my_tool')));
     await click(button(r.container, 'Add app'));
     await flush();
     expect(rows(r.container).map((x) => x.querySelector('.apps-row-name')!.textContent)).toContain('my_tool');
@@ -175,9 +173,9 @@ describe('the Apps page', () => {
     // The single mechanism for the completion races: no second action can
     // start, and no pick can override, while an add and its refresh run.
     let releaseAdd: () => void = () => {};
-    const store = new Map<string, AppDef>([['list_turns', def('list_turns', 'reads')]]);
+    const store = new Map<string, AppDef>([['list_turns', def('list_turns')]]);
     const listOf = () =>
-      [...store.values()].map(({ name, description, effect, where }) => ({ name, description, effect, where }));
+      [...store.values()].map(({ name, description, where }) => ({ name, description, where }));
     const api: AppsApi = {
       listApps: async () => listOf(),
       getApp: async (n) => store.get(n)!,
@@ -193,7 +191,7 @@ describe('the Apps page', () => {
     const r = await render(<AppsPage api={api} onBack={() => {}} />);
     await flush();
     await click(button(r.container, '+ App'));
-    await setTextarea(r.container.querySelector('textarea.apps-text'), JSON.stringify(def('my_tool', 'reads')));
+    await setTextarea(r.container.querySelector('textarea.apps-text'), JSON.stringify(def('my_tool')));
     await click(button(r.container, 'Add app'));
     await flush();
     // The add is pending: the controls that would start another action or
@@ -211,12 +209,12 @@ describe('the Apps page', () => {
   });
 
   it('holds the API’s words when an add is refused, without adding', async () => {
-    const { api, store } = fakeApi([def('list_turns', 'reads')]);
+    const { api, store } = fakeApi([def('list_turns')]);
     const r = await render(<AppsPage api={api} onBack={() => {}} />);
     await flush();
     await click(button(r.container, '+ App'));
     // A name already served: the fake refuses with the service's words.
-    await setTextarea(r.container.querySelector('textarea.apps-text'), JSON.stringify(def('list_turns', 'reads')));
+    await setTextarea(r.container.querySelector('textarea.apps-text'), JSON.stringify(def('list_turns')));
     await click(button(r.container, 'Add app'));
     await flush();
     expect(r.container.querySelector('.apps-add-err')!.textContent).toContain('already exists');
@@ -236,7 +234,7 @@ describe('the Apps page', () => {
   });
 
   it('removes an app after a confirm', async () => {
-    const { api, store } = fakeApi([def('list_turns', 'reads'), def('apply_turn', 'does-something')]);
+    const { api, store } = fakeApi([def('list_turns'), def('apply_turn')]);
     const r = await render(<AppsPage api={api} onBack={() => {}} />);
     await flush();
     await click(rows(r.container)[1]);
@@ -251,7 +249,7 @@ describe('the Apps page', () => {
   });
 
   it('shows the Apps row as current, with the sibling pages as links', async () => {
-    const { api } = fakeApi([def('list_turns', 'reads')]);
+    const { api } = fakeApi([def('list_turns')]);
     const r = await render(<AppsPage api={api} onBack={() => {}} onRunners={() => {}} onSettings={() => {}} />);
     await flush();
     const current = r.container.querySelector('.side-link.pick.on');
@@ -262,10 +260,6 @@ describe('the Apps page', () => {
 });
 
 describe('the plain labels', () => {
-  it('say the effect plainly', () => {
-    expect(effectLabel('reads')).toBe('Reads');
-    expect(effectLabel('does-something')).toBe('Does something');
-  });
   it('name the API side AgentBus and a runner by its name', () => {
     expect(whereLabel('control')).toBe('AgentBus');
     expect(whereLabel('')).toBe('AgentBus');

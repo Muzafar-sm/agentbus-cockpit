@@ -3,7 +3,7 @@ import { ColHead, PageFrame } from './PageFrame';
 import { Button } from './Controls';
 import { ConfirmDialog } from './Dialog';
 import { Loading, Notice } from './Notice';
-import { AppDef, AppEffect, AppSummary } from '../types';
+import { AppDef, AppSummary } from '../types';
 
 // The Apps page (/apps): the apps AgentBus serves to agents — our reusable
 // capabilities and the person's own. The left column lists them; picking one
@@ -36,11 +36,6 @@ interface AppsPageProps {
   disconnectLabel?: string;
 }
 
-// effectLabel is an app's effect in plain words.
-export function effectLabel(effect: AppEffect | string): string {
-  return effect === 'reads' ? 'Reads' : 'Does something';
-}
-
 // whereLabel is where an app's call runs, in the cockpit's own words. A call
 // on a named runner shows that runner's name; every other case (the API side,
 // the only one in 0.6) is the service itself, AgentBus.
@@ -54,7 +49,6 @@ const SKELETON = `{
   "name": "verb_noun",
   "description": "What it does; its scope first, then what it does not.",
   "inputs": { "type": "object", "properties": {} },
-  "effect": "reads",
   "run": { "kind": "api", "method": "GET", "path": "/api/v0/turns" }
 }`;
 
@@ -180,7 +174,7 @@ export const AppsPage: React.FC<AppsPageProps> = ({
     }
   };
 
-  // The left column: a button to add, then one row per app with its effect.
+  // The left column: a button to add, then one row per app.
   const list = (
     <nav className="apps-list" aria-label="Apps">
       <Button kind="secondary" small className="apps-add" disabled={busy} onClick={openAdd}>
@@ -205,7 +199,6 @@ export const AppsPage: React.FC<AppsPageProps> = ({
             onClick={() => pick(a.name)}
           >
             <span className="apps-row-name">{a.name}</span>
-            <span className={`apps-tag ${a.effect === 'reads' ? 'reads' : 'does'}`}>{effectLabel(a.effect)}</span>
           </button>
         ))
       )}
@@ -221,8 +214,8 @@ export const AppsPage: React.FC<AppsPageProps> = ({
         <ColHead title="Add an app" />
         <div className="colbody pg-body apps-main">
           <p className="pg-note">
-            An app is one definition: a name, a description for a model, its inputs, its effect and what it runs. In 0.6
-            an app runs an AgentBus API route. Paste or edit the definition below.
+            An app is one definition: a name, a description for a model, its inputs and what it runs. In 0.6 an app runs
+            an AgentBus API route. Paste or edit the definition below.
           </p>
           {/* While busy every control of the form is held — the field and
               both buttons — so an edit or a second submit made during the add
@@ -258,10 +251,6 @@ export const AppsPage: React.FC<AppsPageProps> = ({
         <div className="colbody pg-body apps-main">
           <p className="apps-desc">{summary.description}</p>
           <dl className="apps-facts">
-            <div>
-              <dt>Effect</dt>
-              <dd>{effectLabel(summary.effect)}</dd>
-            </div>
             <div>
               <dt>Where it runs</dt>
               <dd>{whereLabel(summary.where)}</dd>
