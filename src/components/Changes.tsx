@@ -280,8 +280,12 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
     };
   }, [polling, asked, readApply, pollMs]);
 
-  // After an apply, the panel says so until a later turn has new work.
-  const applied = state?.state === 'applied' && (!preview || !preview.unapplied || preview.turn === asked!.turn);
+  // After an apply, the panel says so until a later turn has new work. A stale
+  // preview is never "applied, folder matches": it is out of date (the session
+  // changed and the runner is offline), so the panel shows that, its time and
+  // Refresh, whatever the last apply was.
+  const applied =
+    state?.state === 'applied' && !preview?.stale && (!preview || !preview.unapplied || preview.turn === asked!.turn);
   const refused = state && (state.state === 'refused' || state.state === 'failed') ? state : null;
   // The copy is too big to track: no count, no files, no apply.
   const tooBig = refusedTooBig(error) || refusedTooBig(refused?.error);

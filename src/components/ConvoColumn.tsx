@@ -750,7 +750,11 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
             const calls = detail ? detail.modelCalls.length : turn.modelCalls;
             const lastCall = detail?.modelCalls[detail.modelCalls.length - 1];
             const model = detail ? lastCall?.requested.model : turn.model;
-            const answer = detail ? detail.agentResponse : turn.reply;
+            // turn.reply is the one source of the turn's text: App fills it
+            // from the single turn (its whole reply) first, then the events,
+            // then the list. Opening the turn must not fall back to the events'
+            // partial text over the single turn's whole reply.
+            const answer = turn.reply;
             const answerCut = !detail && turn.replyTruncated;
             const notes = turnNotes(detail);
             // While the turn runs, one line stands where its reply will be:
