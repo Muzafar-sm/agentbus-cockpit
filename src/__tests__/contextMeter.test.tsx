@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { ContextMeter, compactionNote } from '../components/ContextMeter';
+import { ContextMeter } from '../components/ContextMeter';
 import { ContextWindow } from '../types';
 import { render, flush, unmountAll } from './helpers';
 
@@ -17,20 +17,6 @@ const base: ContextWindow = {
   compaction_is_default: true,
 };
 
-describe('compactionNote', () => {
-  it('says a vendor point is the vendor’s own', () => {
-    const w: ContextWindow = { ...base, harness: 'opencode', compaction_source: 'vendor', compaction_pct: 85 };
-    expect(compactionNote(w)).toMatch(/opencode.*own compaction point/i);
-  });
-  it('marks a stated default as the vendor publishing none', () => {
-    expect(compactionNote(base)).toMatch(/stated default.*publishes no compaction point/i);
-  });
-  it('says plainly when a harness publishes no point', () => {
-    const w: ContextWindow = { ...base, compaction_pct: undefined, compaction_point: undefined };
-    expect(compactionNote(w)).toMatch(/no compaction point/i);
-  });
-});
-
 describe('ContextMeter', () => {
   it('shows percent full, the window and the compaction point', async () => {
     const r = await render(<ContextMeter window={base} />);
@@ -38,19 +24,14 @@ describe('ContextMeter', () => {
     const text = r.container.textContent ?? '';
     expect(text).toContain('50%');
     expect(text).toMatch(/200\.0k token window/); // formatCount of the window
-    expect(text).toMatch(/compacts at ~80%/);
-    // The fill is below the compaction mark: the ok state.
-    expect(r.container.querySelector('.ctxm-track.ok')).not.toBeNull();
-    expect(r.container.querySelector('.ctxm-mark')).not.toBeNull();
-    r.unmount();
-  });
-
-  it('turns amber once the context reaches the compaction point', async () => {
-    const w: ContextWindow = { ...base, used_tokens: 170000, percent_full: 85 };
-    const r = await render(<ContextMeter window={w} />);
-    await flush();
-    expect(r.container.querySelector('.ctxm-track.near')).not.toBeNull();
-    expect(r.container.querySelector('.ctxm-pct.near')).not.toBeNull();
+    expect(text).toMatch(/compacts ~80%/);
+    // A stated default is marked as a default, not shown as the vendor's own.
+    expect(text).toMatch(/\(default\)/);
+    // The meter is below the window: no over state, and the mark is drawn.
+    const meter = r.container.querySelector('.ctx-meter');
+    expect(meter).not.toBeNull();
+    expect(meter!.classList.contains('over')).toBe(false);
+    expect(r.container.querySelector('.ctx-meter .mk')).not.toBeNull();
     r.unmount();
   });
 
@@ -58,9 +39,9 @@ describe('ContextMeter', () => {
     const w: ContextWindow = { ...base, used_tokens: 205000, percent_full: 103 };
     const r = await render(<ContextMeter window={w} />);
     await flush();
-    expect(r.container.querySelector('.ctxm-track.over')).not.toBeNull();
+    expect(r.container.querySelector('.ctx-meter.over')).not.toBeNull();
     // The fill never overflows the track.
-    const fill = r.container.querySelector('.ctxm-fill') as HTMLElement | null;
+    const fill = r.container.querySelector('.ctx-meter > i') as HTMLElement | null;
     expect(fill?.style.width).toBe('100%');
     r.unmount();
   });
@@ -70,6 +51,15 @@ describe('ContextMeter', () => {
     const r = await render(<ContextMeter window={w} />);
     await flush();
     expect(r.container.textContent).toMatch(/assumed/i);
+    r.unmount();
+  });
+
+  it('shows no compaction clause when the harness publishes no point', async () => {
+    const w: ContextWindow = { ...base, compaction_pct: undefined, compaction_point: undefined };
+    const r = await render(<ContextMeter window={w} />);
+    await flush();
+    expect(r.container.textContent).not.toMatch(/compacts/);
+    expect(r.container.querySelector('.ctx-meter .mk')).toBeNull();
     r.unmount();
   });
 });

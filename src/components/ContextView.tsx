@@ -4,19 +4,21 @@ import { formatCount } from '../utils/format';
 import { ContextMeter } from './ContextMeter';
 import { ContextPart, SessionContext, TurnContext } from '../types';
 
-// The practical context view, next to the Model calls debugging detail: how
-// big this turn's context got, how much came from the prompt cache, and what
-// its largest prompt was made of — then where the turn sits on the session's
-// context growth. It reads GET /turns/{id}/context and GET /sessions/{id}/context;
-// the numbers are the record's, computed on request, not stored.
+// The practical context view, beside the Model calls debugging detail: how
+// full this turn's context got against the window, the few facts that support
+// it, what its largest prompt was made of, and where the turn sits on the
+// session's growth. It reads GET /turns/{id}/context and GET
+// /sessions/{id}/context; the numbers are the record's, computed on request.
+// Built from the cockpit's own tab pieces — tab-sum, strip, sub-h, the grid —
+// so it reads as the other tabs do.
 
 interface Props {
   session: string;
   turn: string;
   loadTurn: (session: string, turn: string) => Promise<TurnContext>;
   loadSession: (session: string, before?: number) => Promise<SessionContext>;
-  // True while the selected turn is still running: the view says it is a
-  // snapshot that may be behind, and re-reads once when the turn ends.
+  // True while the selected turn is still running: the view re-reads once when
+  // the turn ends, so a settled turn is current without a Refresh.
   running?: boolean;
 }
 
@@ -50,102 +52,64 @@ export function partLabel(p: ContextPart): string {
   return p.label ? `${p.kind} · ${p.label}` : p.kind;
 }
 
-// A colour class per part, so the same part keeps its colour in the bar and
-// the legend. Keyed by kind and role, cycled for anything else.
-function partClass(p: ContextPart, i: number): string {
-  if (p.kind === 'system' || p.kind === 'instructions') return 'cp-system';
-  if (p.kind === 'tool') return 'cp-tool';
-  if (p.label === 'user') return 'cp-user';
-  if (p.label === 'assistant') return 'cp-assistant';
-  return `cp-other${(i % 3) + 1}`;
-}
-
 function pct(part: number, whole: number): string {
   if (whole <= 0) return '0%';
   return `${Math.round((part / whole) * 100)}%`;
 }
 
-// A two-part bar: how much of the context came from the cache against fresh.
-const CacheBar: React.FC<{ cache: number; fresh: number }> = ({ cache, fresh }) => {
-  const total = cache + fresh;
-  return (
-    <div className="ctxv-cache">
-      <div className="ctxv-bar" role="img" aria-label={`${pct(cache, total)} from cache, ${pct(fresh, total)} fresh`}>
-        <div className="ctxv-seg cp-cache" style={{ width: pct(cache, total) }} title={`Cache read: ${formatCount(cache)}`} />
-        <div className="ctxv-seg cp-fresh" style={{ width: pct(fresh, total) }} title={`Fresh: ${formatCount(fresh)}`} />
-      </div>
-      <div className="ctxv-legend">
-        <span><i className="cp-cache" /> From cache {formatCount(cache)} ({pct(cache, total)})</span>
-        <span><i className="cp-fresh" /> Fresh {formatCount(fresh)} ({pct(fresh, total)})</span>
-      </div>
-    </div>
-  );
-};
-
-// The made_of parts as a stacked bar and a legend, largest first.
+// The made_of parts as a plain table, largest first: the same grid the Model
+// calls tab uses. No stacked bar, no swatches, no caption.
 const MadeOf: React.FC<{ ctx: TurnContext }> = ({ ctx }) => {
   const made = ctx.made_of;
-  if (!made) {
-    return <p className="dim">No request body is kept for this turn's largest call, so its parts cannot be shown.</p>;
-  }
+  if (!made) return <p className="dim">No request body kept for this turn's largest call.</p>;
   const whole = made.approx_tokens;
   return (
-    <div className="ctxv-made">
-      <div className="ctxv-bar tall" role="img" aria-label="What the largest prompt is made of">
-        {made.parts.map((p, i) => (
-          <div
-            key={`${p.kind}-${p.label ?? ''}`}
-            className={`ctxv-seg ${partClass(p, i)}`}
-            style={{ width: pct(p.approx_tokens, whole) }}
-            title={`${partLabel(p)}: ~${formatCount(p.approx_tokens)} tokens`}
-          />
+    <table className="grid">
+      <thead>
+        <tr>
+          <th>Part</th>
+          <th className="r">Tokens</th>
+          <th className="r">Share</th>
+        </tr>
+      </thead>
+      <tbody>
+        {made.parts.map((p) => (
+          <tr key={`${p.kind}-${p.label ?? ''}`}>
+            <td>{partLabel(p)}</td>
+            <td className="r">~{formatCount(p.approx_tokens)}</td>
+            <td className="r">{pct(p.approx_tokens, whole)}</td>
+          </tr>
         ))}
-      </div>
-      <table className="ctxv-parts">
-        <tbody>
-          {made.parts.map((p, i) => (
-            <tr key={`${p.kind}-${p.label ?? ''}-row`}>
-              <td className="ctxv-sw"><i className={partClass(p, i)} /></td>
-              <td>{partLabel(p)}</td>
-              <td className="r">~{formatCount(p.approx_tokens)}</td>
-              <td className="r dim">{pct(p.approx_tokens, whole)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="ctxv-note dim">
-        ~{formatCount(whole)} approx tokens in {formatCount(made.bytes)} bytes · {made.vendor}. {made.note}
-      </p>
-    </div>
+      </tbody>
+    </table>
   );
 };
 
-// The session's growth: one bar per turn, oldest first, each as tall as its
-// context, the current turn marked. Later turns carry the earlier ones, so the
-// bars rise across the session — which is where compaction (0.7) will matter.
-// Scaled to the session peak, in tokens: a session's turns can run different
-// models and harnesses, and the session view carries no per-turn window, so a
-// single window here would be wrong for the turns on another model. The
-// per-turn meter above is where fullness-against-the-window is shown, correctly.
+// The session's growth: one thin bar per turn, oldest first, each as tall as
+// its context, the current turn in ink. Later turns carry the earlier ones, so
+// the bars rise across the session. Scaled to the session peak, in tokens: a
+// session's turns can run different models, and the session view carries no
+// per-turn window, so a single window here would be wrong. The per-turn meter
+// above is where fullness-against-the-window is shown.
 const Growth: React.FC<{ sc: SessionContext; turn: string }> = ({ sc, turn }) => {
   const turns = [...sc.growth].reverse(); // oldest first, left to right
   const peak = sc.peak_context_tokens || 1;
   return (
-    <div className="ctxv-growth">
-      <div className="ctxv-cols" role="img" aria-label="Context size per turn, oldest to newest">
+    <div className="ctx-grow">
+      <div className="ctx-bars" role="img" aria-label="Context size per turn, oldest to newest">
         {turns.map((t) => (
           <div
             key={t.turn}
-            className={`ctxv-col ${t.turn === turn ? 'here' : ''}`}
+            className={`ctx-bar ${t.turn === turn ? 'here' : ''}`}
             style={{ height: `${Math.max(3, Math.round((t.context_tokens / peak) * 100))}%` }}
             title={`${t.turn}: ${formatCount(t.context_tokens)} tokens${t.turn === turn ? ' (this turn)' : ''}`}
           />
         ))}
       </div>
-      <div className="ctxv-growth-foot dim">
-        <span>{sc.turns} turns</span>
-        <span>peak {formatCount(sc.peak_context_tokens)}</span>
-        <span>cache {pct(sc.cache_read_tokens, sc.cache_read_tokens + sc.fresh_tokens)}</span>
+      <div className="strip">
+        <div><span>Turns</span><b>{sc.turns}</b></div>
+        <div><span>Peak</span><b>{formatCount(sc.peak_context_tokens)}</b></div>
+        <div><span>Cache</span><b>{pct(sc.cache_read_tokens, sc.cache_read_tokens + sc.fresh_tokens)}</b></div>
       </div>
     </div>
   );
@@ -157,10 +121,9 @@ export const ContextView: React.FC<Props> = ({ session, turn, loadTurn, loadSess
   const [error, setError] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
   // The tab reads when it opens (and on a new turn/session), and once more when
-  // the turn finishes — the person does not need per-second accuracy. Each read
-  // guards its own state writes with a per-effect `live` flag (not a shared
-  // ref), which React StrictMode's double mount handles correctly — so a stale
-  // read can never overwrite a newer one.
+  // the turn finishes. Each read guards its own writes with a per-effect `live`
+  // flag (not a shared ref), which React StrictMode's double mount handles — so
+  // a stale read can never overwrite a newer one.
   const [nonce, setNonce] = useState(0);
   useEffect(() => {
     let live = true;
@@ -181,8 +144,7 @@ export const ContextView: React.FC<Props> = ({ session, turn, loadTurn, loadSess
     };
   }, [session, turn, loadTurn, loadSession, nonce]);
 
-  // The selected turn ending reads once more, so a settled turn is current
-  // without the viewer pressing Refresh.
+  // The selected turn ending reads once more.
   const wasRunning = useRef(running);
   useEffect(() => {
     if (wasRunning.current && !running) setNonce((n) => n + 1);
@@ -193,36 +155,37 @@ export const ContextView: React.FC<Props> = ({ session, turn, loadTurn, loadSess
   if (error) return <p className="bad">{error}</p>;
   if (!tc) return <p className="dim">No context for this turn.</p>;
 
-  const noCalls = tc.calls === 0;
+  const cacheTotal = tc.cache_read_tokens + tc.fresh_tokens;
   return (
-    <div className="ctxv">
-      {noCalls ? (
+    <div className="ctx-view">
+      {tc.calls === 0 ? (
         <p className="dim">This turn made no model call that reported usage.</p>
       ) : (
         <>
           {tc.window ? (
             <ContextMeter window={tc.window} />
           ) : (
-            <div className="ctxv-big">
-              <b>{formatCount(tc.context_tokens)}</b>
-              <small className="dim">tokens, this turn's largest prompt</small>
+            <div className="tab-sum">
+              <b>{formatCount(tc.context_tokens)} tokens</b>
+              <span className="sep"> · </span>
+              this turn's largest prompt
             </div>
           )}
-          <div className="ctxv-facts">
+          <div className="strip">
+            {(tc.window?.model || tc.model) && (
+              <div><span>Model</span><b><code>{tc.window?.model || tc.model}</code></b></div>
+            )}
             <div><span>Calls</span><b>{tc.calls}</b></div>
             <div><span>Output</span><b>{formatCount(tc.output_tokens)}</b></div>
-            {tc.window?.model && <div><span>Model</span><b className="ctxv-model">{tc.window.model}</b></div>}
+            {cacheTotal > 0 && <div><span>Cache</span><b>{pct(tc.cache_read_tokens, cacheTotal)}</b></div>}
           </div>
 
-          <h4 className="ctxv-h">What the context is made of</h4>
+          <div className="sub-h">Largest prompt</div>
           <MadeOf ctx={tc} />
-
-          <h4 className="ctxv-h">Cache vs fresh <small className="dim">summed over {tc.calls} call{tc.calls === 1 ? '' : 's'}</small></h4>
-          <CacheBar cache={tc.cache_read_tokens} fresh={tc.fresh_tokens} />
         </>
       )}
 
-      <h4 className="ctxv-h">Context across the session</h4>
+      <div className="sub-h">Across the session</div>
       {sc ? <Growth sc={sc} turn={turn} /> : <p className="dim">{LOADING}</p>}
     </div>
   );

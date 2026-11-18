@@ -78,19 +78,18 @@ describe('ContextView', () => {
     // The headline is how full the context is against the window, and where it
     // compacts — the practical number, not the raw tokens.
     expect(text).toContain('25%');
-    expect(text).toMatch(/compacts at ~80%/);
-    // The cache split is still shown, now secondary.
-    expect(text).toMatch(/From cache/);
-    expect(text).toMatch(/Fresh/);
-    // The made_of parts, largest first, in plain names.
+    expect(text).toMatch(/compacts ~80%/);
+    // The cache split is shown as one supporting fact: its share, no bar.
+    expect(text).toMatch(/Cache/);
+    expect(text).toContain('80%');
+    // The made_of parts, largest first, in plain names, in the shared grid.
     expect(text).toContain('Your messages & tool results');
     expect(text).toContain('Tool definitions (2)');
     expect(text).toContain('System prompt');
-    expect(text).toContain(turnCtx.made_of!.note);
-    // The growth strip: one column per turn, the current one marked.
-    const cols = r.container.querySelectorAll('.ctxv-col');
+    // The growth chart: one bar per turn, the current one marked.
+    const cols = r.container.querySelectorAll('.ctx-bar');
     expect(cols.length).toBe(2);
-    expect(r.container.querySelectorAll('.ctxv-col.here').length).toBe(1);
+    expect(r.container.querySelectorAll('.ctx-bar.here').length).toBe(1);
     r.unmount();
   });
 
@@ -113,7 +112,7 @@ describe('ContextView', () => {
     const text = r.container.textContent ?? '';
     // No meter: the raw context size stands in.
     expect(text).toContain('250');
-    expect(r.container.querySelector('.ctxm')).toBeNull();
+    expect(r.container.querySelector('.ctx-meter')).toBeNull();
     r.unmount();
   });
 
@@ -129,7 +128,7 @@ describe('ContextView', () => {
     await flush();
     // Both pages were fetched (undefined, then the cursor), and both turns drawn.
     expect(calls).toEqual([undefined, 5]);
-    expect(r.container.querySelectorAll('.ctxv-col').length).toBe(2);
+    expect(r.container.querySelectorAll('.ctx-bar').length).toBe(2);
     r.unmount();
   });
 
@@ -146,7 +145,7 @@ describe('ContextView', () => {
     await flush();
     expect(n).toBe(1);
     // No Refresh control and no re-read while it simply stays open.
-    expect(r.container.querySelector('.ctxv-refresh')).toBeNull();
+    expect(r.container.textContent).not.toMatch(/Refresh/);
     r.unmount();
   });
 

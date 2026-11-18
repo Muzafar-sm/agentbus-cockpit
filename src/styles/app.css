@@ -1112,61 +1112,24 @@ input.invalid, textarea.invalid { border-color: var(--bad); }
 .ask-card-note { margin-top: 0.375rem; font-size: var(--fs-xs); color: var(--ink3); }
 
 /* ---------- context view (the Context tab) ---------- */
-.ctxv { font-size: var(--fs-m); }
-.ctxv-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-.ctxv-big { display: flex; flex-direction: column; }
-.ctxv-big > span { font-size: var(--fs-s); color: var(--ink3); font-weight: 550; }
-.ctxv-big > b { font-size: 1.9rem; font-weight: 700; color: var(--ink); line-height: 1.1; font-variant-numeric: tabular-nums; }
-.ctxv-big > small { font-size: var(--fs-xs); }
-.ctxv-facts { display: flex; gap: 1.25rem; }
-.ctxv-facts > div { display: flex; flex-direction: column; }
-.ctxv-facts span { font-size: var(--fs-s); color: var(--ink3); font-weight: 550; }
-.ctxv-facts b { font-size: 1rem; font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; }
-.ctxv-h { font-size: var(--fs-s); font-weight: 600; color: var(--ink3); margin: 1.1rem 0 0.4rem; }
-.ctxv-h small { font-weight: 400; }
-.ctxv-bar { display: flex; height: 0.75rem; border-radius: 0.375rem; overflow: hidden; background: var(--line); }
-.ctxv-bar.tall { height: 1.1rem; }
-.ctxv-seg { height: 100%; }
-.ctxv-seg:first-child { border-top-left-radius: 0.375rem; border-bottom-left-radius: 0.375rem; }
-.ctxv-seg:last-child { border-top-right-radius: 0.375rem; border-bottom-right-radius: 0.375rem; }
-.ctxv-legend { display: flex; gap: 1.25rem; margin-top: 0.4rem; font-size: var(--fs-s); color: var(--ink2); flex-wrap: wrap; }
-.ctxv-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
-.ctxv i { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 0.2rem; flex: none; }
-.ctxv-parts { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-variant-numeric: tabular-nums; }
-.ctxv-parts td { padding: 0.2rem 0.25rem; border-bottom: 1px solid var(--line); }
-.ctxv-parts .r { text-align: right; }
-.ctxv-sw { width: 1rem; }
-.ctxv-note { margin-top: 0.5rem; font-size: var(--fs-xs); line-height: 1.5; }
-.ctxv-growth { margin-top: 0.3rem; }
-.ctxv-cols { display: flex; align-items: flex-end; gap: 2px; height: 5rem; padding: 0.25rem; border: 1px solid var(--line); border-radius: 0.5rem; background: #FBFBFA; }
-.ctxv-col { flex: 1 1 0; min-width: 2px; background: var(--line2); border-radius: 2px 2px 0 0; transition: background .15s; }
-.ctxv-col.here { background: var(--ink2); }
-.ctxv-model { font-family: var(--mono); font-size: var(--fs-xs); font-weight: 500; overflow-wrap: anywhere; }
+/* Built from the shared tab pieces — tab-sum, strip, sub-h, the grid. Only the
+   two things the other tabs have no equivalent for are bespoke: the fullness
+   meter and the per-turn growth chart. No part-colour palette and no third
+   state colour — ink tones throughout, with --bad kept for the over-full case
+   exactly as the rest of the cockpit flags a bad state. */
+.ctx-view { font-size: var(--fs-m); }
+.ctx-view .strip { margin: 0.75rem 0 0; }
+.ctx-view table.grid { margin-top: 0.25rem; }
 
-/* The context meter: how full against the window, and where it compacts. A
-   reusable element in the cockpit's theme (see the live-status sketch). */
-.ctxm { margin-bottom: 0.5rem; }
-.ctxm-head { display: flex; align-items: baseline; gap: 0.9rem; flex-wrap: wrap; }
-.ctxm-big { display: flex; align-items: baseline; gap: 0.3rem; }
-.ctxm-pct { font-size: 1.9rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--run); }
-.ctxm-pct.near { color: var(--amber); }
-.ctxm-pct.over { color: var(--bad); }
-.ctxm-big > span { font-size: var(--fs-s); color: var(--ink3); font-weight: 550; }
-.ctxm-sub { font-size: var(--fs-s); color: var(--ink2); line-height: 1.4; }
-.ctxm-track { position: relative; height: 0.9rem; margin-top: 0.5rem; border-radius: 0.45rem; background: var(--line); overflow: hidden; }
-.ctxm-fill { height: 100%; background: var(--run); border-radius: 0.45rem; transition: width .2s var(--ease); }
-.ctxm-track.near .ctxm-fill { background: var(--amber); }
-.ctxm-track.over .ctxm-fill { background: var(--bad); }
-.ctxm-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }
-.ctxm-note { margin: 0.4rem 0 0; font-size: var(--fs-xs); line-height: 1.5; }
-.ctxv-growth-foot { display: flex; gap: 1.25rem; margin-top: 0.4rem; font-size: var(--fs-s); flex-wrap: wrap; }
-/* part colours, shared by the bars and the swatches */
-.cp-cache { background: #0F7A49; }
-.cp-fresh { background: #A25E05; }
-.cp-system { background: #3A6EA5; }
-.cp-tool { background: #7A5AA6; }
-.cp-user { background: #0F7A49; }
-.cp-assistant { background: #4F4F57; }
-.cp-other1 { background: #B0894A; }
-.cp-other2 { background: #4E8C86; }
-.cp-other3 { background: #9A9AA2; }
+/* The fullness meter: a track the width of the window, a fill the width of what
+   is used, a mark where compaction begins. Models the sketch's bar idiom. */
+.ctx-meter { position: relative; height: 0.5rem; margin: 0.5rem 0 0; border-radius: 0.25rem; background: var(--line); overflow: hidden; }
+.ctx-meter > i { display: block; height: 100%; background: var(--ink2); border-radius: 0.25rem; transition: width .2s var(--ease); }
+.ctx-meter.over > i { background: var(--bad); }
+.ctx-meter .mk { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }
+
+/* The per-turn growth chart: one thin bar per turn, the current one in ink. */
+.ctx-grow { margin-top: 0.25rem; }
+.ctx-bars { display: flex; align-items: flex-end; gap: 2px; height: 4rem; padding: 0.25rem; border: 1px solid var(--line); border-radius: 0.5rem; background: #FBFBFA; }
+.ctx-bar { flex: 1 1 0; min-width: 2px; background: var(--line2); border-radius: 2px 2px 0 0; }
+.ctx-bar.here { background: var(--ink2); }
