@@ -636,6 +636,40 @@ export const ApprovalGone = 'approval-gone';
 // decision only.
 export type ApprovalDecision = 'once' | 'always' | 'refuse';
 
+// An app's effect: it only reads, or it does something (starts work or changes
+// files). The gate allows a reads call by default and asks for a does-something
+// one; a person's rule overrides.
+export type AppEffect = 'reads' | 'does-something';
+
+// AppSummary is an app as the list carries it (GET /api/v0/tools): facts only.
+// The full definition is read from GET /api/v0/tools/{name}.
+export interface AppSummary {
+  name: string;
+  description: string;
+  effect: AppEffect;
+  // Where a call runs: 'control' in 0.6.
+  where: string;
+}
+
+// AppRun is what an app's call runs. In 0.6 every app runs an AgentBus API
+// route (kind 'api'); the rest of the fields describe that request.
+export interface AppRun {
+  kind: string;
+  method?: string;
+  path?: string;
+  id_input?: string;
+  own_session?: boolean;
+  query?: string[];
+  body?: boolean;
+}
+
+// AppDef is an app's whole definition (GET /api/v0/tools/{name}): the summary's
+// facts plus the inputs schema and the run.
+export interface AppDef extends AppSummary {
+  inputs: Record<string, unknown>;
+  run: AppRun;
+}
+
 export interface DataSource {
   getSessions(): Promise<SessionSummary[]>;
   // The sessions with the cursor they were taken at. A source without it is
@@ -720,6 +754,15 @@ export interface DataSource {
   // The usual config paths in the home of a folder's machine, for Use my
   // config on the Settings page (GET /api/v0/folders/{ref}/home-files).
   findConfig?(): Promise<ConfigFound>;
+  // The apps (tools) control serves, for the Apps page. The list carries facts
+  // only; getApp reads one app's full definition (GET /api/v0/tools/{name}).
+  // addApp adds a custom app and removeApp drops one (a built-in re-added as
+  // custom, or any custom one). Each rejects with the API's own words; a source
+  // without these has no Apps page.
+  listApps?(): Promise<AppSummary[]>;
+  getApp?(name: string): Promise<AppDef>;
+  addApp?(def: AppDef): Promise<AppDef>;
+  removeApp?(name: string): Promise<void>;
   // A source that can start and continue sessions has these two. Each
   // rejects with an Error whose message is the API's own words. Starting
   // resolves with the session id and, from the live API, the new turn's id.

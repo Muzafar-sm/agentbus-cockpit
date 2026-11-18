@@ -22,6 +22,7 @@ interface RunnersPageProps extends RunnersState {
   onBack: () => void;
   // The foot nav targets, passed through to PageFrame: the sibling pages and
   // the Feedback box. The Runners row is left out here (this is that page).
+  onApps?: () => void;
   onRunners?: () => void;
   onSettings?: () => void;
   runnersOnline?: number;
@@ -44,7 +45,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 // The runners page (/runners), in the mockup's three columns: every machine,
 // one runner each, with the machines waiting for approval on top; the picked
 // one, with what it reported; and the queue.
-export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pending, reload, onBack, onRunners, onSettings, runnersOnline, version, sourceLabel, streamUp, onDisconnect, disconnectLabel, queue, actions }) => {
+export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pending, reload, onBack, onApps, onRunners, onSettings, runnersOnline, version, sourceLabel, streamUp, onDisconnect, disconnectLabel, queue, actions }) => {
   const [picked, setPicked] = useState<string | null>(null);
   const waiting = pending ?? [];
   // The picked one while it is listed; else the first runner, or with no
@@ -63,6 +64,7 @@ export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pendin
       title="Runners"
       current="runners"
       onBack={onBack}
+      onApps={onApps}
       onRunners={onRunners}
       onSettings={onSettings}
       runnersOnline={runnersOnline}
