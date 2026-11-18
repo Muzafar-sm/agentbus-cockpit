@@ -396,6 +396,13 @@ export interface ApplyPreview {
   count: number;
   truncated?: boolean;
   diffs_cut?: boolean;
+  // When this preview was taken; a reused preview is as of then, not now.
+  previewed_at?: string;
+  // The changes.previewed event this is from, and the store; next_before
+  // pages the same preview.
+  event?: string;
+  store?: string;
+  next_before?: number | null;
   // Each file the person changed in their folder since: an apply refuses it.
   conflicts: { path: string; why: string }[];
   // Why there is nothing to apply (not isolated, or closed).
@@ -684,7 +691,7 @@ export interface DataSource {
   // What applying the whole conversation now would do (a dry run): the files
   // not yet in the person's folder, their diffs and conflicts. Rejects with
   // the API's words.
-  getApplyPreview?(sessionId: string): Promise<ApplyPreview>;
+  getApplyPreview?(sessionId: string, fresh?: boolean): Promise<ApplyPreview>;
   // A source that keeps request bodies has this: one model call's request
   // and reply by its turn and exchange. Rejects with an Error in the API's
   // own words.
