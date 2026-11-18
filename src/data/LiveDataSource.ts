@@ -31,6 +31,8 @@ import {
   SessionContext,
   TurnDetail,
   TurnList,
+  AppSummary,
+  AppDef,
 } from '../types';
 import { FolderInfo } from './folders';
 import { ConfigFound, FoundPath, Policy, SettingsInfo, Versioned } from './settings';
@@ -369,6 +371,39 @@ export class LiveDataSource implements DataSource {
   // DELETE /api/v0/agents/<id>: 204. Its sessions stay.
   async removeAgent(id: string): Promise<void> {
     const res = await fetch(`${this.baseUrl}/api/v0/agents/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: this.headers(),
+    });
+    if (!res.ok) throw new Error(await apiError(res));
+  }
+
+  // The apps control serves: the list as facts only, then one app's full
+  // definition from the single tool route.
+  async listApps(): Promise<AppSummary[]> {
+    const res = await fetch(`${this.baseUrl}/api/v0/tools`, { headers: this.headers() });
+    if (!res.ok) throw new Error(await apiError(res));
+    const body = (await res.json()) as { tools?: AppSummary[] };
+    return body.tools ?? [];
+  }
+
+  async getApp(name: string): Promise<AppDef> {
+    const res = await fetch(`${this.baseUrl}/api/v0/tools/${encodeURIComponent(name)}`, { headers: this.headers() });
+    if (!res.ok) throw new Error(await apiError(res));
+    return (await res.json()) as AppDef;
+  }
+
+  async addApp(def: AppDef): Promise<AppDef> {
+    const res = await fetch(`${this.baseUrl}/api/v0/tools`, {
+      method: 'POST',
+      headers: { ...this.headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(def),
+    });
+    if (!res.ok) throw new Error(await apiError(res));
+    return (await res.json()) as AppDef;
+  }
+
+  async removeApp(name: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/api/v0/tools/${encodeURIComponent(name)}`, {
       method: 'DELETE',
       headers: this.headers(),
     });

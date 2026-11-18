@@ -14,6 +14,7 @@ interface PageFrameProps {
   // last changed.
   subtitle?: React.ReactNode;
   onBack: () => void;
+  onApps?: () => void;
   onRunners?: () => void;
   onSettings?: () => void;
   runnersOnline?: number;
@@ -39,6 +40,7 @@ export const PageFrame: React.FC<PageFrameProps> = ({
   current,
   subtitle,
   onBack,
+  onApps,
   onRunners,
   onSettings,
   runnersOnline,
@@ -61,6 +63,7 @@ export const PageFrame: React.FC<PageFrameProps> = ({
       <ColumnFoot
         current={current}
         onCockpit={onBack}
+        onApps={onApps}
         onRunners={onRunners}
         onSettings={onSettings}
         runnersOnline={runnersOnline}

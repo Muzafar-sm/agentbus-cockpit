@@ -28,6 +28,8 @@ interface AgentsColumnProps {
   // before the first read.
   onRunners?: () => void;
   runnersOnline?: number;
+  // Given only when the source serves apps (GET /api/v0/tools): opens the Apps page.
+  onApps?: () => void;
   // Given only when the source keeps settings: opens the Settings page.
   onSettings?: () => void;
   // The service's build, from GET /api/v0/version, shown on the AgentBus card.
@@ -57,6 +59,7 @@ export const AgentsColumn: React.FC<AgentsColumnProps> = ({
   onRemoveAgent,
   onRunners,
   runnersOnline,
+  onApps,
   onSettings,
   version,
   subscriptions,
@@ -147,6 +150,7 @@ export const AgentsColumn: React.FC<AgentsColumnProps> = ({
           On the cockpit the Cockpit row is left out — you are on it. */}
       <ColumnFoot
         current="cockpit"
+        onApps={onApps}
         onRunners={onRunners}
         onSettings={onSettings}
         runnersOnline={runnersOnline}

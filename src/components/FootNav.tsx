@@ -8,6 +8,7 @@ interface FootNavProps {
   // Each target opens its page; absent means the source does not have it, so
   // the row is not shown. onCockpit is the way back from a page.
   onCockpit?: () => void;
+  onApps?: () => void;
   onRunners?: () => void;
   onSettings?: () => void;
   // How many runners are online, shown by the Runners row; undefined before
@@ -18,7 +19,7 @@ interface FootNavProps {
 }
 
 // FootNav is the one foot nav list, the same rows in the same order on the
-// cockpit and on every page: Cockpit, Runners, Settings, Feedback. The page you
+// cockpit and on every page: Cockpit, Apps, Runners, Settings, Feedback. The page you
 // are on stays in its place, marked as current rather than left out, so nothing
 // moves. A page the source does not have is the only row not shown. Feedback
 // opens a small box rather than a page; this owns that box, so the cockpit and
@@ -26,6 +27,7 @@ interface FootNavProps {
 export const FootNav: React.FC<FootNavProps> = ({
   current,
   onCockpit,
+  onApps,
   onRunners,
   onSettings,
   runnersOnline,
@@ -60,6 +62,7 @@ export const FootNav: React.FC<FootNavProps> = ({
     <>
       <nav className="side-links" aria-label="Pages">
         {row('cockpit', 'Cockpit', onCockpit)}
+        {row('apps', 'Apps', onApps)}
         {row('runners', 'Runners', onRunners, online)}
         {row('settings', 'Settings', onSettings)}
         <button type="button" className="side-link feedback-link" onClick={() => setFeedback(true)}>

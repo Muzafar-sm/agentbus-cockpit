@@ -891,6 +891,34 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .rn-queue .rn-prompt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .runners { display: flex; flex-direction: column; gap: 0.4rem; }
 
+/* The Apps page: a list of apps, each with its effect; the picked one's facts
+   in the middle and its full definition on the right. */
+.apps-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.apps-add { align-self: flex-start; margin-bottom: 0.4rem; }
+.apps-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; width: 100%; padding: var(--row-pad); text-align: left; background: none; border: 0; cursor: pointer; font: inherit; }
+.apps-row-name { font-size: var(--fs-m); font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.apps-tag { flex: none; padding: 1px 0.3125rem; border-radius: 0.1875rem; font-size: var(--fs-xs); font-weight: 600; background: var(--gray-bg); color: var(--ink2); }
+.apps-tag.does { background: var(--amber-bg); color: var(--amber); }
+.apps-list-err, .apps-add-err { margin: 0.4rem 0 0; }
+.apps-desc { margin: 0 0 1rem; font-size: var(--fs-m); line-height: 1.5; color: var(--ink); }
+.apps-facts { margin: 0 0 1rem; display: flex; flex-direction: column; gap: 0.6rem; }
+.apps-facts div { display: flex; flex-direction: column; gap: 2px; }
+.apps-facts dt { font-size: var(--fs-s); color: var(--ink3); }
+.apps-facts dd { margin: 0; font-size: var(--fs-m); color: var(--ink); }
+.apps-actions { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
+.apps-text { font-family: var(--mono); font-size: var(--fs-xs); }
+.apps-text:disabled { opacity: 0.6; }
+.apps-run { margin: 0 0 0.6rem; font-size: var(--fs-m); }
+.apps-run-m { font-weight: 700; color: var(--ink2); }
+.apps-run-p { font-family: var(--mono); font-size: var(--fs-xs); }
+.apps-inputs { margin: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+.apps-inputs div { display: flex; flex-direction: column; gap: 2px; }
+.apps-inputs dt { display: flex; align-items: center; gap: 0.4rem; font-size: var(--fs-m); }
+.apps-inputs dt code { font-family: var(--mono); font-size: var(--fs-xs); }
+.apps-in-t { font-size: var(--fs-xs); color: var(--ink3); }
+.apps-in-req { font-size: var(--fs-xs); font-weight: 600; color: var(--amber); }
+.apps-inputs dd { margin: 0; font-size: var(--fs-s); color: var(--ink2); line-height: 1.4; }
+
 /* Narrow windows: the columns stack and the page scrolls as one. */
 @media (max-width: 900px) {
   .page { flex-direction: column; height: auto; min-height: 100vh; overflow: visible; }

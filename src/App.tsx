@@ -5,6 +5,7 @@ import { agentNameOf, ConvoColumn, Pending, PendingUpdate } from './components/C
 import { ApprovalsPanel } from './components/ApprovalsPanel';
 import { AgentsDialog } from './components/AgentsDialog';
 import { SettingsPage } from './components/SettingsPage';
+import { AppsPage, AppsApi } from './components/AppsPage';
 import { RunnersPage } from './components/RunnersPage';
 import { RUNNERS_PAGE_POLL_MS, useRunners } from './components/RunnersList';
 import { usePage } from './page';
@@ -54,6 +55,7 @@ import {
 // Runners needs the runners route, Settings every settings route. A source
 // without them shows the cockpit at that address instead.
 function ownPageShown(page: string, d: DataSource): boolean {
+  if (page === 'apps') return !!(d.listApps && d.getApp && d.addApp && d.removeApp);
   if (page === 'runners') return !!(d.readRunners || d.listRunners);
   if (page === 'settings') return !!(d.getSettings && d.getPolicy && d.patchPolicy && d.getInstructions && d.putInstructions);
   return false;
@@ -787,6 +789,19 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
       findConfig: d.findConfig ? () => d.findConfig!() : undefined,
     };
   }, [dataSource]);
+  // The apps the source serves, for the Apps page. Absent when the source has
+  // no tool routes.
+  const appsApi = useMemo<AppsApi | undefined>(() => {
+    const d = dataSource;
+    if (!d.listApps || !d.getApp || !d.addApp || !d.removeApp) return undefined;
+    return {
+      listApps: () => d.listApps!(),
+      getApp: (name) => d.getApp!(name),
+      addApp: (def) => d.addApp!(def),
+      removeApp: (name) => d.removeApp!(name),
+    };
+  }, [dataSource]);
+  const openApps = appsApi ? () => goPage('apps') : undefined;
   // The Settings link opens Settings on its first part; an agent's sign-in
   // dot opens it on Subscriptions, the one place to connect. Absent when the
   // source has no Settings page or keeps no subscriptions.
@@ -1286,6 +1301,22 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
 
   // The pages of their own, each at its address. A source without the
   // page's routes shows the cockpit.
+  if (pageShown && page === 'apps') {
+    return (
+      <AppsPage
+        api={appsApi!}
+        onBack={() => goPage('cockpit')}
+        onRunners={loadRunners ? () => goPage('runners') : undefined}
+        onSettings={settingsApi ? openSettings : undefined}
+        runnersOnline={runnersOnline}
+        version={version ? versionLabel(version) : undefined}
+        sourceLabel={sourceLabel}
+        streamUp={dataSource.subscribe ? streamUp ?? false : undefined}
+        onDisconnect={onDisconnect}
+        disconnectLabel={disconnectLabel}
+      />
+    );
+  }
   if (pageShown && page === 'runners') {
     return (
       <RunnersPage
@@ -1296,6 +1327,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         actions={runnerActions}
         queue={queueView ? { turns: queueView.turns, error: queueView.error, titleOf } : undefined}
         onBack={() => goPage('cockpit')}
+        onApps={openApps}
         onRunners={loadRunners ? () => goPage('runners') : undefined}
         onSettings={settingsApi ? openSettings : undefined}
         runnersOnline={runnersOnline}
@@ -1312,6 +1344,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
       <SettingsPage
         api={settingsApi!}
         onBack={() => goPage('cockpit')}
+        onApps={openApps}
         onRunners={loadRunners ? () => goPage('runners') : undefined}
         onSettings={settingsApi ? openSettings : undefined}
         runnersOnline={runnersOnline}
@@ -1364,6 +1397,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         onRunners={loadRunners ? () => goPage('runners') : undefined}
         runnersOnline={runnersOnline}
         version={version ? versionLabel(version) : undefined}
+        onApps={openApps}
         onSettings={settingsApi ? openSettings : undefined}
         subscriptions={subs}
         onOpenSignIn={openSignIn}
