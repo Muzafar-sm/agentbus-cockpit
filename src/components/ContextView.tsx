@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { LOADING } from '../words';
 import { formatCount } from '../utils/format';
+import { ContextMeter } from './ContextMeter';
 import { ContextPart, SessionContext, TurnContext } from '../types';
 
 // The practical context view, next to the Model calls debugging detail: how
@@ -120,7 +121,12 @@ const MadeOf: React.FC<{ ctx: TurnContext }> = ({ ctx }) => {
 };
 
 // The session's growth: one bar per turn, oldest first, each as tall as its
-// context, the current turn marked. Reads the first page (newest turns).
+// context, the current turn marked. Later turns carry the earlier ones, so the
+// bars rise across the session — which is where compaction (0.7) will matter.
+// Scaled to the session peak, in tokens: a session's turns can run different
+// models and harnesses, and the session view carries no per-turn window, so a
+// single window here would be wrong for the turns on another model. The
+// per-turn meter above is where fullness-against-the-window is shown, correctly.
 const Growth: React.FC<{ sc: SessionContext; turn: string }> = ({ sc, turn }) => {
   const turns = [...sc.growth].reverse(); // oldest first, left to right
   const peak = sc.peak_context_tokens || 1;
@@ -194,27 +200,29 @@ export const ContextView: React.FC<Props> = ({ session, turn, loadTurn, loadSess
         <p className="dim">This turn made no model call that reported usage.</p>
       ) : (
         <>
-          <div className="ctxv-top">
+          {tc.window ? (
+            <ContextMeter window={tc.window} />
+          ) : (
             <div className="ctxv-big">
-              <span>Context</span>
               <b>{formatCount(tc.context_tokens)}</b>
               <small className="dim">tokens, this turn's largest prompt</small>
             </div>
-            <div className="ctxv-facts">
-              <div><span>Calls</span><b>{tc.calls}</b></div>
-              <div><span>Output</span><b>{formatCount(tc.output_tokens)}</b></div>
-            </div>
+          )}
+          <div className="ctxv-facts">
+            <div><span>Calls</span><b>{tc.calls}</b></div>
+            <div><span>Output</span><b>{formatCount(tc.output_tokens)}</b></div>
+            {tc.window?.model && <div><span>Model</span><b className="ctxv-model">{tc.window.model}</b></div>}
           </div>
+
+          <h4 className="ctxv-h">What the context is made of</h4>
+          <MadeOf ctx={tc} />
 
           <h4 className="ctxv-h">Cache vs fresh <small className="dim">summed over {tc.calls} call{tc.calls === 1 ? '' : 's'}</small></h4>
           <CacheBar cache={tc.cache_read_tokens} fresh={tc.fresh_tokens} />
-
-          <h4 className="ctxv-h">What the largest prompt is made of</h4>
-          <MadeOf ctx={tc} />
         </>
       )}
 
-      <h4 className="ctxv-h">Context across the {`session`}</h4>
+      <h4 className="ctxv-h">Context across the session</h4>
       {sc ? <Growth sc={sc} turn={turn} /> : <p className="dim">{LOADING}</p>}
     </div>
   );
