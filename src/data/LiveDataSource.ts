@@ -27,6 +27,8 @@ import {
   Turn,
   TurnDiff,
   TurnChangesPage,
+  TurnContext,
+  SessionContext,
   TurnDetail,
   TurnList,
 } from '../types';
@@ -680,6 +682,32 @@ export class LiveDataSource implements DataSource {
     if (before != null) q.set('before', String(before));
     const res = await fetch(
       `${this.baseUrl}/api/v0/turns/${encodeURIComponent(turnId)}/changes?${q.toString()}`,
+      { headers: this.headers() }
+    );
+    if (!res.ok) throw new Error(await apiError(res));
+    return res.json();
+  }
+
+  // GET /api/v0/turns/<id>/context: the turn's context size, cache split and
+  // what its largest prompt was made of. Read from the record, nothing stored.
+  async getTurnContext(sessionId: string, turnId: string): Promise<TurnContext> {
+    const res = await fetch(
+      `${this.baseUrl}/api/v0/turns/${encodeURIComponent(turnId)}/context?session=${encodeURIComponent(sessionId)}`,
+      { headers: this.headers() }
+    );
+    if (!res.ok) throw new Error(await apiError(res));
+    return res.json();
+  }
+
+  // GET /api/v0/sessions/<id>/context: the session's token totals and a page of
+  // its turns, newest first, so the context's growth is visible. before is the
+  // previous page's next_before; absent for the newest page.
+  async getSessionContext(sessionId: string, before?: number): Promise<SessionContext> {
+    const q = new URLSearchParams();
+    if (before != null) q.set('before', String(before));
+    const qs = q.toString();
+    const res = await fetch(
+      `${this.baseUrl}/api/v0/sessions/${encodeURIComponent(sessionId)}/context${qs ? `?${qs}` : ''}`,
       { headers: this.headers() }
     );
     if (!res.ok) throw new Error(await apiError(res));
