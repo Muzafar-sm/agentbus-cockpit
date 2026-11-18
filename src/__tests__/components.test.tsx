@@ -201,8 +201,10 @@ describe('ConvoColumn turns not yet opened', () => {
     const s = session([
       row(1, { reply: 'First part.\n\nSecond part', replyTruncated: true, model: 'claude-opus-5-5', modelCalls: 7 }),
       row(2, { modelCalls: 0 }),
-      // Opened: its detail wins over what the list said.
-      row(3, { reply: 'stale preview', model: 'm-list', modelCalls: 9, detail: opened }),
+      // Opened: App has merged the turn's whole reply onto turn.reply (from the
+      // single turn, else the detail), and the view shows that, not the events'
+      // partial text. The model and call count still come from the detail.
+      row(3, { reply: 'The whole answer.', model: 'm-list', modelCalls: 9, detail: opened }),
       // A service older than these fields: the prompt only, as before.
       row(4, {}),
     ]);

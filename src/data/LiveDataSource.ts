@@ -131,16 +131,54 @@ export class LiveDataSource implements DataSource {
   }
 
   // GET /api/v0/sessions: the sessions and the store and seq they were taken at.
+  // GET /api/v0/sessions: every session, newest activity first, a page at a
+  // time, as GET /turns does. Later pages pass the first page's store and seq
+  // (after) to pin the snapshot and before = the previous page's next_before,
+  // so a session that gains activity meanwhile keeps its place and none is
+  // skipped. A page from another store means the store changed mid-read: read
+  // the list again once.
   private async snapshot(): Promise<Snapshot> {
-    const res = await fetch(`${this.baseUrl}/api/v0/sessions`, { headers: this.headers() });
-    if (!res.ok) throw new Error(`Failed to fetch sessions: ${res.status} ${res.statusText}`);
-    const data = await res.json();
-    const sessions: SessionSummary[] = (data.sessions || []).map((s: SessionSummary) => ({
-      ...s,
-      title: s.title || s.id,
-      closed: isClosed((s as { closed?: unknown }).closed) || undefined,
-    }));
-    return { store: data.store, seq: data.seq, sessions };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const sessions: SessionSummary[] = [];
+      let first: { store: string; seq: number } | null = null;
+      let before: number | null = null;
+      let restart = false;
+      for (;;) {
+        const params = new URLSearchParams();
+        if (first !== null) {
+          params.set('store', first.store);
+          params.set('after', String(first.seq));
+        }
+        if (before !== null) params.set('before', String(before));
+        const q = params.toString();
+        const res = await fetch(`${this.baseUrl}/api/v0/sessions${q ? `?${q}` : ''}`, { headers: this.headers() });
+        // The pinned store changed: the service answers 409, so read again from
+        // the new store's first page rather than failing the whole read.
+        if (res.status === 409 && first !== null) {
+          restart = true;
+          break;
+        }
+        if (!res.ok) throw new Error(`Failed to fetch sessions: ${res.status} ${res.statusText}`);
+        const data = await res.json();
+        if (first === null) first = { store: data.store, seq: data.seq };
+        else if (data.store !== first.store) {
+          restart = true;
+          break;
+        }
+        for (const s of (data.sessions || []) as SessionSummary[]) {
+          sessions.push({
+            ...s,
+            title: s.title || s.id,
+            closed: isClosed((s as { closed?: unknown }).closed) || undefined,
+          });
+        }
+        if (data.next_before === null || data.next_before === undefined) break;
+        before = data.next_before;
+      }
+      if (restart) continue;
+      return { store: first!.store, seq: first!.seq, sessions };
+    }
+    throw new Error('Store changed while reading the sessions; try again');
   }
 
   // GET /api/v0/sessions/<id>: closed on the session, or on its copy (now
@@ -652,15 +690,41 @@ export class LiveDataSource implements DataSource {
   // answers within 30 s. A machine that is offline or does not answer is
   // said plainly; other refusals are in the API's words.
   async getApplyPreview(sessionId: string, fresh?: boolean): Promise<ApplyPreview> {
-    // A high limit so one page holds the whole preview the record kept; count
-    // beyond it is reported, never dropped silently. fresh runs a new preview.
+    const path = `${this.baseUrl}/api/v0/sessions/${encodeURIComponent(sessionId)}/changes`;
     const q = new URLSearchParams({ limit: '1000' });
     if (fresh) q.set('fresh', 'true');
-    const res = await fetch(`${this.baseUrl}/api/v0/sessions/${encodeURIComponent(sessionId)}/changes?${q.toString()}`, { headers: this.headers() });
-    if (res.ok) return res.json();
-    if (res.status === 503) throw new Error('The machine with this folder is offline.');
-    if (res.status === 504) throw new Error('The machine with this folder did not answer in 30 seconds.');
-    throw new Error(await apiError(res));
+    const res = await fetch(`${path}?${q.toString()}`, { headers: this.headers() });
+    if (!res.ok) {
+      if (res.status === 503) throw new Error('The machine with this folder is offline.');
+      if (res.status === 504) throw new Error('The machine with this folder did not answer in 30 seconds.');
+      throw new Error(await apiError(res));
+    }
+    const preview: ApplyPreview = await res.json();
+    // Page the rest of the stored preview's files, pinned to its event so every
+    // page is of the same snapshot, until next_before is null. Without this the
+    // files after the first page -- which the record kept -- never reach the
+    // panel. A page that fails leaves what was read; the panel's "more not
+    // listed" line still names the remainder.
+    const files = [...(preview.files || [])];
+    let before = preview.next_before;
+    // A later page can report the preview stale (the session changed since it
+    // was taken, runner offline) even when the first did not: carry that status
+    // out, so the panel still shows the out-of-date warning.
+    let stale = preview.stale;
+    let why = preview.why;
+    while (before !== null && before !== undefined && preview.event) {
+      const pq = new URLSearchParams({ limit: '1000', event: preview.event, before: String(before) });
+      const pr = await fetch(`${path}?${pq.toString()}`, { headers: this.headers() });
+      if (!pr.ok) break;
+      const page: ApplyPreview = await pr.json();
+      files.push(...(page.files || []));
+      if (page.stale) {
+        stale = true;
+        why = page.why ?? why;
+      }
+      before = page.next_before;
+    }
+    return { ...preview, files, next_before: null, stale, why };
   }
 
   // POST /api/v0/turns/<id>/apply: 200 applied (or already), 202 still

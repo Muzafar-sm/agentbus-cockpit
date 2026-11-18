@@ -608,10 +608,14 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
 
         {tab === 'result' && (
           <div>
-            {detail.agentResponse ? (
+            {/* turn.reply is the one source of the turn's text: App fills it
+                from the single turn (its whole reply) first, then the events.
+                Prefer it so a turn's whole reply is not replaced by the events'
+                partial text. */}
+            {(turn.reply ?? detail.agentResponse) ? (
               // Formatted as the chat shows it.
               <div className="m-agent md-reply result-md">
-                <Markdown text={detail.agentResponse} files={{ session: turn.sessionId, folder: turn.folder }} />
+                <Markdown text={turn.reply ?? detail.agentResponse ?? ''} files={{ session: turn.sessionId, folder: turn.folder }} />
               </div>
             ) : (
               <p className="dim">No reply yet.</p>
