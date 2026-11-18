@@ -39,6 +39,24 @@ describe('the approval card', () => {
     expect(calls).toEqual([['ap1', 'once']]);
   });
 
+  it('shows a held tool call like a command (B6)', async () => {
+    // An Ask on a tool call records the call as one approval, its rendering in
+    // commands; the card shows it and offers the same three answers, so a tool
+    // call is answered exactly like a held shell command.
+    const calls: Array<[string, ApprovalDecision]> = [];
+    const { container } = await render(
+      <ApprovalCard
+        approval={ap({ commands: ['rename_session {"title":"renamed"}'], rule: 'rename_session' })}
+        decide={async (id, d) => void calls.push([id, d])}
+      />
+    );
+    expect(container.textContent).toContain('rename_session {"title":"renamed"}');
+    expect(container.textContent).toContain('Claude Code wants to run');
+    await click(findBtn(container, 'Refuse'));
+    await flush();
+    expect(calls).toEqual([['ap1', 'refuse']]);
+  });
+
   it('always allows', async () => {
     const calls: Array<[string, ApprovalDecision]> = [];
     const { container } = await render(<ApprovalCard approval={ap()} decide={async (id, d) => void calls.push([id, d])} />);
