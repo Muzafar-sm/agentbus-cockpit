@@ -1072,7 +1072,8 @@ input.invalid, textarea.invalid { border-color: var(--bad); }
 .ask-panel { box-sizing: border-box; max-width: 45.6rem; margin: 0 0 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
 .ask-card { border: 1.5px solid var(--run); border-radius: 0.5rem; background: var(--panel); padding: 0.625rem 0.75rem; }
 .ask-card-gone { border: 1.5px solid var(--line2); border-radius: 0.5rem; padding: 0.5rem 0.75rem; color: var(--ink3); font-size: var(--fs-s); }
-.ask-card-head { font-size: var(--fs-s); color: var(--ink2); font-weight: 600; margin-bottom: 0.375rem; }
+.ask-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; font-size: var(--fs-s); color: var(--ink2); font-weight: 600; margin-bottom: 0.375rem; }
+.ask-card-countdown { font-variant-numeric: tabular-nums; font-weight: 500; color: var(--ink3); white-space: nowrap; }
 .ask-card-cmds { margin: 0 0 0.5rem; padding-left: 1rem; }
 .ask-card-cmds code { font-family: var(--mono); font-size: var(--fs-m); color: var(--ink); }
 .ask-card-actions { display: flex; gap: 0.5rem; }

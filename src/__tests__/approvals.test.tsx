@@ -55,6 +55,19 @@ describe('the approval card', () => {
     expect(calls).toEqual([['ap1', 'refuse']]);
   });
 
+  it('counts down the time left to answer while the hold is live', async () => {
+    const { container } = await render(
+      <ApprovalCard approval={ap({ requested: new Date().toISOString() })} decide={async () => {}} />
+    );
+    expect(container.querySelector('.ask-card-countdown')?.textContent).toMatch(/^\d+s to answer$/);
+  });
+
+  it('shows the hold timing out once the window has elapsed', async () => {
+    // ap()'s requested is well in the past, so no time is left.
+    const { container } = await render(<ApprovalCard approval={ap()} decide={async () => {}} />);
+    expect(container.querySelector('.ask-card-countdown')?.textContent).toBe('timing out…');
+  });
+
   it('steps aside when another answer already took it (409)', async () => {
     const { container } = await render(
       <ApprovalCard
