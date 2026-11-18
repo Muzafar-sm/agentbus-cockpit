@@ -96,14 +96,12 @@ const GROUPS: Group[] = [
     name: "Workspace",
     sub: "Each session's copy of your folder",
     controls: [
-      { key: "share_read_only", name: "Shared folders", kind: { t: "list", placeholder: "node_modules", mono: true },
-        line: "Not copied, read-only, such as node_modules. A turn cannot write there." },
       { key: "read_folders", name: "Read folders", kind: { t: "list", placeholder: "~/notes", mono: true },
         line: "Folders Claude Code may read beyond its own, one per line." },
     ],
     side: [
       "You apply what you want to keep. Your folder is not changed until then.",
-      "Shared folders are one name each, at the top of the session's folder.",
+      "Each copy is cloned copy-on-write, so a big node_modules costs nothing and a turn may write its own.",
     ],
   },
   {

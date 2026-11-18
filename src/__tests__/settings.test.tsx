@@ -20,7 +20,6 @@ function policy(): Policy {
     unlisted: 'ask',
     edit: 'session',
     isolation: 'auto',
-    share_read_only: [],
     subagents: false,
     home_files: [],
     limits: { max_depth: 2, max_jobs_per_turn: 10, max_jobs_per_tree: 30, max_cost_usd_per_tree: 0 },
@@ -286,7 +285,7 @@ describe('the Settings page', () => {
     const advancedOnly = ['isolation', 'edit'];
     expect([...SETTINGS_CONTROLS].sort()).toEqual(Object.keys(flatPolicy(policy())).filter((k) => !advancedOnly.includes(k)).sort());
     const groups: Record<string, string[]> = {
-      workspace: ['share_read_only', 'read_folders'],
+      workspace: ['read_folders'],
       config: ['home_files'],
       permissions: ['agent_api.tools', 'subagents', 'agent_api.apply', 'allow', 'ask', 'forbid', 'unlisted'],
       isolation: ['sandbox.mode', 'network.contain', 'network.allow'],
@@ -308,7 +307,7 @@ describe('the Settings page', () => {
     expect(sw(container, 'subagents').getAttribute('aria-checked')).toBe('false');
     expect(container.textContent).toContain('Antigravity cannot turn its own subagents off, so this does not apply to it.');
     await pick(container, '[data-part="workspace"]');
-    expect(container.textContent).toContain('Not copied, read-only, such as node_modules.');
+    expect(container.textContent).toContain('Each copy is cloned copy-on-write, so a big node_modules costs nothing and a turn may write its own.');
     expect(container.querySelector('[aria-label="Folder"]')).toBeNull();
     expect(container.querySelector('[aria-label="Copy method"]')).toBeNull();
     await pick(container, '[data-part="isolation"]');
