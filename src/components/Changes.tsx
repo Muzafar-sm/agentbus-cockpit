@@ -331,6 +331,12 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
                       )}
                     </div>
                   )}
+                  {preview.stale && (
+                    <Notice kind="warn" className="ap-stale">
+                      <b>Out of date.</b>{' '}
+                      {preview.why || `The ${SESSION} changed after this preview was taken.`}
+                    </Notice>
+                  )}
                   {conflicted && (
                     <Notice kind="warn" className="ap-conflicts">
                       <b>{files(conflicts.length)} would be refused.</b> You changed{' '}

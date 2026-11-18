@@ -256,6 +256,26 @@ describe('The apply preview', () => {
     r.unmount();
   });
 
+  it('a stale preview shows an out-of-date warning with its why', async () => {
+    const stale: ApplyPreview = {
+      session: 'c1',
+      isolated: true,
+      unapplied: true,
+      turn: 'T1',
+      count: 1,
+      previewed_at: '2026-11-17T20:00:00Z',
+      stale: true,
+      why: 'the session changed after this preview was taken',
+      files: [{ path: 'a.txt', change: 'modified', added: 1, removed: 0 }],
+      conflicts: [],
+    };
+    const r = await render(<ApplyPanel preview={stale} apply={vi.fn()} />);
+    const note = r.container.querySelector('.ap-stale')!;
+    expect(note.textContent).toContain('Out of date');
+    expect(note.textContent).toContain('the session changed after this preview was taken');
+    r.unmount();
+  });
+
   it('a preview that fails shows the words, e.g. a machine offline', async () => {
     const r = await render(<ApplyPanel preview={null} error="The machine with this folder is offline." />);
     expect(r.container.querySelector('.form-error')!.textContent).toBe('The machine with this folder is offline.');

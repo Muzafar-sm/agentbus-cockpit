@@ -403,9 +403,12 @@ export interface ApplyPreview {
   event?: string;
   store?: string;
   next_before?: number | null;
+  // Out of date: the session changed after this preview was taken, but a fresh
+  // one could not run (the runner is offline). why says so.
+  stale?: boolean;
   // Each file the person changed in their folder since: an apply refuses it.
   conflicts: { path: string; why: string }[];
-  // Why there is nothing to apply (not isolated, or closed).
+  // Why there is nothing to apply (not isolated, or closed), or why it is stale.
   why?: string;
 }
 
