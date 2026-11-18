@@ -818,7 +818,7 @@ describe('The prompt box', () => {
     const svc = fakeService({
       sessions: [row('s1', { resumable: true })],
       events: { s1: oneTurn('s1', 'first') },
-      oneSession: (id) => json({ store: 'st_1', seq: 1, session: row(id), copy: { runner: 'run_1', kind: 'copy', name: id, closed: '2026-11-11T09:00:00Z' } }),
+      oneSession: (id) => json({ store: 'st_1', seq: 1, session: { ...row(id), copy: { runner: 'run_1', kind: 'copy', name: id, closed: '2026-11-11T09:00:00Z' } } }),
     });
     const r = await mount(svc);
     expect(svc.reqs.some((q) => q.method === 'GET' && q.path === '/api/v0/sessions/s1')).toBe(true);
@@ -832,7 +832,7 @@ describe('The prompt box', () => {
     const svc = fakeService({
       sessions: [row('s1', { resumable: true })],
       events: { s1: oneTurn('s1', 'first') },
-      oneSession: (id) => json({ store: 'st_1', seq: 1, session: row(id), copy: { runner: 'run_1', kind: 'copy', name: id } }),
+      oneSession: (id) => json({ store: 'st_1', seq: 1, session: { ...row(id), copy: { runner: 'run_1', kind: 'copy', name: id } } }),
     });
     const r = await mount(svc);
     expect((r.container.querySelector('#c-reply textarea') as HTMLTextAreaElement).disabled).toBe(false);

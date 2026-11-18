@@ -143,13 +143,14 @@ export class LiveDataSource implements DataSource {
     return { store: data.store, seq: data.seq, sessions };
   }
 
-  // GET /api/v0/sessions/<id>: closed on the session, or on its copy (where
-  // the service says it before the list does). A failed read is not closed.
+  // GET /api/v0/sessions/<id>: closed on the session, or on its copy (now
+  // inside the session, where the service says it before the list does). A
+  // failed read is not closed.
   async sessionClosed(sessionId: string): Promise<boolean> {
     const res = await fetch(`${this.baseUrl}/api/v0/sessions/${encodeURIComponent(sessionId)}`, { headers: this.headers() });
     if (!res.ok) return false;
     const data = await res.json().catch(() => null);
-    return isClosed(data?.session?.closed) || isClosed(data?.copy?.closed);
+    return isClosed(data?.session?.closed) || isClosed(data?.session?.copy?.closed);
   }
 
   // The list with the store and seq it was computed at, so the screen can
