@@ -476,6 +476,69 @@ export interface ContextPiece {
   json?: unknown;
 }
 
+// The practical context view: how big a turn's or a session's context is, how
+// much came from the prompt cache, and what a prompt is made of. GET
+// /api/v0/turns/{id}/context and GET /api/v0/sessions/{id}/context.
+
+// One kind of piece in a prompt, summed: a part of made_of.
+export interface ContextPart {
+  kind: string;
+  label?: string;
+  approx_tokens: number;
+  bytes: number;
+  count: number;
+}
+
+// What a prompt was made of, from its stored request pieces (approximate).
+export interface Composition {
+  exchange: string;
+  vendor: string;
+  bytes: number;
+  approx_tokens: number;
+  parts: ContextPart[];
+  note: string;
+}
+
+// One turn's context: its size, cache split and what its largest prompt holds.
+export interface TurnContext {
+  store: string;
+  seq: number;
+  turn: string;
+  session: string;
+  model: string;
+  calls: number;
+  context_tokens: number;
+  cache_read_tokens: number;
+  fresh_tokens: number;
+  output_tokens: number;
+  made_of: Composition | null;
+}
+
+// One turn in a session's growth.
+export interface SessionContextTurn {
+  turn: string;
+  started: string;
+  calls: number;
+  context_tokens: number;
+  cache_read_tokens: number;
+  fresh_tokens: number;
+  output_tokens: number;
+}
+
+// A session's context: its totals and a page of its turns, newest first.
+export interface SessionContext {
+  store: string;
+  seq: number;
+  session: string;
+  turns: number;
+  peak_context_tokens: number;
+  cache_read_tokens: number;
+  fresh_tokens: number;
+  output_tokens: number;
+  growth: SessionContextTurn[];
+  next_before: number | null;
+}
+
 export interface CallContext {
   exchange: string;
   session?: string;
@@ -699,6 +762,11 @@ export interface DataSource {
   // and reply by its turn and exchange. Rejects with an Error in the API's
   // own words.
   getCallContext?(turn: string, exchange: string, full: boolean): Promise<CallContext>;
+  // A source that serves the context view has these: one turn's context size,
+  // cache split and made_of, and a session's totals and per-turn growth. Reject
+  // with an Error in the API's own words.
+  getTurnContext?(sessionId: string, turnId: string): Promise<TurnContext>;
+  getSessionContext?(sessionId: string, before?: number): Promise<SessionContext>;
   // Calls onEvent for each new event, and onSnapshot with the sessions of the
   // snapshot the stream starts from: once at the start, and again whenever it
   // starts over (the store changed). Show that list, so the list and the

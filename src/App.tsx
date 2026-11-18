@@ -682,6 +682,10 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     (sessionId: string, turnId: string, before?: number) => dataSource.getTurnChanges!(sessionId, turnId, before),
     [dataSource]
   );
+  // The turn panel's Context tab: a turn's context size and parts, and the
+  // session's growth.
+  const loadTurnContext = useCallback((sessionId: string, turnId: string) => dataSource.getTurnContext!(sessionId, turnId), [dataSource]);
+  const loadSessionContext = useCallback((sessionId: string, before?: number) => dataSource.getSessionContext!(sessionId, before), [dataSource]);
   const loadContext = useMemo(
     () => (dataSource.getCallContext ? (t: string, x: string, full: boolean) => dataSource.getCallContext!(t, x, full) : undefined),
     [dataSource]
@@ -1544,6 +1548,9 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         escRef={panelEscRef}
         loadDiff={dataSource.getTurnDiff ? loadTurnDiff : undefined}
         loadChanges={dataSource.getTurnChanges ? loadTurnChanges : undefined}
+        loadTurnContext={dataSource.getTurnContext ? loadTurnContext : undefined}
+        loadSessionContext={dataSource.getSessionContext ? loadSessionContext : undefined}
+        panelOpen={panelOpen}
         tooBig={previewTooBig}
         tabs={panelTabs}
       />

@@ -32,7 +32,8 @@ import { folderLabel, useFolders } from '../data/folders';
 import { turnToolbox } from '../data/toolbox';
 import { McpTab } from './McpTab';
 import { TurnChangesTab } from './Changes';
-import { TurnChangesPage, TurnDiff } from '../types';
+import { ContextView } from './ContextView';
+import { SessionContext, TurnChangesPage, TurnContext, TurnDiff } from '../types';
 
 interface RightPanelProps {
   turn: Turn | null;
@@ -79,6 +80,12 @@ interface RightPanelProps {
   // Given when the source keeps each turn's diff: the Changes tab reads it.
   loadDiff?: (sessionId: string, turnId: string) => Promise<TurnDiff>;
   loadChanges?: (sessionId: string, turnId: string, before?: number) => Promise<TurnChangesPage>;
+  // Given when the source serves the context view: the Context tab reads a
+  // turn's context size and parts, and the session's growth.
+  loadTurnContext?: (sessionId: string, turnId: string) => Promise<TurnContext>;
+  loadSessionContext?: (sessionId: string, before?: number) => Promise<SessionContext>;
+  // Whether the right panel is open; the Context tab re-reads when it reopens.
+  panelOpen?: boolean;
   // The session's apply preview said its copy is too big to track: a turn's
   // cut changes say so instead of a count.
   tooBig?: boolean;
@@ -88,7 +95,7 @@ interface RightPanelProps {
   tabs?: PanelTabs;
 }
 
-type TabKey = 'result' | 'changes' | 'events' | 'model' | 'tools' | 'prompt' | 'mcp' | 'cicd';
+type TabKey = 'result' | 'changes' | 'events' | 'model' | 'context' | 'tools' | 'prompt' | 'mcp' | 'cicd';
 
 // Follows the selected level: the session, one turn, or one model call. The
 // turn and call tabs are kept here, so stepping down and back keeps them.
@@ -191,6 +198,9 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
   loadAgents,
   loadDiff,
   loadChanges,
+  loadTurnContext,
+  loadSessionContext,
+  panelOpen,
   tooBig,
 }) => {
   // A running turn's status from its events, read each second while it runs.
@@ -271,9 +281,14 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
   const row = queue?.turnOf(turn.sessionId, turn.id);
   const reviews = queue ? queue.reviewsOf(turn.id) : [];
   const showJobs = !!queue && reviewUI();
-  const baseTabs = loadDiff ? TURN_TABS : TURN_TABS.filter(([k]) => k !== 'changes');
+  const hasContext = !!loadTurnContext && !!loadSessionContext;
+  let baseTabs = loadDiff ? TURN_TABS : TURN_TABS.filter(([k]) => k !== 'changes');
+  if (!hasContext) baseTabs = baseTabs.filter(([k]) => k !== 'context');
   const tabs = showJobs ? [...baseTabs, ['cicd', 'CI/CD'] as [TabKey, string]] : baseTabs;
-  const tab: TabKey = (activeTab === 'cicd' && !showJobs) || (activeTab === 'changes' && !loadDiff) ? 'result' : activeTab;
+  const tab: TabKey =
+    (activeTab === 'cicd' && !showJobs) || (activeTab === 'changes' && !loadDiff) || (activeTab === 'context' && !hasContext)
+      ? 'result'
+      : activeTab;
 
   // The head reads the turn list's row, so it shows while the events load.
   const head = (
@@ -593,7 +608,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
       </div>
 
       <div id="d-body">
-        {tab !== 'cicd' && tab !== 'changes' && <TabSum tab={tab} turn={turn} detail={detail} />}
+        {tab !== 'cicd' && tab !== 'changes' && tab !== 'context' && <TabSum tab={tab} turn={turn} detail={detail} />}
 
         {tab === 'cicd' && <TurnTab turn={turn} row={row} reviews={reviews} onStop={onStopQueued} />}
 
@@ -741,6 +756,22 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
           </div>
         )}
 
+        {/* Not rendered while the panel is closed: the panel stays mounted
+            when closed (CSS-hidden), so unmounting the tab is what makes a
+            reopen read fresh — the wanted "loads when opened" — without a
+            wasted read while hidden. */}
+        {tab === 'context' && loadTurnContext && loadSessionContext && panelOpen !== false && (
+          <ContextView
+            key={turn.id}
+            session={turn.sessionId}
+            turn={turn.id}
+            loadTurn={loadTurnContext}
+            loadSession={loadSessionContext}
+            // running re-reads once when the turn ends.
+            running={!!live && turn.state === 'running'}
+          />
+        )}
+
         {tab === 'tools' && (
           <ToolsTab
             detail={detail}
@@ -806,6 +837,7 @@ const TURN_TABS: [TabKey, string][] = [
   ['prompt', 'Prompt'],
   ['events', 'Events'],
   ['model', 'Model calls'],
+  ['context', 'Context'],
   ['tools', 'Tools'],
   ['mcp', 'AgentBus tools'],
 ];
