@@ -650,8 +650,12 @@ export class LiveDataSource implements DataSource {
   // GET /api/v0/sessions/<id>/changes: the apply preview. The runner
   // answers within 30 s. A machine that is offline or does not answer is
   // said plainly; other refusals are in the API's words.
-  async getApplyPreview(sessionId: string): Promise<ApplyPreview> {
-    const res = await fetch(`${this.baseUrl}/api/v0/sessions/${encodeURIComponent(sessionId)}/changes`, { headers: this.headers() });
+  async getApplyPreview(sessionId: string, fresh?: boolean): Promise<ApplyPreview> {
+    // A high limit so one page holds the whole preview the record kept; count
+    // beyond it is reported, never dropped silently. fresh runs a new preview.
+    const q = new URLSearchParams({ limit: '1000' });
+    if (fresh) q.set('fresh', 'true');
+    const res = await fetch(`${this.baseUrl}/api/v0/sessions/${encodeURIComponent(sessionId)}/changes?${q.toString()}`, { headers: this.headers() });
     if (res.ok) return res.json();
     if (res.status === 503) throw new Error('The machine with this folder is offline.');
     if (res.status === 504) throw new Error('The machine with this folder did not answer in 30 seconds.');

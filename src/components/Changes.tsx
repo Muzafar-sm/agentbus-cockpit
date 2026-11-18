@@ -220,6 +220,8 @@ interface ApplyPanelProps {
   readApply?: (turn: string) => Promise<ApplyState>;
   // Told when an apply ends, applied or not, so the preview is read again.
   onApplyEnded?: () => void;
+  // Take a fresh preview (the folder may have changed outside a turn).
+  onRefresh?: () => void;
   onClose?: () => void;
   pollMs?: number;
 }
@@ -228,7 +230,7 @@ interface ApplyPanelProps {
 // file applying would write, its diff against the person's folder now, any
 // file the person changed since (which the apply would refuse), and one
 // "Apply to my folder" for the turn the preview names.
-export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, readApply, onApplyEnded, onClose, pollMs = 2000 }) => {
+export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, readApply, onApplyEnded, onRefresh, onClose, pollMs = 2000 }) => {
   // The apply this panel asked for: its turn, and its state as last read.
   const [asked, setAsked] = useState<{ turn: string; state: ApplyState | null } | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
@@ -316,6 +318,19 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
                       ? 'would be written to your folder, each against what it holds now'
                       : preview.why || `your folder matches this ${SESSION}`}
                   </div>
+                  {preview.previewed_at && (
+                    <div className="nd-note ap-asof">
+                      As of {new Date(preview.previewed_at).toLocaleString()}
+                      {onRefresh && (
+                        <>
+                          {' · '}
+                          <Button kind="link" small onClick={onRefresh}>
+                            Refresh
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  )}
                   {conflicted && (
                     <Notice kind="warn" className="ap-conflicts">
                       <b>{files(conflicts.length)} would be refused.</b> You changed{' '}
@@ -331,6 +346,11 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
                   )}
                   {has && (
                     <FileList files={preview.files} truncated={preview.truncated} diffsCut={preview.diffs_cut} conflicts={conflictOf} />
+                  )}
+                  {preview.count > preview.files.length && (
+                    <div className="nd-note ap-more">
+                      {preview.count - preview.files.length} more files not listed{preview.truncated ? ': too many to send' : ''}
+                    </div>
                   )}
                 </>
               )

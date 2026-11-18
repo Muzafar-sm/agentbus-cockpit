@@ -67,7 +67,7 @@ describe('The apply bar', () => {
   it('shows "● 2 files changed, not applied  Changes ▸" above the message box while there is unapplied work', async () => {
     const getApplyPreview = vi.fn(async () => preview);
     const { r } = await open({ getApplyPreview, applyTurn: vi.fn() });
-    expect(getApplyPreview).toHaveBeenCalledWith('c1');
+    expect(getApplyPreview).toHaveBeenCalledWith('c1', undefined);
     const b = bar(r.container)!;
     expect(b).not.toBeNull();
     expect(b.querySelector('.ab-dot')!.textContent).toBe('●');
@@ -235,6 +235,27 @@ describe('The apply preview', () => {
     r.unmount();
   });
 
+  it('says how many files are not listed and when the preview was taken, with Refresh', async () => {
+    const big: ApplyPreview = {
+      session: 'c1',
+      isolated: true,
+      unapplied: true,
+      turn: 'T1',
+      count: 5000,
+      truncated: true,
+      previewed_at: '2026-11-17T20:00:00Z',
+      files: [{ path: 'a.txt', change: 'modified', added: 1, removed: 0 }],
+      conflicts: [],
+    };
+    const onRefresh = vi.fn();
+    const r = await render(<ApplyPanel preview={big} apply={vi.fn()} onRefresh={onRefresh} />);
+    expect(r.container.querySelector('.ap-more')!.textContent).toBe('4999 more files not listed: too many to send');
+    expect(r.container.querySelector('.ap-asof')!.textContent).toContain('As of');
+    await click(button(r.container, 'Refresh'));
+    expect(onRefresh).toHaveBeenCalled();
+    r.unmount();
+  });
+
   it('a preview that fails shows the words, e.g. a machine offline', async () => {
     const r = await render(<ApplyPanel preview={null} error="The machine with this folder is offline." />);
     expect(r.container.querySelector('.form-error')!.textContent).toBe('The machine with this folder is offline.');
@@ -362,10 +383,10 @@ describe('The live source', () => {
         return new Response(JSON.stringify({ state: 'refused', conflicts: [{ path: 'a.txt', why: 'x' }] }), { status: 409 });
       }
       if (url.includes('/diff')) return new Response(JSON.stringify(diff), { status: 200 });
-      if (url.endsWith('/sessions/c1/changes')) return new Response(JSON.stringify(preview), { status: 200 });
-      if (url.endsWith('/sessions/off/changes')) return new Response('{"error":"offline"}', { status: 503 });
-      if (url.endsWith('/sessions/slow/changes')) return new Response('{"error":"timeout"}', { status: 504 });
-      if (url.endsWith('/sessions/busy/changes')) return new Response('{"error":"an apply is running"}', { status: 409 });
+      if (url.includes('/sessions/c1/changes')) return new Response(JSON.stringify(preview), { status: 200 });
+      if (url.includes('/sessions/off/changes')) return new Response('{"error":"offline"}', { status: 503 });
+      if (url.includes('/sessions/slow/changes')) return new Response('{"error":"timeout"}', { status: 504 });
+      if (url.includes('/sessions/busy/changes')) return new Response('{"error":"an apply is running"}', { status: 409 });
       return new Response(JSON.stringify({ error: 'no' }), { status: 404 });
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -376,7 +397,7 @@ describe('The live source', () => {
       expect((await src.applyTurn('T1')).state).toBe('refused');
       expect(calls).toEqual([
         'GET http://cockpit.test/api/v0/turns/T1/diff?session=c1',
-        'GET http://cockpit.test/api/v0/sessions/c1/changes',
+        'GET http://cockpit.test/api/v0/sessions/c1/changes?limit=1000',
         'POST http://cockpit.test/api/v0/turns/T1/apply',
       ]);
       await expect(src.getApplyPreview('off')).rejects.toThrow('The machine with this folder is offline.');

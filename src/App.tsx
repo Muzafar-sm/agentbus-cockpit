@@ -284,7 +284,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   allSessionsRef.current = allSessions;
   const shownRef = useRef<Shown | null>(null);
   // Reads the apply preview of a session again (readPreview, below), for the stream.
-  const readPreviewRef = useRef<(sessionId: string) => void>(() => {});
+  const readPreviewRef = useRef<(sessionId: string, fresh?: boolean) => void>(() => {});
   shownRef.current = shown;
   // Events of the selected session that arrive while its turns load.
   const streamedRef = useRef<CockpitEvent[] | null>(null);
@@ -634,23 +634,28 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // runs at a time per session: asks that come meanwhile make one more read
   // after it. A reply for a session no longer on screen is dropped.
   const [preview, setPreview] = useState<{ session: string; p: ApplyPreview | null; error: string | null } | null>(null);
-  const previewReads = useRef(new Map<string, 'reading' | 'again'>());
+  const previewReads = useRef(new Map<string, { again: boolean; fresh: boolean }>());
   const readPreview = useCallback(
-    (sessionId: string) => {
+    (sessionId: string, fresh?: boolean) => {
       if (!dataSource.getApplyPreview) return;
       const reads = previewReads.current;
-      if (reads.has(sessionId)) {
-        reads.set(sessionId, 'again');
+      const inflight = reads.get(sessionId);
+      if (inflight) {
+        // A read is already in flight: run again after it, and keep fresh if
+        // any coalesced caller asked for it, so a Refresh or an apply ending
+        // never collapses into a reused, stale preview.
+        inflight.again = true;
+        inflight.fresh = inflight.fresh || !!fresh;
         return;
       }
-      reads.set(sessionId, 'reading');
+      reads.set(sessionId, { again: false, fresh: false });
       const done = (next: (cur: typeof preview) => typeof preview) => {
         if (selectedSessionRef.current === sessionId) setPreview(next);
-        const again = reads.get(sessionId) === 'again';
+        const st = reads.get(sessionId);
         reads.delete(sessionId);
-        if (again) readPreviewRef.current(sessionId);
+        if (st?.again) readPreviewRef.current(sessionId, st.fresh);
       };
-      dataSource.getApplyPreview(sessionId).then(
+      dataSource.getApplyPreview(sessionId, fresh).then(
         (p) => done(() => ({ session: sessionId, p, error: null })),
         (err) =>
           done((cur) => ({ session: sessionId, p: cur?.session === sessionId ? cur.p : null, error: (err as Error).message }))
@@ -1185,6 +1190,9 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   const openApply = () => {
     setApplyOpen(true);
     columns.forward('turn');
+    // Opening the apply view takes a fresh preview: the folder may have
+    // changed since the reused one was taken.
+    if (previewSession) readPreview(previewSession, true);
   };
 
   // Ask whether the selected session is closed, each time it is read.
@@ -1504,7 +1512,8 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
               ? (turn: string) => dataSource.getTurnDiff!(previewSession, turn).then((d) => d.apply)
               : undefined
           }
-          onApplyEnded={() => readPreview(previewSession)}
+          onApplyEnded={() => readPreview(previewSession, true)}
+          onRefresh={dataSource.getApplyPreview ? () => readPreview(previewSession, true) : undefined}
           onClose={closePanel}
         />
       ) : (
