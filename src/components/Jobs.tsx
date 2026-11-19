@@ -222,7 +222,7 @@ const TurnFacts: React.FC<{ row: ApiTurn; now: number }> = ({ row, now }) => {
   if (ranMs !== undefined) facts.push(`ran ${clock(ranMs)}`);
   const cost = formatCost(row.cost_usd);
   if (cost) facts.push(cost);
-  if (row.kind === 'review' && ended(row)) facts.push('read-only: no commit');
+  if (row.kind === 'review' && ended(row)) facts.push('edits not applied');
   return (
     <div className="job-facts">
       {facts.map((f, i) => (
@@ -343,7 +343,7 @@ export const TurnTab: React.FC<TurnTabProps> = ({ turn, row, reviews, onStop }) 
           </div>
         );
       })}
-      <p className="dim job-foot">A review runs read-only on the turn's changes, in a session of its own.</p>
+      <p className="dim job-foot">A review runs on the turn's changes in a copy, in a session of its own; its own edits are never applied.</p>
     </div>
   );
 };

@@ -678,9 +678,9 @@ export class LiveDataSource implements DataSource {
   // session cannot be continued from here.
   async sendMessage(
     sessionId: string,
-    req: { prompt: string; read_only?: boolean; model?: string; agent?: string; idempotency_key?: string }
+    req: { prompt: string; model?: string; agent?: string; idempotency_key?: string }
   ): Promise<Started> {
-    const body: Record<string, unknown> = { session: sessionId, prompt: req.prompt, read_only: req.read_only };
+    const body: Record<string, unknown> = { session: sessionId, prompt: req.prompt };
     if (req.model) body.model = req.model;
     if (req.agent) body.agent = req.agent;
     if (req.idempotency_key) body.idempotency_key = req.idempotency_key;

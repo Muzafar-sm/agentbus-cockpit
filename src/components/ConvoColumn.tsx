@@ -11,7 +11,7 @@ import { LiveLine } from './LiveLine';
 import { PencilIcon, TitleEdit } from './TitleEdit';
 import { LockIcon } from './Icons';
 import { ShellEntry } from './ShellEntry';
-import { Button, Select, Switch } from './Controls';
+import { Button, Select } from './Controls';
 import { ConfirmDialog } from './Dialog';
 import { Notice } from './Notice';
 import { PRODUCT, SESSION, STATE } from '../words';
@@ -43,7 +43,7 @@ interface ConvoColumnProps {
   // agent of the session's latest turn: the turn runs on it. key is the
   // message's idempotency_key, which its turn carries. A message sent while
   // a turn runs is queued behind it: the answer says queued.
-  onSend?: (prompt: string, readOnly: boolean, agent: string | undefined, key: string) => Promise<Started | undefined | void>;
+  onSend?: (prompt: string, agent: string | undefined, key: string) => Promise<Started | undefined | void>;
   // Reads a queued message's turn by its id, so one that ends without
   // starting shows as failed rather than queued for good.
   queuedTurn?: (session: string, turn: string) => Promise<QueuedTurn>;
@@ -215,7 +215,6 @@ export interface Pending {
   // Why it failed, in the API's words.
   error?: string;
   // What it was sent with: the agent it named, if any.
-  readOnly: boolean;
   agent?: string;
 }
 
@@ -404,7 +403,6 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
     onPrefillTaken?.();
     inputRef.current?.focus();
   }, [prefill, session.id]);
-  const [readOnly, setReadOnly] = useState(false);
   // The agent picked beside Send; null follows the session's latest turn.
   const [picked, setPicked] = useState<string | null>(null);
   // Messages sent that are not yet turns on screen, oldest first.
@@ -562,7 +560,6 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
       prompt,
       turnsAtSend: turnCount,
       state: 'sending',
-      readOnly,
       agent: nextAgent || undefined,
     };
     setPending((list) => [...list, p]);
@@ -571,7 +568,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
     setSentTick((n) => n + 1);
     const set = (patch: Partial<Pending>) => setPending((list) => list.map((x) => (x.key === p.key ? { ...x, ...patch } : x)));
     try {
-      const started = await onSend!(p.prompt, p.readOnly, p.agent, p.key);
+      const started = await onSend!(p.prompt, p.agent, p.key);
       if (started && started.state === 'queued') set({ state: 'queued', ahead: started.ahead, turn: started.turn });
       else set({ state: 'accepted', turn: started ? started.turn : undefined });
     } catch (err) {
@@ -960,20 +957,9 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
             )}
           </div>
         </form>
-        {onSend && (
+        {onSend && why && (
           <div className="reply-foot">
-            {why ? (
-              <span className="reply-why">{why}</span>
-            ) : (
-              <Switch
-                className="reply-ro"
-                name="read_only"
-                label="Read only"
-                title="The agent cannot change files"
-                on={readOnly}
-                onChange={setReadOnly}
-              />
-            )}
+            <span className="reply-why">{why}</span>
           </div>
         )}
         {sendError && <Notice kind="error">{sendError}</Notice>}

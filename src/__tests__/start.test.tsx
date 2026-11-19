@@ -659,7 +659,6 @@ describe('New session: name, no first message, folders', () => {
       agent: 'claude',
       folder: '/Users/ana/x',
       prompt: 'read the README',
-      read_only: false,
       idempotency_key: expect.stringMatching(/^cockpit-msg-/),
     });
     expect(patches(svc).map((q) => [q.path, q.body])).toEqual([['/api/v0/sessions/new1', { title: 'Login fix' }]]);
@@ -754,7 +753,7 @@ describe('The prompt box', () => {
     expect(svc.reqs.some((q) => q.path.endsWith('/messages'))).toBe(false);
     const sent = svc.reqs.find((q) => q.path === '/api/v0/turns' && q.method === 'POST');
     expect(sent?.method).toBe('POST');
-    expect(sent?.body).toEqual({ session: 's1', prompt: 'and now the tests', read_only: false, idempotency_key: expect.stringMatching(/^cockpit-msg-/) });
+    expect(sent?.body).toEqual({ session: 's1', prompt: 'and now the tests', idempotency_key: expect.stringMatching(/^cockpit-msg-/) });
     const pending = r.container.querySelector('.tb.pending .bubble');
     expect(pending?.textContent).toBe('and now the tests');
     // While it is pending the box still takes a message: it would queue.
