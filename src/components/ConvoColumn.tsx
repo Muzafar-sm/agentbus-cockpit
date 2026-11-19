@@ -82,6 +82,11 @@ interface ConvoColumnProps {
   // session that did the work) and of an asked turn (to the session that
   // asked). Without it the links are not shown.
   onOpenSession?: (sessionId: string) => void;
+  // The sessions this one asked for (ask_agent), newest first: shown as links
+  // under the header so an asked session -- which is kept off the sessions
+  // list -- is reachable while it runs, before its result comes back. Needs
+  // onOpenSession to open them.
+  asked?: { id: string; title?: string }[];
   // Given when the source can name sessions: a new title for this one.
   // Rejects with the API's words.
   onRename?: (sessionId: string, title: string) => Promise<void>;
@@ -267,6 +272,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   agentDot,
   defaultAgent,
   onOpenSession,
+  asked,
   queuedTurn,
   keyed,
   pending: keptPending,
@@ -715,6 +721,19 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
           </>
         )}
       </header>
+      {asked && asked.length > 0 && onOpenSession && (
+        <div id="c-asked" className="c-asked" role="note">
+          Asked:{' '}
+          {asked.map((c, i) => (
+            <React.Fragment key={c.id}>
+              {i > 0 ? ', ' : ''}
+              <Button kind="link" className="origin-link" onClick={() => onOpenSession(c.id)}>
+                {c.title || c.id}
+              </Button>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
       {closeAsk && onCloseSession && (
         <ConfirmDialog
           className="close-ask"

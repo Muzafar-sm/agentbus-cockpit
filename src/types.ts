@@ -201,6 +201,11 @@ export interface SessionSummary {
   // True when the session was closed (PATCH closed: true): it takes no more
   // turns, so the cockpit offers no Send.
   closed?: boolean;
+  // The origin of the session's first turn (GET /api/v0/sessions): kind asked
+  // when an agent's turn asked for this session (ask_agent). Absent for a
+  // session the person started. The list shows only sessions without an asked
+  // origin; an asked session is reached from the ask inside its asking session.
+  origin?: TurnOrigin;
 }
 
 // GET /api/v0/sessions: the rows and the cursor (store, seq) they were computed at.

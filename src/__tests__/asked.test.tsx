@@ -10,7 +10,7 @@ import { ConvoColumn } from '../components/ConvoColumn';
 import { LiveDataSource } from '../data/LiveDataSource';
 import { createEmptyUsage } from '../data/turns';
 import { SavedAgent, SessionDetail, Turn } from '../types';
-import { click, ev, flush, liveReplay, render, shownSession } from './helpers';
+import { click, ev, flush, liveReplay, render, rowSession, shownSession } from './helpers';
 
 const SAVED: SavedAgent[] = [
   { id: 'claude', name: 'Claude Code', harness: 'claude', access: 'subscription' },
@@ -145,29 +145,52 @@ describe('asked work across sessions', () => {
     expect((await lr.source.getTurns('c')).turns[0].origin).toEqual({ kind: 'asked', session: 'p', turn: 'T1', turnKind: undefined, agent: undefined });
   });
 
-  it('a result link opens the child session under its own agent, and one not listed yet opens once it is', async () => {
+  it('the list shows only the person session; a result link opens an asked child off the list', async () => {
     const lr = liveReplay([...parent, ...child('c', 'C1')], { listAgents: async () => SAVED });
     const r = await render(<App dataSource={lr.source} />);
-    // The child is listed first; its asked line links to the parent, which
-    // is under another agent.
-    await waitFor(() => shownSession(r.container) === 'c' && r.container.querySelector('.origin-link') !== null, 'the child');
+    // The list shows the person's session, not the one the agent asked for;
+    // the person's session is shown, with its two delivered results linking
+    // out to the sessions that did the work.
+    await waitFor(() => shownSession(r.container) === 'p' && r.container.querySelectorAll('.m-origin .origin-link').length === 2, 'the parent');
+    const listed = () => Array.from(r.container.querySelectorAll('#sessions [data-session]')).map((x) => rowSession(x));
+    expect(listed()).toContain('p');
+    expect(listed()).not.toContain('c');
+    // The first result links to the asked child; opening it (off the list)
+    // shows its asked line back to the parent.
+    await click(r.container.querySelectorAll('.m-origin .origin-link')[0]);
+    await waitFor(() => shownSession(r.container) === 'c' && r.container.querySelector('.m-origin .origin-link') !== null, 'the child');
     expect(r.container.querySelector('.m-origin')!.textContent).toBe('Asked by another agent · open its session');
-    await click(r.container.querySelector('.origin-link'));
-    await waitFor(() => shownSession(r.container) === 'p' && r.container.querySelectorAll('.origin-link').length === 2, 'the parent');
-    // A later list refresh keeps it.
-    lr.push(ev({ session: 'p', kind: 'model.requested', turn: 'T3', exchange: 'x-more', model: 'm' }));
-    await flush();
-    expect(shownSession(r.container)).toBe('p');
-    await click(r.container.querySelectorAll('.origin-link')[0]);
-    await waitFor(() => shownSession(r.container) === 'c', 'the child again');
-    await click(r.container.querySelector('.origin-link'));
+    expect(listed()).not.toContain('c'); // still off the list while shown
+    await click(r.container.querySelector('.m-origin .origin-link'));
     await waitFor(() => shownSession(r.container) === 'p', 'back to the parent');
-    // Session n is not listed yet: the link waits for it.
-    await click(r.container.querySelectorAll('.origin-link')[1]);
+    // The second result names a session not in the replay yet: the link waits,
+    // then opens it (also off the list) once its events arrive.
+    await click(r.container.querySelectorAll('.m-origin .origin-link')[1]);
     await flush();
     expect(shownSession(r.container)).toBe('p');
     for (const e of child('n', 'N1')) lr.push(e);
     await waitFor(() => shownSession(r.container) === 'n', 'the new child');
+    expect(listed()).not.toContain('n');
+    r.unmount();
+  });
+
+  it('a running asked session is reachable from the asking session before any result', async () => {
+    // The parent's own turn is idle; a child it asked is still running (its
+    // turn started, asked by the parent, but not completed). No result has
+    // come back yet, so there is no result link -- only the header's Asked link.
+    const runningParent = [...started('p', 'T1', 'run codex on this', 'claude')];
+    const runningChild = [
+      ev({ session: 'c', kind: 'turn.started', turn: 'C1', text: 'do it', agent: 'codex', agent_id: 'codex', folder: '/w', origin: { kind: 'asked', session: 'p', turn: 'T1' } }),
+      ev({ session: 'c', kind: 'model.requested', turn: 'C1', exchange: 'x-C1', model: 'm' }),
+    ];
+    const lr = liveReplay([...runningParent, ...runningChild], { listAgents: async () => SAVED });
+    const r = await render(<App dataSource={lr.source} />);
+    await waitFor(() => shownSession(r.container) === 'p' && r.container.querySelector('#c-asked .origin-link') !== null, 'the asking session with an asked link');
+    const listed = () => Array.from(r.container.querySelectorAll('#sessions [data-session]')).map((x) => rowSession(x));
+    expect(listed()).not.toContain('c');
+    expect(r.container.querySelectorAll('.m-origin').length).toBe(0); // no result delivered yet
+    await click(r.container.querySelector('#c-asked .origin-link'));
+    await waitFor(() => shownSession(r.container) === 'c', 'the running child');
     r.unmount();
   });
 });
