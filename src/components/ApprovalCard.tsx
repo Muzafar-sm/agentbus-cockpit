@@ -38,6 +38,8 @@ export const ApprovalCard: React.FC<{
     return () => clearInterval(t);
   }, [approval.requested]);
 
+  const isFolderTool = approval.tool_name === 'read_file' || approval.tool_name === 'list_folder' || approval.tool_name === 'write_file';
+
   const answer = async (decision: ApprovalDecision) => {
     setBusy(decision);
     setError(null);
@@ -81,15 +83,16 @@ export const ApprovalCard: React.FC<{
           {busy === 'once' ? '…' : 'Allow once'}
         </button>
         <button type="button" className="ask-always" disabled={busy !== ''} onClick={() => answer('always')}>
-          {busy === 'always' ? '…' : 'Always allow'}
+          {busy === 'always' ? '…' : isFolderTool ? 'Always for this folder' : 'Always allow'}
         </button>
         <button type="button" className="ask-refuse" disabled={busy !== ''} onClick={() => answer('refuse')}>
           {busy === 'refuse' ? '…' : 'Refuse'}
         </button>
       </div>
       <div className="ask-card-note">
-        Allow once runs it this turn only. Always allow adds it to the allow list, from now on. Refuse records the
-        decision.
+        {isFolderTool
+          ? 'Allow once runs it this turn only. Always for this folder grants this folder, from now on. Refuse records the decision.'
+          : 'Allow once runs it this turn only. Always allow adds it to the allow list, from now on. Refuse records the decision.'}
       </div>
     </div>
   );

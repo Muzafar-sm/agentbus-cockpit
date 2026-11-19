@@ -96,10 +96,7 @@ const GROUPS: Group[] = [
     id: "workspace",
     name: "Workspace",
     sub: "Each session's copy of your folder",
-    controls: [
-      { key: "read_folders", name: "Read folders", kind: { t: "list", placeholder: "~/notes", mono: true },
-        line: "Folders Claude Code may read beyond its own, one per line." },
-    ],
+    controls: [],
     side: [
       "You apply what you want to keep. Your folder is not changed until then.",
       "Each copy is cloned copy-on-write, so a big node_modules costs nothing and a turn may write its own.",

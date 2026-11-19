@@ -65,6 +65,27 @@ describe('the approval card', () => {
     expect(calls).toEqual([['ap1', 'always']]);
   });
 
+  it('shows "Always for this folder" for folder access tools (B8)', async () => {
+    const calls: Array<[string, ApprovalDecision]> = [];
+    const { container } = await render(
+      <ApprovalCard
+        approval={ap({
+          tool_name: 'read_file',
+          commands: ['read_file {"path":"/tmp/test.txt"}'],
+          rule: '/tmp',
+        })}
+        decide={async (id, d) => void calls.push([id, d])}
+      />
+    );
+    expect(container.textContent).toContain('read_file {"path":"/tmp/test.txt"}');
+    const alwaysBtn = findBtn(container, 'Always for this folder');
+    expect(alwaysBtn).toBeDefined();
+    expect(container.textContent).toContain('Always for this folder grants this folder, from now on');
+    await click(alwaysBtn);
+    await flush();
+    expect(calls).toEqual([['ap1', 'always']]);
+  });
+
   it('refuses', async () => {
     const calls: Array<[string, ApprovalDecision]> = [];
     const { container } = await render(<ApprovalCard approval={ap()} decide={async (id, d) => void calls.push([id, d])} />);

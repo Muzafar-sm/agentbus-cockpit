@@ -13,7 +13,6 @@ import { click, ev, flush, jsonl, panelOpen, render, unmountAll } from './helper
 // defaults, every value filled, with forbid set.
 function policy(): Policy {
   return {
-    read_folders: [],
     allow: [],
     ask: [],
     forbid: ['git push'],
@@ -285,7 +284,7 @@ describe('the Settings page', () => {
     const advancedOnly = ['isolation', 'edit'];
     expect([...SETTINGS_CONTROLS].sort()).toEqual(Object.keys(flatPolicy(policy())).filter((k) => !advancedOnly.includes(k)).sort());
     const groups: Record<string, string[]> = {
-      workspace: ['read_folders'],
+      workspace: [],
       config: ['home_files'],
       permissions: ['agent_api.tools', 'subagents', 'agent_api.apply', 'allow', 'ask', 'forbid', 'unlisted'],
       isolation: ['sandbox.mode', 'network.contain', 'network.allow'],
@@ -642,7 +641,6 @@ describe('the Settings page', () => {
     const saved = container.querySelector('[aria-label="Saved policy"]')!.textContent!;
     expect(saved).toContain('limits.max_depth2');
     expect(saved).toContain('forbidgit push');
-    expect(saved).toContain('read_foldersnone');
     expect(saved).toContain('home_filesnone');
   });
 
