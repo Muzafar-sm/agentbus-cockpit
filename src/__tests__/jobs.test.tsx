@@ -226,7 +226,7 @@ describe('Review', () => {
     const review = body.querySelectorAll('.job-row')[1];
     expect(review.textContent).toContain('waited 0:05');
     expect(review.textContent).toContain('ran 0:35');
-    expect(review.textContent).toContain('read-only: no commit');
+    expect(review.textContent).toContain('edits not applied');
     const finding = body.querySelector('.findings li')!;
     expect(finding.textContent).toContain('P1');
     expect(finding.textContent).toContain('app.go:40');
@@ -341,9 +341,8 @@ describe('Fix', () => {
       r.container.querySelector('#c-reply form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     });
     await waitFor(() => sendMessage.mock.calls.length === 1, 'the send');
-    const [session, req] = sendMessage.mock.calls[0] as unknown as [string, { prompt: string; read_only: boolean }];
+    const [session, req] = sendMessage.mock.calls[0] as unknown as [string, { prompt: string }];
     expect(session).toBe('s1');
-    expect(req.read_only).toBe(false);
     expect(req.prompt).toContain('- P1 calc.go:7: adds instead of subtracting');
     expect(req.prompt).toContain('Keep the API the same.');
     expect(fake.calls.reviews).toHaveLength(0);
@@ -406,7 +405,7 @@ describe('sending with the turn queue', () => {
       r.container.querySelector('#c-reply form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     });
     await waitFor(() => sendMessage.mock.calls.length === 1, 'the send');
-    expect(sendMessage.mock.calls[0]).toEqual(['s1', { prompt: 'now add a test', read_only: false, agent: expect.any(String), idempotency_key: expect.stringMatching(/^cockpit-msg-/) }]);
+    expect(sendMessage.mock.calls[0]).toEqual(['s1', { prompt: 'now add a test', agent: expect.any(String), idempotency_key: expect.stringMatching(/^cockpit-msg-/) }]);
     r.unmount();
   });
 

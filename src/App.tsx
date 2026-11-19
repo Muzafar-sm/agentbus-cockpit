@@ -908,18 +908,18 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // the session that one opens, never to a second new session.
   const draftRun = useRef<{ id: number; started: Promise<Started> } | null>(null);
   const sendDraft = draft
-    ? async (prompt: string, readOnly: boolean, agent: string | undefined, key: string): Promise<Started> => {
+    ? async (prompt: string, agent: string | undefined, key: string): Promise<Started> => {
         const gen = nextSend();
         const id = draft.id;
         const first = draftRun.current?.id === id ? draftRun.current.started : null;
         if (first && dataSource.sendMessage) {
           const { session } = await first;
-          const next = await dataSource.sendMessage(session, { prompt, read_only: readOnly, agent, idempotency_key: key });
+          const next = await dataSource.sendMessage(session, { prompt, agent, idempotency_key: key });
           refreshQueue?.();
           return next;
         }
         const run = launch(
-          { ...draft.req, agent: agent ?? draft.req.agent, prompt, read_only: readOnly, idempotency_key: key },
+          { ...draft.req, agent: agent ?? draft.req.agent, prompt, idempotency_key: key },
           draft.title,
           gen
         );
@@ -1005,11 +1005,11 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // session's running turn: it never waits for that turn to end. key matches
   // the queued message to the turn that runs it.
   const sendMessage = dataSource.sendMessage
-    ? async (prompt: string, readOnly: boolean, agent: string | undefined, key: string): Promise<Started | undefined> => {
+    ? async (prompt: string, agent: string | undefined, key: string): Promise<Started | undefined> => {
         if (shownId === null) return undefined;
         const gen = nextSend();
         const from = shownId;
-        const started = await dataSource.sendMessage!(from, { prompt, read_only: readOnly, agent, idempotency_key: key });
+        const started = await dataSource.sendMessage!(from, { prompt, agent, idempotency_key: key });
         refreshQueue?.();
         awaitTurn(gen, started, from);
         return started;

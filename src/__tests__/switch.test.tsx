@@ -90,7 +90,7 @@ describe('switching agent per message', () => {
     // box, which starts as the conversation's last.
     await send(r.container, 'one more');
     await waitFor(() => sendMessage.mock.calls.length === 1, 'the first send');
-    expect(sendMessage.mock.calls[0]).toEqual(['s1', { prompt: 'one more', read_only: false, agent: 'codex', idempotency_key: expect.stringMatching(/^cockpit-msg-/) }]);
+    expect(sendMessage.mock.calls[0]).toEqual(['s1', { prompt: 'one more', agent: 'codex', idempotency_key: expect.stringMatching(/^cockpit-msg-/) }]);
 
     r.unmount();
   });
@@ -103,7 +103,7 @@ describe('switching agent per message', () => {
     expect((r.container.querySelector('#c-reply textarea') as HTMLTextAreaElement).placeholder).toBe('Message Claude Code · haiku…');
     await send(r.container, 'back to haiku');
     await waitFor(() => sendMessage.mock.calls.length === 1, 'the send');
-    expect(sendMessage.mock.calls[0]).toEqual(['s1', { prompt: 'back to haiku', read_only: false, agent: 'a_haiku', idempotency_key: expect.stringMatching(/^cockpit-msg-/) }]);
+    expect(sendMessage.mock.calls[0]).toEqual(['s1', { prompt: 'back to haiku', agent: 'a_haiku', idempotency_key: expect.stringMatching(/^cockpit-msg-/) }]);
     r.unmount();
   });
 
@@ -153,7 +153,7 @@ describe('switching agent per message', () => {
     expect((await optionsOf(r.container, 'next_agent')).length).toBe(2);
     await send(r.container, 'still here?');
     await waitFor(() => sendMessage.mock.calls.length === 1, 'the send');
-    expect((sendMessage.mock.calls[0] as unknown[])[1]).toEqual({ prompt: 'still here?', read_only: false, agent: 'codex', idempotency_key: expect.stringMatching(/^cockpit-msg-/) });
+    expect((sendMessage.mock.calls[0] as unknown[])[1]).toEqual({ prompt: 'still here?', agent: 'codex', idempotency_key: expect.stringMatching(/^cockpit-msg-/) });
     r.unmount();
   });
 

@@ -340,7 +340,6 @@ export interface RunRequest {
   isolate?: boolean;
   prompt: string;
   model?: string;
-  read_only?: boolean;
   idempotency_key?: string;
 }
 
@@ -782,7 +781,7 @@ export interface DataSource {
   // agent names a saved agent: the turn runs on it, in the session's folder.
   sendMessage?(
     sessionId: string,
-    req: { prompt: string; read_only?: boolean; model?: string; agent?: string; idempotency_key?: string }
+    req: { prompt: string; model?: string; agent?: string; idempotency_key?: string }
   ): Promise<Started>;
   // A source that keeps a record has this: the session's "!" command events
   // from before AgentBus 0.5, oldest first, each as a ShellRun in the state

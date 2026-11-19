@@ -280,8 +280,8 @@ describe('the Settings page', () => {
     expect(container.textContent).not.toContain('Grants');
     // Every key of the policy has a control, and each control a key.
     // isolation and edit are kept, but only in Advanced (his call, 0.5.7): every
-    // conversation works in a copy, and a single turn is made read-only from the
-    // message box.
+    // conversation works in a copy. (Read-only turns, and the message-box
+    // toggle for them, retired in 0.6: B12.)
     const advancedOnly = ['isolation', 'edit'];
     expect([...SETTINGS_CONTROLS].sort()).toEqual(Object.keys(flatPolicy(policy())).filter((k) => !advancedOnly.includes(k)).sort());
     const groups: Record<string, string[]> = {
