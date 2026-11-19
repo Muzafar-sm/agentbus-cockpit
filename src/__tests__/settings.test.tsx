@@ -341,6 +341,22 @@ describe('the Settings page', () => {
     expect(api.patchPolicy.mock.calls[1][0]).toEqual({ forbid: ['rm -rf'] });
   });
 
+  // A Tools line the person writes with the tool: prefix (the form the policy
+  // documents and Advanced shows) is stored with one prefix, never doubled.
+  it('does not double a tool: prefix the person types into a Tools box', async () => {
+    const { api, state } = fakeApi();
+    const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
+    await flush();
+    await pick(container, '[data-part="permissions"]');
+    // forbid starts ['git push']: commands box 'git push', tools box empty.
+    await setValue(container.querySelector('textarea[name="forbid.tool"]'), 'tool:subagent\nedit');
+    await click(button(container, 'Save permissions'));
+    await flush();
+    // Both land as one tool: prefix, so the gateway matches them.
+    expect(api.patchPolicy.mock.calls[0][0]).toEqual({ forbid: ['git push', 'tool:subagent', 'tool:edit'] });
+    expect(state.policy.forbid).toEqual(['git push', 'tool:subagent', 'tool:edit']);
+  });
+
   // The rule for every control: a save writes only the keys the person
   // changed, never a full copy with the defaults filled in, which would keep
   // every default at today's value after a later build changes it.

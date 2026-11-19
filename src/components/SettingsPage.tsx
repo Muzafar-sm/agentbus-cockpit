@@ -119,14 +119,14 @@ const GROUPS: Group[] = [
         line: "Commands that wait for you, one per line." },
       { key: "forbid", policyKey: "forbid", of: "cmd", name: "Refuse", kind: { t: "list", placeholder: "git push", mono: true },
         line: "Commands they may never run, one per line." },
-      { key: "allow.tool", policyKey: "allow", of: "tool", name: "Allow", head: "Tools", kind: { t: "list", placeholder: "list_turns", mono: true },
+      { key: "allow.tool", policyKey: "allow", of: "tool", name: "Allow", head: "Tools", kind: { t: "list", placeholder: "read_file", mono: true },
         line: "Tools agents may use without asking, one per line." },
-      { key: "ask.tool", policyKey: "ask", of: "tool", name: "Ask", kind: { t: "list", placeholder: "mcp_github_*", mono: true },
+      { key: "ask.tool", policyKey: "ask", of: "tool", name: "Ask", kind: { t: "list", placeholder: "write_file", mono: true },
         line: "Tools that wait for you, one per line." },
       { key: "forbid.tool", policyKey: "forbid", of: "tool", name: "Refuse", kind: { t: "list", placeholder: "run_command", mono: true },
         line: "Tools they may never use, one per line." },
       { key: "unlisted", name: "Anything else", kind: { t: "seg", options: [["ask", "Ask"], ["refuse", "Refuse"]] },
-        line: "What happens to a command or tool on none of the lists: Ask holds it for you here, Refuse turns it down." },
+        line: "A command or tool on none of the lists: Ask holds it for you here, Refuse turns it down." },
     ],
     side: [
       "Agents may always read, list agents, start, review, stop and rename work within the request they belong to.",
@@ -215,11 +215,13 @@ function draftOf(c: Control, v: unknown): string | boolean {
 }
 
 // ruleChange is one policy list rebuilt from its two draft boxes: the commands
-// as typed, then the tools with the TOOL prefix added back. Undefined when the
-// result matches what was read (commands then tools), so a save sends nothing.
+// as typed, then the tools with the TOOL prefix. A Tools line already written
+// with the prefix (the form the policy documents and Advanced shows) keeps the
+// one prefix, never a doubled tool:tool:. Undefined when the result matches what
+// was read (commands then tools), so a save sends nothing.
 function ruleChange(draft: Draft, cmdKey: string, toolKey: string, read: unknown): string[] | undefined {
   const cmd = lines(String(draft[cmdKey] ?? ""));
-  const tool = lines(String(draft[toolKey] ?? "")).map((e) => TOOL + e);
+  const tool = lines(String(draft[toolKey] ?? "")).map((e) => (isTool(e) ? e : TOOL + e));
   const next = [...cmd, ...tool];
   const was = Array.isArray(read) ? (read as string[]) : [];
   const canon = [...was.filter((e) => !isTool(e)), ...was.filter(isTool)];
