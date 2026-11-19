@@ -194,7 +194,7 @@ describe('the sign-in dot in the cockpit', () => {
       link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
     });
     await flush();
-    expect(r.container.querySelector('[data-part="workspace"]')!.getAttribute('aria-current')).toBe('true');
+    expect(r.container.querySelector('[data-part="permissions"]')!.getAttribute('aria-current')).toBe('true');
   });
 
   it('shows the picked agent’s dot beside the picker near Send, and follows the pick', async () => {
