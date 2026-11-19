@@ -606,6 +606,8 @@ export interface SubscriptionState {
   // How much of the plan is used, per window, shortest first, as the vendor
   // said on the latest model reply on this subscription. Absent until one.
   usage?: PlanReading[];
+  // Whether plan usage is known: false when connected with no reading yet.
+  usage_known?: boolean;
 }
 // One window of a subscription's plan (GET /api/v0/subscriptions, usage).
 export interface PlanReading {
