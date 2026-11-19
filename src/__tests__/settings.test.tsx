@@ -258,33 +258,36 @@ describe('the Settings page', () => {
     const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
     await flush();
     const parts = [...container.querySelectorAll('.pg-list [data-part]')].map((x) => x.getAttribute('data-part'));
-    expect(parts).toEqual(['workspace', 'config', 'permissions', 'isolation', 'limits', 'instructions', 'advanced']);
+    // Workspace is gone (empty after its settings retired); every other
+    // section keeps its pre-B17 place and content.
+    expect(parts).toEqual(['permissions', 'config', 'isolation', 'limits', 'instructions', 'advanced']);
     // Each group by its short name and one-line subtitle.
     const heads = [...container.querySelectorAll('.pg-list [data-part]')].map((x) => [x.querySelector('.pr-n')!.textContent, x.querySelector('.pr-m2')!.textContent]);
-    expect(heads.slice(0, 5)).toEqual([
-      ['Workspace', "Each session's copy of your folder"],
-      ['Config', 'Settings, skills and MCP servers each session gets'],
+    expect(heads.slice(0, 4)).toEqual([
       ['Permissions', 'What agents may do through AgentBus'],
+      ['Config', 'Settings, skills and MCP servers each session gets'],
       ['Isolation', 'Sandbox and network'],
       ['Limits', 'How much agents may ask for'],
     ]);
     // No OS differences anywhere on the page.
-    for (const g of ['workspace', 'config', 'permissions', 'isolation', 'limits']) {
+    for (const g of ['permissions', 'config', 'isolation', 'limits']) {
       await pick(container, `[data-part="${g}"]`);
       expect(container.textContent).not.toMatch(/macOS|Linux|Mac\b/);
     }
     expect(container.querySelector('[data-part="grants"]')).toBeNull();
     expect(container.textContent).not.toContain('Grants');
-    // Every key of the policy has a control, and each control a key.
+    expect(container.querySelector('[data-part="workspace"]')).toBeNull();
+    // Every key of the policy has a control, and each control a key. The
+    // permissions rules split into a Commands box and a Tools box per list,
+    // but both halves write the one stored list, so the policy key counts once.
     // isolation is kept, but only in Advanced (his call, 0.5.7): every
     // conversation works in a copy. (Read-only turns, and the message-box
     // toggle for them, retired in 0.6: B12; edit retired in B16.)
     const advancedOnly = ['isolation'];
     expect([...SETTINGS_CONTROLS].sort()).toEqual(Object.keys(flatPolicy(policy())).filter((k) => !advancedOnly.includes(k)).sort());
     const groups: Record<string, string[]> = {
-      workspace: [],
+      permissions: ['agent_api.apply', 'allow', 'ask', 'forbid', 'allow.tool', 'ask.tool', 'forbid.tool', 'unlisted'],
       config: ['home_files'],
-      permissions: ['agent_api.apply', 'allow', 'ask', 'forbid', 'unlisted'],
       isolation: ['sandbox.mode', 'network.contain', 'network.allow'],
       limits: ['limits.max_depth', 'limits.max_jobs_per_turn', 'limits.max_jobs_per_tree', 'limits.max_cost_usd_per_tree'],
     };
@@ -298,18 +301,60 @@ describe('the Settings page', () => {
         expect(x.querySelector('.pg-note')!.textContent).toMatch(/\.$/);
       }
     }
-    // The values read are the controls' values.
+    // The rules split into a Commands group and a Tools group.
     await pick(container, '[data-part="permissions"]');
+    expect([...container.querySelectorAll('.pg-main .pg-ctl-h')].map((x) => x.textContent)).toEqual(['Commands', 'Tools']);
     expect((container.querySelector('textarea[name="forbid"]') as HTMLTextAreaElement).value).toBe('git push');
-    await pick(container, '[data-part="workspace"]');
-    expect(container.textContent).toContain('Each copy is cloned copy-on-write, so a big node_modules costs nothing and a turn may write its own.');
-    expect(container.querySelector('[aria-label="Folder"]')).toBeNull();
-    expect(container.querySelector('[aria-label="Copy method"]')).toBeNull();
     await pick(container, '[data-part="isolation"]');
     expect([...container.querySelectorAll('.pg-main .pg-ctl-h')].map((x) => x.textContent)).toEqual(['Network']);
     expect(container.textContent).toContain('A wall around each session: its folder, its home, and the network only through AgentBus.');
     await pick(container, '[data-part="limits"]');
     expect((container.querySelector('input[name="limits.max_depth"]') as HTMLInputElement).value).toBe('2');
+  });
+
+  // The one stored list holds commands and tool rules together; a tool rule
+  // carries the tool: prefix (B16). The page splits it into a Commands box and
+  // a Tools box, strips the prefix for the Tools box, and adds it back on save.
+  // The person never types the prefix.
+  it('splits each rule list into Commands and Tools by the tool: prefix, and adds it back on save', async () => {
+    const { api, state } = fakeApi();
+    state.policy.allow = ['go test', 'tool:list_turns', 'tool:get_turn'];
+    const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
+    await flush();
+    await pick(container, '[data-part="permissions"]');
+    // Commands box: the plain command. Tools box: the tool rules without tool:.
+    expect((container.querySelector('textarea[name="allow"]') as HTMLTextAreaElement).value).toBe('go test');
+    expect((container.querySelector('textarea[name="allow.tool"]') as HTMLTextAreaElement).value).toBe('list_turns\nget_turn');
+    // A mixed list read back is not an unsaved change.
+    expect(container.querySelector('[data-part="permissions"]')!.textContent).not.toContain('Unsaved');
+    // Add a tool in the Tools box (no prefix typed) and save.
+    await setValue(container.querySelector('textarea[name="allow.tool"]'), 'list_turns\nget_turn\nmcp_github_*');
+    await click(button(container, 'Save permissions'));
+    await flush();
+    // Saved as the one list: commands as typed, then tools with tool: added.
+    expect(api.patchPolicy.mock.calls[0][0]).toEqual({ allow: ['go test', 'tool:list_turns', 'tool:get_turn', 'tool:mcp_github_*'] });
+    expect(state.policy.allow).toEqual(['go test', 'tool:list_turns', 'tool:get_turn', 'tool:mcp_github_*']);
+    // Editing the Commands box keeps the tools, and writes only its list.
+    await setValue(container.querySelector('textarea[name="forbid"]'), 'rm -rf');
+    await click(button(container, 'Save permissions'));
+    await flush();
+    expect(api.patchPolicy.mock.calls[1][0]).toEqual({ forbid: ['rm -rf'] });
+  });
+
+  // A Tools line the person writes with the tool: prefix (the form the policy
+  // documents and Advanced shows) is stored with one prefix, never doubled.
+  it('does not double a tool: prefix the person types into a Tools box', async () => {
+    const { api, state } = fakeApi();
+    const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
+    await flush();
+    await pick(container, '[data-part="permissions"]');
+    // forbid starts ['git push']: commands box 'git push', tools box empty.
+    await setValue(container.querySelector('textarea[name="forbid.tool"]'), 'tool:subagent\nedit');
+    await click(button(container, 'Save permissions'));
+    await flush();
+    // Both land as one tool: prefix, so the gateway matches them.
+    expect(api.patchPolicy.mock.calls[0][0]).toEqual({ forbid: ['git push', 'tool:subagent', 'tool:edit'] });
+    expect(state.policy.forbid).toEqual(['git push', 'tool:subagent', 'tool:edit']);
   });
 
   // The rule for every control: a save writes only the keys the person
@@ -625,8 +670,8 @@ describe('the Settings page', () => {
     const { api } = fakeApi();
     const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
     await flush();
-    expect(container.querySelector('.pg-list .on')!.getAttribute('data-part')).toBe('workspace');
-    expect(container.querySelector('.pg-main .colhead')!.textContent).toContain('Workspace');
+    expect(container.querySelector('.pg-list .on')!.getAttribute('data-part')).toBe('permissions');
+    expect(container.querySelector('.pg-main .colhead')!.textContent).toContain('Permissions');
     expect(container.querySelector('.pg-side .colhead')!.textContent).toBe('How it applies');
     // The policy as saved, nested keys by their dotted path.
     await pick(container, '[data-part="advanced"]');

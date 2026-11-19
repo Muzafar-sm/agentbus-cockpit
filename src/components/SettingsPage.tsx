@@ -23,7 +23,7 @@ import { Loading, Notice } from "./Notice";
 import { KEPT, LOADING, PRODUCT } from "../words";
 
 // The Settings page (/settings): AgentBus's settings, one global set for every machine.
-// Every setting of the policy is a plain control, in groups (Workspace, Config, Permissions, Isolation, Limits); then the instructions every turn gets, the subscriptions, and the whole policy as JSON (Advanced). Each
+// Every setting of the policy is a plain control, in groups (Permissions, Isolation, Config, Limits); then the instructions every turn gets, the subscriptions, and the whole policy as JSON (Advanced). Each
 // part saves on its own, with the version it read; a change made elsewhere in between is refused, and the page
 // reads everything again.
 //
@@ -72,15 +72,27 @@ type Kind =
   | { t: "number"; whole: boolean };
 
 interface Control {
-  key: string; // the policy key, dotted
+  key: string; // the draft slot: a policy key, dotted, or a rule half's own slot
   name: string;
   line: string; // one short plain line: what it does
   kind: Kind;
   more?: string; // a second line, only where it must be said
   head?: string; // a small heading above it, where a group holds two kinds
+  // A rule half: the policy list this edits (allow/ask/forbid) and which half.
+  // Commands and tools share one stored list; a tool rule carries the TOOL
+  // prefix (B16), so the page splits by it on read and adds it on save. The
+  // person never types the prefix.
+  policyKey?: string;
+  of?: "cmd" | "tool";
 }
 
-type GroupId = "workspace" | "config" | "permissions" | "isolation" | "limits";
+// A tool rule is stored in the same list as commands, with this prefix.
+const TOOL = "tool:";
+// The policy list a control edits: its own key, or the list a rule half splits.
+const pkey = (c: Control): string => c.policyKey ?? c.key;
+const isTool = (s: string): boolean => s.startsWith(TOOL);
+
+type GroupId = "permissions" | "isolation" | "config" | "limits";
 type Part = GroupId | "instructions" | "subscriptions" | "advanced";
 
 interface Group {
@@ -93,13 +105,34 @@ interface Group {
 
 const GROUPS: Group[] = [
   {
-    id: "workspace",
-    name: "Workspace",
-    sub: "Each session's copy of your folder",
-    controls: [],
+    id: "permissions",
+    name: "Permissions",
+    sub: "What agents may do through AgentBus",
+    controls: [
+      { key: "agent_api.apply", name: "Agents may apply", kind: { t: "switch" },
+        line: "An agent may apply a turn's changes to your folder. You always may." },
+      // Commands and tools are one stored list each; the Tools boxes hold the
+      // same list's entries that carry the TOOL prefix, shown without it.
+      { key: "allow", policyKey: "allow", of: "cmd", name: "Allow", head: "Commands", kind: { t: "list", placeholder: "go test", mono: true },
+        line: "Commands agents may run without asking, one per line." },
+      { key: "ask", policyKey: "ask", of: "cmd", name: "Ask", kind: { t: "list", placeholder: "git push", mono: true },
+        line: "Commands that wait for you, one per line." },
+      { key: "forbid", policyKey: "forbid", of: "cmd", name: "Refuse", kind: { t: "list", placeholder: "git push", mono: true },
+        line: "Commands they may never run, one per line." },
+      { key: "allow.tool", policyKey: "allow", of: "tool", name: "Allow", head: "Tools", kind: { t: "list", placeholder: "read_file", mono: true },
+        line: "Tools agents may use without asking, one per line." },
+      { key: "ask.tool", policyKey: "ask", of: "tool", name: "Ask", kind: { t: "list", placeholder: "write_file", mono: true },
+        line: "Tools that wait for you, one per line." },
+      { key: "forbid.tool", policyKey: "forbid", of: "tool", name: "Refuse", kind: { t: "list", placeholder: "run_command", mono: true },
+        line: "Tools they may never use, one per line." },
+      { key: "unlisted", name: "Anything else", kind: { t: "seg", options: [["ask", "Ask"], ["refuse", "Refuse"]] },
+        line: "A command or tool on none of the lists: Ask holds it for you here, Refuse turns it down." },
+    ],
     side: [
-      "You apply what you want to keep. Your folder is not changed until then.",
-      "Each copy is cloned copy-on-write, so a big node_modules costs nothing and a turn may write its own.",
+      "Agents may always read, list agents, start, review, stop and rename work within the request they belong to.",
+      "The limits cap how much they ask for.",
+      "AgentBus decides every command and tool: Refuse wins, then Ask, then Allow, then Anything else for what is left.",
+      "On a held command or tool, Allow once lets it run that turn only; Always allow adds it to the allow list.",
     ],
   },
   {
@@ -116,29 +149,6 @@ const GROUPS: Group[] = [
       "Hooks with absolute paths into your real home do not work under the sandbox.",
       "MCP servers in your config load on every turn, reviews included. What a server does is outside AgentBus's record.",
       "The browser cannot run in AgentBus sessions.",
-    ],
-  },
-  {
-    id: "permissions",
-    name: "Permissions",
-    sub: "What agents may do through AgentBus",
-    controls: [
-      { key: "agent_api.apply", name: "Agents may apply", kind: { t: "switch" },
-        line: "An agent may apply a turn's changes to your folder. You always may." },
-      { key: "allow", name: "Allow", head: "Commands", kind: { t: "list", placeholder: "go test", mono: true },
-        line: "Commands and tools agents may run without asking, one per line. Anything else is held for you (below)." },
-      { key: "ask", name: "Ask", kind: { t: "list", placeholder: "git push", mono: true },
-        line: "Commands and tools that wait for you: the agent is held, and you answer Allow once, Always allow or Refuse on the card." },
-      { key: "forbid", name: "Refuse", kind: { t: "list", placeholder: "git push", mono: true },
-        line: "Commands and tools Claude Code and Codex may never run, one per line." },
-      { key: "unlisted", name: "Anything else", kind: { t: "seg", options: [["ask", "Ask"], ["refuse", "Refuse"]] },
-        line: "What happens to a command on none of the lists: Ask holds it for you here, Refuse turns it down." },
-    ],
-    side: [
-      "Agents may always read, list agents, start, review, stop and rename work within the request they belong to.",
-      "The limits cap how much they ask for.",
-      "AgentBus decides every command and tool: Refuse wins, then Ask, then Allow, then Anything else for what is left.",
-      "On a held command or tool, Allow once lets it run that turn only; Always allow adds it to the allow list.",
     ],
   },
   {
@@ -182,6 +192,14 @@ const CONTROLS = GROUPS.flatMap((g) => g.controls);
 type Draft = Record<string, string | boolean>;
 
 function draftOf(c: Control, v: unknown): string | boolean {
+  // A rule half reads its share of the one stored list: the commands box takes
+  // the entries without the TOOL prefix; the tools box takes the prefixed ones,
+  // shown without it.
+  if (c.of) {
+    const all = Array.isArray(v) ? (v as string[]) : [];
+    if (c.of === "tool") return all.filter(isTool).map((e) => e.slice(TOOL.length)).join("\n");
+    return all.filter((e) => !isTool(e)).join("\n");
+  }
   switch (c.kind.t) {
     case "switch":
       return v === true;
@@ -194,6 +212,20 @@ function draftOf(c: Control, v: unknown): string | boolean {
     case "seg":
       return typeof v === "string" ? v : "";
   }
+}
+
+// ruleChange is one policy list rebuilt from its two draft boxes: the commands
+// as typed, then the tools with the TOOL prefix. A Tools line already written
+// with the prefix (the form the policy documents and Advanced shows) keeps the
+// one prefix, never a doubled tool:tool:. Undefined when the result matches what
+// was read (commands then tools), so a save sends nothing.
+function ruleChange(draft: Draft, cmdKey: string, toolKey: string, read: unknown): string[] | undefined {
+  const cmd = lines(String(draft[cmdKey] ?? ""));
+  const tool = lines(String(draft[toolKey] ?? "")).map((e) => (isTool(e) ? e : TOOL + e));
+  const next = [...cmd, ...tool];
+  const was = Array.isArray(read) ? (read as string[]) : [];
+  const canon = [...was.filter((e) => !isTool(e)), ...was.filter(isTool)];
+  return JSON.stringify(next) === JSON.stringify(canon) ? undefined : next;
 }
 
 // valueOf is a draft as the policy value it writes, or an error in words.
@@ -242,7 +274,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, onApps,
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ part: string; text: string; ok: boolean } | null>(null);
   // The part on screen.
-  const [part, setPart] = useState<Part>(atSubscriptions && subscriptions ? "subscriptions" : "workspace");
+  const [part, setPart] = useState<Part>(atSubscriptions && subscriptions ? "subscriptions" : "permissions");
 
   // Which parts hold changes not saved, as of the last render: a read
   // after one part's save leaves another part's unsaved draft as it is.
@@ -269,8 +301,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, onApps,
           for (const g of GROUPS) {
             const kept = keep(g.id);
             for (const c of g.controls) {
-              if (kept && c.key in cur && cur[c.key] !== draftOf(c, before[c.key])) continue;
-              next[c.key] = draftOf(c, flat[c.key]);
+              if (kept && c.key in cur && cur[c.key] !== draftOf(c, before[pkey(c)])) continue;
+              next[c.key] = draftOf(c, flat[pkey(c)]);
             }
           }
           return next;
@@ -339,7 +371,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, onApps,
   const groupChange = (g: Group): { change: Record<string, unknown>; errors: Record<string, string> } => {
     const change: Record<string, unknown> = {};
     const errors: Record<string, string> = {};
+    // A rule list is rebuilt from its Commands and Tools boxes into one list.
+    for (const k of [...new Set(g.controls.filter((c) => c.of).map(pkey))]) {
+      const cmd = g.controls.find((c) => pkey(c) === k && c.of === "cmd");
+      const tool = g.controls.find((c) => pkey(c) === k && c.of === "tool");
+      if (!cmd || !tool || !(cmd.key in draft) || !(tool.key in draft)) continue;
+      const next = ruleChange(draft, cmd.key, tool.key, flatRead[k]);
+      if (next !== undefined) change[k] = next;
+    }
     for (const c of g.controls) {
+      if (c.of) continue;
       // Untouched is no change, whatever was read (a key an older control
       // does not have reads as empty).
       if (!(c.key in draft) || draft[c.key] === draftOf(c, flatRead[c.key])) continue;
@@ -808,7 +849,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, onApps,
 
 // SETTINGS_CONTROLS are every control, for tests: each key of the policy a
 // person may set has one.
-export const SETTINGS_CONTROLS = CONTROLS.map((c) => c.key);
+export const SETTINGS_CONTROLS = [...new Set(CONTROLS.map(pkey))];
 
 // flatKeys is the policy as rows: a nested key as its dotted path
 // (limits.max_depth), each value as JSON, an empty list as "none".

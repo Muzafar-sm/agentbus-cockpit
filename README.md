@@ -96,7 +96,7 @@ shows and press Approve. An offline machine can be removed. The steps are in
 ![The Runners page: a machine waiting for approval](docs/assets/cockpit-runners.png)
 
 **Settings** holds what every turn may do and the instructions every turn gets, the same on every
-machine. Each setting has its own control, in groups: Workspace, Config, Permissions, Isolation and
+machine. Each setting has its own control, in groups: Permissions, Config, Isolation and
 Limits. A save sends only what you changed. The policy as JSON is under **Advanced**.
 
 ![The Settings page](docs/assets/cockpit-settings.png)
