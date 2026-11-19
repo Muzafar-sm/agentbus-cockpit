@@ -149,6 +149,9 @@ export class LiveDataSource implements DataSource {
       let restart = false;
       for (;;) {
         const params = new URLSearchParams();
+        // Fetch archived sessions too; the screen hides them by default and a
+        // "Show archived" toggle reveals them, filtering by the archived flag.
+        params.set('archived', 'true');
         if (first !== null) {
           params.set('store', first.store);
           params.set('after', String(first.seq));
@@ -174,6 +177,7 @@ export class LiveDataSource implements DataSource {
             ...s,
             title: s.title || s.id,
             closed: isClosed((s as { closed?: unknown }).closed) || undefined,
+            archived: isClosed((s as { archived?: unknown }).archived) || undefined,
           });
         }
         if (data.next_before === null || data.next_before === undefined) break;
@@ -599,14 +603,14 @@ export class LiveDataSource implements DataSource {
     await this.send('PATCH', `/api/v0/sessions/${encodeURIComponent(sessionId)}`, { title });
   }
 
-  // PATCH /api/v0/sessions/<id> closed: true. The runner removes the
-  // session's copy and its home; the person's folder stays. 'running' when a
-  // turn of it has not ended (409). Any other refusal rejects with the API's
-  // words.
-  async closeSession(sessionId: string): Promise<'closed' | 'running'> {
+  // PATCH /api/v0/sessions/<id> archived: true|false. Only a view: it hides or
+  // un-hides the session and removes nothing. 'running' when the session has
+  // not finished a turn on this service yet (409), so there is no record to
+  // carry the flag. Any other refusal rejects with the API's words.
+  async archiveSession(sessionId: string, archived: boolean): Promise<'ok' | 'running'> {
     try {
-      await this.send('PATCH', `/api/v0/sessions/${encodeURIComponent(sessionId)}`, { closed: true });
-      return 'closed';
+      await this.send('PATCH', `/api/v0/sessions/${encodeURIComponent(sessionId)}`, { archived });
+      return 'ok';
     } catch (err) {
       if ((err as { status?: number }).status === 409) return 'running';
       throw err;

@@ -30,6 +30,12 @@ interface SessionsColumnProps {
   // Opens the Agents menu: on a narrow screen the Agents column is a menu
   // at the top of this one (styles/narrow.css shows the button there only).
   onAgents?: () => void;
+  // Archive is a view: archived sessions are hidden unless showArchived.
+  // onToggleArchived flips it, given only when there is something to show or
+  // hide; archivedCount is how many are hidden, for the toggle's label.
+  showArchived?: boolean;
+  archivedCount?: number;
+  onToggleArchived?: () => void;
 }
 
 export const SessionsColumn: React.FC<SessionsColumnProps> = ({
@@ -42,6 +48,9 @@ export const SessionsColumn: React.FC<SessionsColumnProps> = ({
   onRename,
   agents,
   onAgents,
+  showArchived,
+  archivedCount = 0,
+  onToggleArchived,
 }) => {
   // The session whose name is being edited, if any.
   const [editing, setEditing] = useState<string | null>(null);
@@ -111,8 +120,10 @@ export const SessionsColumn: React.FC<SessionsColumnProps> = ({
           const title = (
             <span className="s-t">
               {s.open ? <i className="live" /> : null}
-              {s.closed ? (
-                <span className="s-lock" title="Closed" aria-label="Closed">
+              {s.closed || s.archived ? (
+                // Archived uses the same lock the closed state used, in the
+                // same place: a quiet mark, not a word.
+                <span className="s-lock" title={s.closed ? 'Closed' : 'Archived'} aria-label={s.closed ? 'Closed' : 'Archived'}>
                   <LockIcon />
                 </span>
               ) : null}
@@ -171,6 +182,11 @@ export const SessionsColumn: React.FC<SessionsColumnProps> = ({
             </div>
           );
         })}
+        {onToggleArchived && (
+          <Button kind="quiet" small className="show-archived" onClick={onToggleArchived}>
+            {showArchived ? 'Hide archived' : `Show archived${archivedCount ? ` (${archivedCount})` : ''}`}
+          </Button>
+        )}
       </div>
     </section>
   );

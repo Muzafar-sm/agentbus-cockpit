@@ -198,9 +198,13 @@ export interface SessionSummary {
   // True when the service can take a next message for this session
   // (POST /api/v0/turns with session).
   resumable?: boolean;
-  // True when the session was closed (PATCH closed: true): it takes no more
-  // turns, so the cockpit offers no Send.
+  // True when the session was closed, before close was retired: it took no
+  // more turns, so the cockpit offers no Send. New sessions are never closed.
   closed?: boolean;
+  // True when the session is archived (PATCH archived: true): hidden from the
+  // default list. Only a view -- the session keeps its copy and can still take
+  // a turn -- so the cockpit still offers Send. Reversible.
+  archived?: boolean;
   // The origin of the session's first turn (GET /api/v0/sessions): kind asked
   // when an agent's turn asked for this session (ask_agent). Absent for a
   // session the person started. The list shows only sessions without an asked
@@ -799,10 +803,12 @@ export interface DataSource {
   // A source that can name sessions has this: a new title for one. Rejects
   // with an Error in the API's own words.
   renameSession?(sessionId: string, title: string): Promise<void>;
-  // A source that keeps isolated copies can close a session: it takes no more
-  // turns, and its copy and home are removed (the person's folder stays).
-  // 'running' when a turn of it has not ended. Rejects with the API's words.
-  closeSession?(sessionId: string): Promise<'closed' | 'running'>;
+  // Archive a session (true) or un-archive it (false): only a view, so it
+  // hides the session from the default list and removes nothing; the session
+  // keeps its copy and can still take a turn. 'ok' when done, 'running' when
+  // the session has not finished a turn on this service yet (so it has no
+  // record to carry the flag). Rejects with the API's words.
+  archiveSession?(sessionId: string, archived: boolean): Promise<'ok' | 'running'>;
   // A source that keeps a record has this: every event of one session, oldest
   // first, as the API sends them. Rejects with the API's words.
   getSessionEvents?(sessionId: string): Promise<unknown[]>;

@@ -1054,7 +1054,11 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .box.closed { background: var(--bg2, #F2F1EC); opacity: 0.7; }
 .box.closed textarea { cursor: not-allowed; background: transparent; }
 .c-closed { display: inline-flex; align-items: center; gap: 0.3rem; }
-.s-lock { display: inline-flex; align-items: center; color: var(--ink3); margin-right: 0.3rem; vertical-align: -1px; }
+/* The archived/closed mark sits in the row's upper-right corner, laid over it
+   (absolute) so the row text keeps its own margins and padding. On hover it
+   slides left of the rename pencil, which shares that corner. */
+.s-lock { position: absolute; top: 0.5rem; right: 0.5rem; display: inline-flex; align-items: center; color: var(--ink3); transition: right .12s; }
+.sess-row:hover .s-lock, .sess-row:focus-within .s-lock { right: 1.9rem; }
 /* Settings: a small heading inside a group, the copy method under Folder, Use my config. */
 .pg-ctl-h { padding: 1.1rem 0 0.1rem; font-size: var(--fs-s); font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink2); }
 .pg-detail { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.3rem; padding-left: 0.8rem; border-left: 2px solid var(--line); }
