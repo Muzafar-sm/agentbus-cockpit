@@ -280,13 +280,15 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // its asking session (ConvoColumn's origin link opens it), not the top-level
   // list -- a view filter on the recorded origin, nothing dropped: the full
   // sessions set still backs selection, titles and the convo.
+  // A session is set aside when archived, or closed under the retired close:
+  // both are hidden from the default list and shown under "Show archived".
   const personSessions = useMemo(
-    () => sessions.filter((s) => s.origin?.kind !== 'asked' && (showArchived || !s.archived)),
+    () => sessions.filter((s) => s.origin?.kind !== 'asked' && (showArchived || (!s.archived && !s.closed))),
     [sessions, showArchived]
   );
-  // How many of the person's sessions are archived, so the list offers the
+  // How many of the person's sessions are set aside, so the list offers the
   // "Show archived" toggle only when there is something behind it.
-  const archivedCount = useMemo(() => sessions.filter((s) => s.origin?.kind !== 'asked' && s.archived).length, [sessions]);
+  const archivedCount = useMemo(() => sessions.filter((s) => s.origin?.kind !== 'asked' && (s.archived || s.closed)).length, [sessions]);
   // The sessions a session asked for (ask_agent), from the recorded origin:
   // shown as links in its conversation so an asked session, kept off the list,
   // is reachable while it runs, before its result comes back.
