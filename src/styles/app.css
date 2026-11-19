@@ -699,6 +699,8 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 
 /* A turn the person did not type: a delivered result, or a turn another
    agent asked for. The line above it says so. */
+.c-asked { font-size: var(--fs-s); color: var(--ink3); padding: 0.35rem 1rem; border-bottom: 1px solid var(--line); max-height: 4.5rem; overflow-y: auto; }
+.c-asked .origin-link { color: var(--ink2); }
 .tb .m-origin { font-size: var(--fs-s); color: var(--ink3); margin: 0 0 0.25rem; text-align: right; }
 .tb .m-origin b { color: var(--ink2); font-weight: 600; }
 .tb .m-origin .origin-link { color: var(--ink2); }

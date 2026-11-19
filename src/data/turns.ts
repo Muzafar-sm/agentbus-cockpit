@@ -365,11 +365,16 @@ export function summarizeSession(
       (e.all_sessions === true || (Array.isArray(e.sessions) && (e.sessions as unknown[]).includes(sessionId)))
   );
 
+  // The origin of the session's first turn.started, as GET /api/v0/sessions
+  // reads it: kind asked marks a session an agent asked for (ask_agent).
+  const origin = turnOrigin(events.find((e) => e.kind === 'turn.started')?.origin);
+
   return {
     id: sessionId,
     agent,
     first_agent: firstAgent,
     ...(firstAgentId ? { first_agent_id: firstAgentId } : {}),
+    ...(origin ? { origin } : {}),
     client,
     folder: folder || undefined,
     ...(named?.folder_ref ? { folder_ref: named.folder_ref as string } : {}),

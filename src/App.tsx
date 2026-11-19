@@ -262,6 +262,19 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     () => (allSessions ?? []).map((s) => (!s.closed && closedIds.has(s.id) ? { ...s, closed: true } : s)),
     [allSessions, closedIds]
   );
+  // The list shows only the sessions the person started. A session an agent
+  // asked for (origin kind asked, ask_agent) is reached from the ask inside
+  // its asking session (ConvoColumn's origin link opens it), not the top-level
+  // list -- a view filter on the recorded origin, nothing dropped: the full
+  // sessions set still backs selection, titles and the convo.
+  const personSessions = useMemo(() => sessions.filter((s) => s.origin?.kind !== 'asked'), [sessions]);
+  // The sessions a session asked for (ask_agent), from the recorded origin:
+  // shown as links in its conversation so an asked session, kept off the list,
+  // is reachable while it runs, before its result comes back.
+  const askedOf = (sessionId: string) =>
+    (allSessions ?? [])
+      .filter((s) => s.origin?.kind === 'asked' && s.origin.session === sessionId)
+      .map((s) => ({ id: s.id, title: s.title }));
   const loading = allSessions === null;
   // A session's title, from the sessions the cockpit holds (GET /sessions).
   // Overview views (the queue) name a turn by this session fact, not by its
@@ -584,17 +597,21 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     if (allSessions === null) return;
     const saved = savedAgents ?? [];
     const has = (id?: string | null) => !!id && saved.some((a) => a.id === id);
-    const newest = allSessions[0];
+    // The newest session the person started, to match what the list selects:
+    // a hidden asked child (another agent) must not set the + Session agent.
+    const newest = personSessions[0];
     setSelectedAgentId((cur) =>
       has(cur) ? cur : newest ? (has(newest.first_agent_id) ? newest.first_agent_id! : null) : (saved[0]?.id ?? null)
     );
-  }, [allSessions, savedAgents]);
+  }, [allSessions, personSessions, savedAgents]);
   useEffect(() => {
+    // Keep a session chosen by hand even when it is an asked one off the list
+    // (opened from its ask's origin link); only fall back to a person session.
     if (selectedSessionId !== null && sessions.some((s) => s.id === selectedSessionId)) return;
-    const next = sessions[0]?.id ?? null;
+    const next = personSessions[0]?.id ?? null;
     if (selectedSessionId === null) setSelectedSessionId(next);
     else chooseSession(next);
-  }, [sessions]);
+  }, [sessions, personSessions]);
 
   // A session the cockpit just started is selected as soon as it is listed.
   // Declared after the two effects above so its choice wins.
@@ -1404,7 +1421,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
       />
 
       <SessionsColumn
-        sessions={sessions}
+        sessions={personSessions}
         live={dataSource.subscribe ? liveTurns : undefined}
         // A narrow screen shows the Sessions column alone, and every card is
         // a button that opens its conversation, the one open before included.
@@ -1433,7 +1450,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         }
         onRename={renameSession}
         agents={savedAgents}
-        empty={sessions.length === 0}
+        empty={personSessions.length === 0}
       />
 
       {draft ? (
@@ -1487,6 +1504,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           agents={savedAgents}
           onAddAgent={canKeepAgents ? () => setAgentsDialog({}) : undefined}
           agentDot={agentDot}
+          asked={askedOf(sessionView.id)}
           onOpenSession={(id) => {
             // A session not listed yet is opened once its row arrives, as for
             // a session just started.
