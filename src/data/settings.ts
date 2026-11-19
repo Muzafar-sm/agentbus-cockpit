@@ -22,7 +22,7 @@ export interface SettingsInfo {
 // The policy as GET /api/v0/settings/permissions sends it, every value
 // filled. A nested key is a table, such as limits.max_depth.
 export interface Policy {
-  agent_api?: { apply?: boolean; tools?: boolean; [k: string]: unknown };
+  agent_api?: { apply?: boolean; [k: string]: unknown };
   network?: { contain?: string; allow?: string[] };
   sandbox?: { mode?: string; [k: string]: unknown };
   home_files?: string[];

@@ -9,7 +9,7 @@ import { addFound, changeOf, flatPolicy, homeFilesOf, isEmpty, lines, nestPolicy
 import { RunnerInfo } from '../types';
 import { click, ev, flush, jsonl, panelOpen, render, unmountAll } from './helpers';
 
-// The policy as GET /api/v0/settings/permissions sends it on 0.5.2's
+// The policy as GET /api/v0/settings/permissions sends it on 0.6's
 // defaults, every value filled, with forbid set.
 function policy(): Policy {
   return {
@@ -17,12 +17,10 @@ function policy(): Policy {
     ask: [],
     forbid: ['git push'],
     unlisted: 'ask',
-    edit: 'session',
     isolation: 'auto',
-    subagents: false,
     home_files: [],
     limits: { max_depth: 2, max_jobs_per_turn: 10, max_jobs_per_tree: 30, max_cost_usd_per_tree: 0 },
-    agent_api: { apply: false, tools: true },
+    agent_api: { apply: false },
     network: { contain: 'off', allow: [] },
     sandbox: { mode: 'off' },
   };
@@ -94,13 +92,13 @@ afterEach(() => {
 describe('a change of the policy', () => {
   it('holds only the keys whose value differs, nested as a policy', () => {
     const read = policy();
-    const draft = { ...policy(), subagents: true, limits: { ...read.limits as object, max_depth: 3 }, forbid: ['git push'] };
-    expect(changeOf(read, draft)).toEqual({ subagents: true, limits: { max_depth: 3 } });
+    const draft = { ...policy(), unlisted: 'refuse', limits: { ...read.limits as object, max_depth: 3 }, forbid: ['git push'] };
+    expect(changeOf(read, draft)).toEqual({ unlisted: 'refuse', limits: { max_depth: 3 } });
     expect(isEmpty(changeOf(read, policy()))).toBe(true);
     // A list counts as one value: any change sends the whole list.
     expect(changeOf(read, { ...policy(), forbid: ['git push', 'rm'] })).toEqual({ forbid: ['git push', 'rm'] });
     // A key left out of the draft is not a change.
-    expect(changeOf(read, { subagents: false })).toEqual({});
+    expect(changeOf(read, { unlisted: 'ask' })).toEqual({});
   });
 
   it('reads and writes dotted keys', () => {
@@ -134,9 +132,9 @@ describe('the settings routes', () => {
     const src = new LiveDataSource({ baseUrl: 'http://127.0.0.1:8787', token: 'tok' });
     const got = await src.getPolicy();
     expect(got.etag).toBe('"v1"');
-    await src.patchPolicy({ subagents: true }, got.etag);
-    expect(seen[1]).toEqual({ method: 'PATCH', ifMatch: '"v1"', body: { subagents: true } });
-    await expect(src.patchPolicy({ subagents: true }, '"v0"')).rejects.toMatchObject({ status: 412 });
+    await src.patchPolicy({ unlisted: 'refuse' }, got.etag);
+    expect(seen[1]).toEqual({ method: 'PATCH', ifMatch: '"v1"', body: { unlisted: 'refuse' } });
+    await expect(src.patchPolicy({ unlisted: 'refuse' }, '"v0"')).rejects.toMatchObject({ status: 412 });
     expect((await src.getInstructions()).value).toBe('hi');
     // No ETag is an error, never a write that overwrites whatever is there.
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(policy()), { status: 200 })));
@@ -278,15 +276,15 @@ describe('the Settings page', () => {
     expect(container.querySelector('[data-part="grants"]')).toBeNull();
     expect(container.textContent).not.toContain('Grants');
     // Every key of the policy has a control, and each control a key.
-    // isolation and edit are kept, but only in Advanced (his call, 0.5.7): every
+    // isolation is kept, but only in Advanced (his call, 0.5.7): every
     // conversation works in a copy. (Read-only turns, and the message-box
-    // toggle for them, retired in 0.6: B12.)
-    const advancedOnly = ['isolation', 'edit'];
+    // toggle for them, retired in 0.6: B12; edit retired in B16.)
+    const advancedOnly = ['isolation'];
     expect([...SETTINGS_CONTROLS].sort()).toEqual(Object.keys(flatPolicy(policy())).filter((k) => !advancedOnly.includes(k)).sort());
     const groups: Record<string, string[]> = {
       workspace: [],
       config: ['home_files'],
-      permissions: ['agent_api.tools', 'subagents', 'agent_api.apply', 'allow', 'ask', 'forbid', 'unlisted'],
+      permissions: ['agent_api.apply', 'allow', 'ask', 'forbid', 'unlisted'],
       isolation: ['sandbox.mode', 'network.contain', 'network.allow'],
       limits: ['limits.max_depth', 'limits.max_jobs_per_turn', 'limits.max_jobs_per_tree', 'limits.max_cost_usd_per_tree'],
     };
@@ -302,9 +300,7 @@ describe('the Settings page', () => {
     }
     // The values read are the controls' values.
     await pick(container, '[data-part="permissions"]');
-    expect(sw(container, 'agent_api.tools').getAttribute('aria-checked')).toBe('true');
-    expect(sw(container, 'subagents').getAttribute('aria-checked')).toBe('false');
-    expect(container.textContent).toContain('Antigravity cannot turn its own subagents off, so this does not apply to it.');
+    expect((container.querySelector('textarea[name="forbid"]') as HTMLTextAreaElement).value).toBe('git push');
     await pick(container, '[data-part="workspace"]');
     expect(container.textContent).toContain('Each copy is cloned copy-on-write, so a big node_modules costs nothing and a turn may write its own.');
     expect(container.querySelector('[aria-label="Folder"]')).toBeNull();
@@ -312,9 +308,6 @@ describe('the Settings page', () => {
     await pick(container, '[data-part="isolation"]');
     expect([...container.querySelectorAll('.pg-main .pg-ctl-h')].map((x) => x.textContent)).toEqual(['Network']);
     expect(container.textContent).toContain('A wall around each session: its folder, its home, and the network only through AgentBus.');
-    await pick(container, '[data-part="permissions"]');
-    expect([...container.querySelectorAll('.pg-main .pg-ctl-h')].map((x) => x.textContent)).toEqual(['Commands']);
-    expect((container.querySelector('textarea[name="forbid"]') as HTMLTextAreaElement).value).toBe('git push');
     await pick(container, '[data-part="limits"]');
     expect((container.querySelector('input[name="limits.max_depth"]') as HTMLInputElement).value).toBe('2');
   });
@@ -327,12 +320,12 @@ describe('the Settings page', () => {
     const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
     await flush();
     await pick(container, '[data-part="permissions"]');
-    await click(sw(container, 'subagents'));
+    await setValue(container.querySelector('textarea[name="forbid"]'), 'git push\nrm');
     await click(button(container, 'Save permissions'));
     await flush();
     expect(api.patchPolicy).toHaveBeenCalledTimes(1);
-    expect(api.patchPolicy.mock.calls[0]).toEqual([{ subagents: true }, '"3"']);
-    expect(state.policy.subagents).toBe(true);
+    expect(api.patchPolicy.mock.calls[0]).toEqual([{ forbid: ['git push', 'rm'] }, '"3"']);
+    expect(state.policy.forbid).toEqual(['git push', 'rm']);
     expect(container.textContent).toContain('Saved.');
 
     await pick(container, '[data-part="limits"]');
@@ -361,7 +354,6 @@ describe('the Settings page', () => {
     // Never once a full copy: no call held a key the person did not change.
     for (const [change] of api.patchPolicy.mock.calls) {
       expect(Object.keys(flatPolicy(change)).length).toBeLessThanOrEqual(2);
-      expect(change).not.toHaveProperty('agent_api');
       expect(change).not.toHaveProperty('home_files');
     }
   });
@@ -408,14 +400,14 @@ describe('the Settings page', () => {
     await flush();
     state.info.version = 9; // changed elsewhere
     await pick(container, '[data-part="permissions"]');
-    await click(sw(container, 'agent_api.apply'));
+    await setValue(container.querySelector('textarea[name="forbid"]'), 'git push\nrm');
     await click(button(container, 'Save permissions'));
     await flush();
     expect(container.textContent).toContain('Changed elsewhere since this page read it.');
-    expect(state.policy.agent_api?.apply).toBe(false);
+    expect(state.policy.forbid).toEqual(['git push']);
     await click(button(container, 'Read again'));
     await flush();
-    expect(sw(container, 'agent_api.apply').getAttribute('aria-checked')).toBe('false');
+    expect((container.querySelector('textarea[name="forbid"]') as HTMLTextAreaElement).value).toBe('git push');
   });
 
   it('refuses JSON that does not parse, and saves nothing when nothing changed', async () => {
@@ -446,10 +438,10 @@ describe('the Settings page', () => {
     await pick(container, '[data-part="isolation"]');
     await setValue(container.querySelector('textarea[name="network.allow"]'), 'github.com');
     await pick(container, '[data-part="permissions"]');
-    await click(sw(container, 'agent_api.apply'));
+    await setValue(container.querySelector('textarea[name="forbid"]'), 'git push\nrm');
     await click(button(container, 'Save permissions'));
     await flush();
-    expect(state.policy.agent_api?.apply).toBe(true);
+    expect(state.policy.forbid).toEqual(['git push', 'rm']);
     await pick(container, '[data-part="instructions"]');
     expect((container.querySelector('textarea[name="instructions"]') as HTMLTextAreaElement).value).toBe('Draft, not saved.');
     expect(api.getInstructions).toHaveBeenCalledTimes(1);
@@ -468,17 +460,17 @@ describe('the Settings page', () => {
     await pick(container, '[data-part="advanced"]');
     await setValue(container.querySelector('textarea[name="policy"]'), JSON.stringify({ ...policy(), forbid: ['git push', 'rm'] }));
     await pick(container, '[data-part="permissions"]');
-    await click(sw(container, 'agent_api.apply'));
+    await click(button(container, 'Refuse'));
     await click(button(container, 'Save permissions'));
     await flush();
-    expect(state.policy.agent_api?.apply).toBe(true);
+    expect(state.policy.unlisted).toBe('refuse');
     await pick(container, '[data-part="advanced"]');
     expect((container.querySelector('textarea[name="policy"]') as HTMLTextAreaElement).value).toContain('"rm"');
     await click(button(container, 'Save policy'));
     await flush();
-    // Only what was edited in Advanced: the apply switch saved before stays on.
+    // Only what was edited in Advanced: the unlisted choice saved before stays.
     expect(api.patchPolicy).toHaveBeenLastCalledWith({ forbid: ['git push', 'rm'] }, expect.any(String));
-    expect(state.policy.agent_api?.apply).toBe(true);
+    expect(state.policy.unlisted).toBe('refuse');
     expect(state.policy.forbid).toEqual(['git push', 'rm']);
     // A group draft, then an Advanced save of another key in that group.
     await pick(container, '[data-part="permissions"]');
@@ -506,12 +498,12 @@ describe('the Settings page', () => {
     await pick(container, '[data-part="permissions"]');
     expect(button(container, 'Save permissions')!.disabled).toBe(true);
     expect(container.querySelector('.pg-dirty')).toBeNull();
-    await click(sw(container, 'agent_api.apply'));
+    await setValue(container.querySelector('textarea[name="forbid"]'), 'git push\nrm');
     expect(dirty()).toEqual(['permissions']);
     expect(container.querySelector('.pg-main .pg-dirty')!.textContent).toBe('Unsaved changes');
     expect(button(container, 'Save permissions')!.disabled).toBe(false);
     // Put back as it was: nothing to save again.
-    await click(sw(container, 'agent_api.apply'));
+    await setValue(container.querySelector('textarea[name="forbid"]'), 'git push');
     expect(dirty()).toEqual([]);
     expect(button(container, 'Save permissions')!.disabled).toBe(true);
     await pick(container, '[data-part="instructions"]');
@@ -541,7 +533,7 @@ describe('the Settings page', () => {
       act(async () => {
         cockpitLink(container)!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
       });
-    await click(sw(container, 'agent_api.apply'));
+    await setValue(container.querySelector('textarea[name="forbid"]'), 'git push\nrm');
     // A reload or a closed tab asks through the browser.
     const unload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(unload);
@@ -593,7 +585,7 @@ describe('the Settings page', () => {
     const { container } = await render(<Pages />);
     await flush();
     await pick(container, '[data-part="permissions"]');
-    await click(sw(container, 'agent_api.apply'));
+    await setValue(container.querySelector('textarea[name="forbid"]'), 'git push\nrm');
     // The read after the write waits until released.
     let release!: () => void;
     const held = new Promise<void>((r) => (release = r));
