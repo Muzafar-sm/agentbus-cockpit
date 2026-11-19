@@ -803,26 +803,42 @@ describe('The prompt box', () => {
     r.unmount();
   });
 
-  it('is disabled for a closed session, which the list and the header mark', async () => {
+  it('sets aside a closed session: hidden by default, shown with a lock under Show archived, box disabled', async () => {
     const svc = fakeService({ sessions: [row('s1', { resumable: true, closed: '2026-11-11T09:00:00Z' })], events: { s1: oneTurn('s1', 'first') } });
     const r = await mount(svc);
+    // A closed session is set aside (treated like archived): hidden from the
+    // default list. Show archived reveals it with the same lock.
+    expect(r.container.querySelector('#sessions [data-session="s1"]')).toBeNull();
+    await click(r.container.querySelector('#sessions .show-archived'));
+    const row1 = r.container.querySelector('#sessions [data-session="s1"]');
+    expect(row1).not.toBeNull();
+    expect(r.container.querySelector('#sessions [data-session="s1"] .s-lock')).not.toBeNull();
+    // Opening it: the header marks it closed and its box is disabled.
+    await click(row1);
+    await settle();
     expect((r.container.querySelector('#c-reply textarea') as HTMLTextAreaElement).disabled).toBe(true);
     expect(r.container.querySelector('#c-reply .reply-why')?.textContent).toBe('This session is closed. Start a new one.');
     expect(r.container.querySelector('#c-head .c-closed')?.textContent?.trim()).toBe('closed');
-    expect(r.container.querySelector('#sessions [data-session="s1"] .s-lock')).not.toBeNull();
     r.unmount();
   });
 
-  it('marks a session closed when only GET /sessions/<id> says so, on its copy', async () => {
+  it('marks a session closed when only GET /sessions/<id> says so, on its copy, and sets it aside', async () => {
     const svc = fakeService({
       sessions: [row('s1', { resumable: true })],
       events: { s1: oneTurn('s1', 'first') },
       oneSession: (id) => json({ store: 'st_1', seq: 1, session: { ...row(id), copy: { runner: 'run_1', kind: 'copy', name: id, closed: '2026-11-11T09:00:00Z' } } }),
     });
     const r = await mount(svc);
+    // s1 is shown and selected; the convo reads GET /sessions/s1, finds its
+    // copy closed, and disables the box and marks the header.
     expect(svc.reqs.some((q) => q.method === 'GET' && q.path === '/api/v0/sessions/s1')).toBe(true);
     expect((r.container.querySelector('#c-reply textarea') as HTMLTextAreaElement).disabled).toBe(true);
     expect(r.container.querySelector('#c-reply .reply-why')?.textContent).toBe('This session is closed. Start a new one.');
+    expect(r.container.querySelector('#c-head .c-closed')?.textContent?.trim()).toBe('closed');
+    // Now that it is known closed it is set aside: gone from the default list,
+    // shown with a lock under Show archived.
+    expect(r.container.querySelector('#sessions [data-session="s1"]')).toBeNull();
+    await click(r.container.querySelector('#sessions .show-archived'));
     expect(r.container.querySelector('#sessions [data-session="s1"] .s-lock')).not.toBeNull();
     r.unmount();
   });

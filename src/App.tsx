@@ -258,16 +258,37 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // The sessions the service said are closed when one was opened
   // (GET /api/v0/sessions/<id>), for a list that does not say it yet.
   const [closedIds, setClosedIds] = useState<ReadonlySet<string>>(() => new Set());
+  // Archive is a view the person toggles: hidden by default, shown with "Show
+  // archived". archivedOverride holds what an Archive/Unarchive click just did,
+  // so the row reflects it before the list is read again (the service is the
+  // source once it does).
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedOverride, setArchivedOverride] = useState<ReadonlyMap<string, boolean>>(() => new Map());
   const sessions = useMemo(
-    () => (allSessions ?? []).map((s) => (!s.closed && closedIds.has(s.id) ? { ...s, closed: true } : s)),
-    [allSessions, closedIds]
+    () =>
+      (allSessions ?? []).map((s) => {
+        let row = s;
+        if (!s.closed && closedIds.has(s.id)) row = { ...row, closed: true };
+        const ov = archivedOverride.get(s.id);
+        if (ov !== undefined && !!row.archived !== ov) row = { ...row, archived: ov || undefined };
+        return row;
+      }),
+    [allSessions, closedIds, archivedOverride]
   );
   // The list shows only the sessions the person started. A session an agent
   // asked for (origin kind asked, ask_agent) is reached from the ask inside
   // its asking session (ConvoColumn's origin link opens it), not the top-level
   // list -- a view filter on the recorded origin, nothing dropped: the full
   // sessions set still backs selection, titles and the convo.
-  const personSessions = useMemo(() => sessions.filter((s) => s.origin?.kind !== 'asked'), [sessions]);
+  // A session is set aside when archived, or closed under the retired close:
+  // both are hidden from the default list and shown under "Show archived".
+  const personSessions = useMemo(
+    () => sessions.filter((s) => s.origin?.kind !== 'asked' && (showArchived || (!s.archived && !s.closed))),
+    [sessions, showArchived]
+  );
+  // How many of the person's sessions are set aside, so the list offers the
+  // "Show archived" toggle only when there is something behind it.
+  const archivedCount = useMemo(() => sessions.filter((s) => s.origin?.kind !== 'asked' && (s.archived || s.closed)).length, [sessions]);
   // The sessions a session asked for (ask_agent), from the recorded origin:
   // shown as links in its conversation so an asked session, kept off the list,
   // is reachable while it runs, before its result comes back.
@@ -1045,16 +1066,19 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
       }
     : undefined;
 
-  // PATCH closed: true, after the person confirmed. The session shows as
-  // closed at once; its preview is read again (a closed session has nothing
-  // to apply).
-  const closeSession = dataSource.closeSession
-    ? async (id: string) => {
-        const r = await dataSource.closeSession!(id);
-        if (r === 'closed') {
-          setClosedIds((set) => (set.has(id) ? set : new Set(set).add(id)));
+  // PATCH archived: true|false. Archive is only a view, so the row hides or
+  // shows at once (archivedOverride) and the list is read again; nothing is
+  // removed and the session can still take a turn.
+  const archiveSession = dataSource.archiveSession
+    ? async (id: string, on: boolean) => {
+        const r = await dataSource.archiveSession!(id, on);
+        if (r === 'ok') {
+          setArchivedOverride((m) => {
+            const next = new Map(m);
+            next.set(id, on);
+            return next;
+          });
           setListKey((k) => k + 1);
-          readPreview(id);
         }
         return r;
       }
@@ -1192,7 +1216,12 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   }, [shown, stopping]);
   // The session as the screens see it: its latest row and its turns.
   const sessionView: SessionDetail | null = shown
-    ? { ...(shownRow ?? shown.session), turnsList: turns, closed: !!shownRow?.closed || closedIds.has(shown.session.id) || undefined }
+    ? {
+        ...(shownRow ?? shown.session),
+        turnsList: turns,
+        closed: !!shownRow?.closed || closedIds.has(shown.session.id) || undefined,
+        archived: (archivedOverride.get(shown.session.id) ?? !!shownRow?.archived) || undefined,
+      }
     : null;
 
   // The conversation on screen's apply preview, read when it opens.
@@ -1431,6 +1460,9 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         onRename={renameSession}
         agents={savedAgents}
         empty={personSessions.length === 0}
+        showArchived={showArchived}
+        archivedCount={archivedCount}
+        onToggleArchived={archivedCount > 0 || showArchived ? () => setShowArchived((v) => !v) : undefined}
       />
 
       {draft ? (
@@ -1465,6 +1497,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           session={sessionView}
           resumable={sessionView.resumable}
           closed={sessionView.closed}
+          archived={sessionView.archived}
           open={sessionView.open}
           onSend={sendMessage}
           queuedTurn={queuedTurn}
@@ -1504,8 +1537,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
                 ? { count: shownPreview.p.count || shownPreview.p.files.length, onReview: openApply }
                 : null
           }
-          onCloseSession={closeSession}
-          unapplied={!previewTooBig && shownPreview?.p?.unapplied ? shownPreview.p.count || shownPreview.p.files.length : 0}
+          onArchiveSession={archiveSession}
           onExport={exportSession}
           commands={commandsBySession[sessionView.id]}
           approvals={<ApprovalsPanel dataSource={dataSource} sessionId={sessionView.id} />}

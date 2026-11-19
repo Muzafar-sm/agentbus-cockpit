@@ -12,7 +12,6 @@ import { PencilIcon, TitleEdit } from './TitleEdit';
 import { LockIcon } from './Icons';
 import { ShellEntry } from './ShellEntry';
 import { Button, Select } from './Controls';
-import { ConfirmDialog } from './Dialog';
 import { Notice } from './Notice';
 import { PRODUCT, SESSION, STATE } from '../words';
 import { formatDuration } from '../utils/format';
@@ -103,21 +102,21 @@ interface ConvoColumnProps {
   commands?: ShellRun[];
   // Back to the Sessions column, on a narrow screen (src/columns.ts).
   onBack?: () => void;
-  // Given when the source can close a session: Close, after the person
-  // confirms. 'running' when a turn of it has not ended. Rejects with the
-  // API's words.
-  onCloseSession?: (sessionId: string) => Promise<'closed' | 'running'>;
-  // Files changed here and not applied to the person's folder: the close
-  // confirmation warns of them.
-  unapplied?: number;
+  // True when the session is archived (hidden from the default list). Only a
+  // view: the convo still works and still takes a turn.
+  archived?: boolean;
+  // Given when the source can archive a session: Archive hides it from the
+  // list, Unarchive shows it again. Removes nothing, reversible. 'running'
+  // when the session has not finished a turn on this service yet. Rejects
+  // with the API's words.
+  onArchiveSession?: (sessionId: string, archived: boolean) => Promise<'ok' | 'running'>;
   // Given when the source keeps a record: Export saves the session's events
   // as one .jsonl file. Rejects with the API's words.
   onExport?: (sessionId: string) => Promise<void>;
 }
 
-// What closing removes, and what it keeps.
-export const CLOSE_NOTE = `The ${SESSION} takes no more messages and its copy of your folder is removed. Your folder stays as it is.`;
-export const CLOSE_RUNNING = 'A turn is still running. Stop it or wait for it to end, then close.';
+// Why an archive could not be done: the session has no record yet.
+export const ARCHIVE_RUNNING = 'This session has not finished a turn yet, so it cannot be archived. Try once a turn has ended.';
 
 // The name of the agent that ran a turn: its saved agent's, else its
 // harness's. Empty when the turn names none.
@@ -282,8 +281,8 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   approvals,
   commands,
   onBack,
-  onCloseSession,
-  unapplied = 0,
+  archived,
+  onArchiveSession,
   onExport,
 }) => {
   // A turn's folder is shown when it is not the session's: by name when the
@@ -294,15 +293,25 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   const [draft, setDraft] = useState('');
   // The header's name is being edited.
   const [renaming, setRenaming] = useState(false);
-  // The close confirmation is open.
-  const [closeAsk, setCloseAsk] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  // Resolves to nothing once closed, or to why it was not.
-  const doClose = async (): Promise<string | void> => {
-    if (!onCloseSession) return;
-    const r = await onCloseSession(session.id);
-    if (r === 'running') return CLOSE_RUNNING;
+  const [archiving, setArchiving] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  // Archive is only a view and reversible, so it is a direct toggle: no
+  // confirmation. 'running' means the session has no record to carry the flag
+  // yet, shown inline.
+  const doArchive = async () => {
+    if (!onArchiveSession || archiving) return;
+    setArchiving(true);
+    setArchiveError(null);
+    try {
+      const r = await onArchiveSession(session.id, !archived);
+      if (r === 'running') setArchiveError(ARCHIVE_RUNNING);
+    } catch (err) {
+      setArchiveError((err as Error).message);
+    } finally {
+      setArchiving(false);
+    }
   };
   const doExport = async () => {
     if (!onExport || exporting) return;
@@ -687,11 +696,11 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                 <PencilIcon />
               </button>
             )}
-            {(onExport || onCloseSession) && (
+            {(onExport || onArchiveSession || closed) && (
               <div className="c-acts">
-                {exportError && (
-                  <span className="c-act-error" role="alert" title={exportError}>
-                    {exportError}
+                {(exportError || archiveError) && (
+                  <span className="c-act-error" role="alert" title={exportError || archiveError || ''}>
+                    {exportError || archiveError}
                   </span>
                 )}
                 {onExport && (
@@ -705,13 +714,23 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                     {exporting ? 'Exporting…' : 'Export'}
                   </Button>
                 )}
-                {onCloseSession && !closed && (
-                  <Button kind="quiet" small className="c-close" onClick={() => setCloseAsk(true)}>
-                    Close
+                {onArchiveSession && (
+                  // Archive hides the session from the list; it removes nothing
+                  // and the convo keeps working. Reversible, so a direct toggle.
+                  <Button
+                    kind="quiet"
+                    small
+                    className="c-archive"
+                    disabled={archiving}
+                    title={archived ? `Show this ${SESSION} in the list again` : `Hide this ${SESSION} from the list (nothing is removed)`}
+                    onClick={doArchive}
+                  >
+                    {archived ? 'Unarchive' : 'Archive'}
                   </Button>
                 )}
                 {closed && (
-                  // A state, not an action: the lock and the word, as the session card shows it.
+                  // A state, not an action: an old closed session (close is
+                  // retired) still shows the lock and the word.
                   <span className="c-closed" title={`This ${SESSION} is closed`}>
                     <LockIcon /> closed
                   </span>
@@ -734,23 +753,6 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
           ))}
         </div>
       )}
-      {closeAsk && onCloseSession && (
-        <ConfirmDialog
-          className="close-ask"
-          title={`Close this ${SESSION}?`}
-          line={CLOSE_NOTE}
-          warn={
-            unapplied > 0
-              ? `${unapplied} ${unapplied === 1 ? 'file' : 'files'} changed here ${unapplied === 1 ? 'is' : 'are'} not in your folder yet. Apply what you want to keep first.`
-              : undefined
-          }
-          action={`Close ${SESSION}`}
-          busyAction="Closing…"
-          onConfirm={doClose}
-          onClose={() => setCloseAsk(false)}
-        />
-      )}
-
       <div id="c-msgs" ref={msgsRef} onScroll={onMsgsScroll}>
         <div className="c-in" ref={contentRef}>
           {placed.get(-1)?.map((r) => <ShellEntry key={r.id} run={r} />)}

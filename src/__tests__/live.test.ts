@@ -290,7 +290,9 @@ describe('LiveDataSource', () => {
     stop();
 
     const streams = calls.filter((c) => c.startsWith('/api/v0/events'));
-    expect(calls[0]).toBe('/api/v0/sessions');
+    // The snapshot fetches archived sessions too; the screen hides them by
+    // default and a toggle reveals them.
+    expect(calls[0]).toBe('/api/v0/sessions?archived=true');
     expect(streams[0]).toContain('store=st_old');
     expect(streams[0]).toContain('after=41');
     expect(streams[1]).toContain('store=st_new');
