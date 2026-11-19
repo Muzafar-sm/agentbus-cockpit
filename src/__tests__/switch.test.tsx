@@ -109,15 +109,10 @@ describe('switching agent per message', () => {
 
   it('sends the picked agent through POST /api/v0/turns when the service keeps a queue', async () => {
     const { src, sendMessage } = source(mixed());
-    const reviews: string[] = [];
     const queue: QueueSource = {
       address: 'http://agentbus.test',
       pollMs: 10,
       listTurns: async () => [],
-      review: async (id) => {
-        reviews.push(id);
-        return { session: 'r1', turn: 'R1', state: 'queued' };
-      },
       stop: async () => undefined,
     };
     const r = await render(<App dataSource={src} queue={queue} />);
@@ -127,7 +122,6 @@ describe('switching agent per message', () => {
     // With a queue too, a message is POST /api/v0/turns: the one path.
     await waitFor(() => sendMessage.mock.calls.length === 1, 'the send');
     expect((sendMessage.mock.calls[0] as unknown[])[1]).toMatchObject({ agent: 'a_haiku', prompt: 'back to haiku' });
-    expect(reviews).toHaveLength(0);
     r.unmount();
   });
 

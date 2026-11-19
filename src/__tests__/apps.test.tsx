@@ -96,6 +96,42 @@ describe('the Apps page', () => {
     expect(input.textContent).toContain('required');
   });
 
+  it('shows an app (kind app) as its workflow steps: the operations and where their values come from', async () => {
+    const ask = def('ask_agent', {
+      run: {
+        kind: 'app',
+        app: {
+          steps: [
+            {
+              stepId: 'start',
+              operationId: 'startTurn',
+              requestBody: { agent: '$inputs.agent', prompt: '$inputs.prompt' },
+              outputs: { turn: '$response.body#/turn' },
+            },
+            {
+              stepId: 'deliver',
+              operationId: 'registerOn',
+              requestBody: { turn: '$steps.start.outputs.turn', session: '$caller.session' },
+            },
+          ],
+          outputs: { turn: '$steps.start.outputs.turn' },
+        },
+      },
+      inputs: { type: 'object', properties: { agent: { type: 'string' }, prompt: { type: 'string' } }, required: ['agent', 'prompt'] },
+    });
+    const { api } = fakeApi([ask]);
+    const r = await render(<AppsPage api={api} onBack={() => {}} />);
+    await flush();
+    await click(rows(r.container)[0]);
+    await flush();
+    const ops = Array.from(r.container.querySelectorAll('.apps-op')).map((e) => e.textContent);
+    expect(ops).toEqual(['startTurn', 'registerOn']);
+    const steps = r.container.querySelector('.apps-steps')!;
+    expect(steps.textContent).toContain('$inputs.agent');
+    expect(steps.textContent).toContain('$steps.start.outputs.turn');
+    expect(steps.textContent).toContain('$caller.session');
+  });
+
   it('shows a crafted app whose input type and description are not strings, without crashing', async () => {
     // The registry's schema check does not pin a property's type or description
     // to a string. A bare render of an object throws and clears the page.

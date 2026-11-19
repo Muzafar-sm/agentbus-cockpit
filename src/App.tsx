@@ -28,7 +28,7 @@ import { applyList, countedIn, isNewerList, ListCursor, StreamedCost, streamedCo
 import { addLiveEvent, LiveTurns, mergeLive, noteEventTime } from './data/liveStatus';
 import { refreshNow } from './utils/useNow';
 import { versionLabel } from './utils/format';
-import { ApiTurn, QueueSource } from './data/jobs';
+import { QueueSource } from './data/jobs';
 import { useQueue } from './data/useJobs';
 import { addRun } from './data/shell';
 import { addStreamedCost, addTurnEvents, createEmptyUsage, turnDetail } from './data/turns';
@@ -146,8 +146,8 @@ interface AppProps {
   sourceLabel?: string;
   onDisconnect?: () => void;
   disconnectLabel?: string;
-  // The service's turn queue, when it keeps one: a turn that ended can be
-  // reviewed, and a queued or running review stopped.
+  // The service's turn queue, when it keeps one: the live turn list that
+  // feeds the sessions overview, and stopping a queued or running turn.
   queue?: QueueSource;
 }
 
@@ -711,7 +711,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   );
   const loadTurn = useCallback((sessionId: string, turnId: string) => dataSource.getTurn(sessionId, turnId), [dataSource]);
   const canStart = !!(dataSource.startRun && dataSource.listAgents);
-  // The harnesses the service finds: the review picker and the agent form read them.
+  // The harnesses the service finds: the agent form reads them.
   const loadHarnesses = useCallback(() => dataSource.getHarnesses!(), [dataSource]);
   const loadModels = useCallback(
     (h: string, a: string, refresh?: boolean) => dataSource.getModels!(h, a, refresh),
@@ -1065,26 +1065,6 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         const events = await dataSource.getSessionEvents!(id);
         const title = allSessionsRef.current?.find((s) => s.id === id)?.title ?? id;
         saveRecord(recordFileName(title, id), events);
-      }
-    : undefined;
-
-  // A review of a turn, asked by its id. It rejects with the API's words.
-  const reviewTurn = queue
-    ? async (turn: Turn, agent: string, model: string) => {
-        await queue.review(turn.id, { agent, model: model || undefined });
-        refreshQueue?.();
-      }
-    : undefined;
-  // Fix on a failed review fills the message box of the session on screen.
-  // The person edits it and sends it, so it runs as the session's next turn
-  // turn, in its own copy of the folder.
-  const [prefill, setPrefill] = useState<{ session: string; text: string } | null>(null);
-  const fixFindings = queue && sendMessage ? (text: string) => shownId !== null && setPrefill({ session: shownId, text }) : undefined;
-  // Stops a queued or running turn from the CI/CD tab, such as a review.
-  const stopQueued = queue
-    ? async (t: ApiTurn) => {
-        await queue.stop(t.id);
-        refreshQueue?.();
       }
     : undefined;
 
@@ -1494,8 +1474,6 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           onStop={stopTurn}
           stopping={stopping}
           live={dataSource.subscribe ? liveTurns[sessionView.id] : undefined}
-          prefill={prefill}
-          onPrefillTaken={() => setPrefill(null)}
           selectedTurn={selectedTurn}
           onSelectTurn={clickTurn}
           level={shownLevel}
@@ -1590,11 +1568,6 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         onOpenEvent={openEvent}
         loadContext={loadContext}
         loadTurn={loadTurn}
-        queue={queueView}
-        onReview={reviewTurn}
-        onStopQueued={stopQueued}
-        onFix={fixFindings}
-        loadAgents={dataSource.getHarnesses ? loadHarnesses : undefined}
         live={!!dataSource.subscribe}
         onClose={closePanel}
         escRef={panelEscRef}

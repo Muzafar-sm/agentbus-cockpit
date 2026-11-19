@@ -1,23 +1,14 @@
 import { STATE } from '../words';
 // The turn queue, on the same agentbus API as everything else: one address,
 // one token. Every action is on a turn. A prompt is POST /api/v0/turns, which
-// names the turn at once, even while it waits. A turn that ended can be
-// reviewed by another agent: the review is a turn too, of kind review, in a
-// session of its own. A queued or running turn can be stopped. agentbus's
-// OpenAPI description (/api/v0/openapi.json) is the contract.
+// names the turn at once, even while it waits. A queued or running turn can be
+// stopped. agentbus's OpenAPI description (/api/v0/openapi.json) is the
+// contract.
 
 import { Usage } from '../types';
 import type { ApiOrigin } from './turns';
 
 export type QueueState = 'queued' | 'running' | 'finished' | 'failed' | 'stopped';
-export type Verdict = 'pass' | 'fail' | 'unknown';
-
-export interface Finding {
-  severity: string; // P1, P2 or P3
-  file?: string;
-  line?: number;
-  summary: string;
-}
 
 // One turn as GET /api/v0/turns and GET /api/v0/turns/{id} send it.
 export interface ApiTurn {
@@ -28,9 +19,6 @@ export interface ApiTurn {
   // turn, or review: a turn that reviews another (reviews names it).
   kind?: 'turn' | 'review';
   reviews?: string;
-  // For a review that ended.
-  verdict?: Verdict;
-  findings?: Finding[];
   agent: string;
   agent_id?: string;
   idempotency_key?: string;
@@ -62,12 +50,7 @@ export interface ApiTurn {
   cost_complete?: boolean;
 }
 
-export interface ReviewRequest {
-  agent: string;
-  model?: string;
-}
-
-// The answer to POST /api/v0/turns and POST /api/v0/turns/{id}/review.
+// The answer to POST /api/v0/turns.
 export interface QueueStarted {
   session: string;
   turn: string;
@@ -86,8 +69,6 @@ export interface QueueSource {
   pollMs?: number;
   // The newest turns of every session, queued ones first.
   listTurns(): Promise<ApiTurn[]>;
-  // Asks another agent to review a turn that ended.
-  review(turnId: string, req: ReviewRequest): Promise<QueueStarted>;
   // Stops a queued or running turn.
   stop(turnId: string): Promise<void>;
 }
@@ -134,12 +115,6 @@ export class TurnsClient implements QueueSource {
     return Array.isArray(data.turns) ? data.turns : [];
   }
 
-  review(turnId: string, req: ReviewRequest): Promise<QueueStarted> {
-    const body: Record<string, unknown> = { agent: req.agent, idempotency_key: newKey('cockpit-review') };
-    if (req.model) body.model = req.model;
-    return this.call('POST', `/api/v0/turns/${encodeURIComponent(turnId)}/review`, body);
-  }
-
   async stop(turnId: string): Promise<void> {
     await this.call('POST', `/api/v0/turns/${encodeURIComponent(turnId)}/stop`);
   }
@@ -162,9 +137,8 @@ export const CHECK_TIMEOUT_MS = 10_000;
 
 // Whether the service keeps a turn queue, read from GET /api/v0/turns. Only
 // a 404 says it does not. Any other answer, a failure included, counts as a
-// queue, so a passing error never hides Review: the turn list then shows the
-// error. A service with the turns API answers 200 here even when it keeps no
-// queue; it then refuses a review with 404, and the bar shows its words.
+// queue, so a passing error never hides the turn list: it then shows the
+// error.
 export async function probeQueue(address: string, token: string): Promise<boolean> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
@@ -181,33 +155,7 @@ export async function probeQueue(address: string, token: string): Promise<boolea
   }
 }
 
-// The reviewer offered first: another vendor than the author's.
-export function defaultReviewer(author: string | undefined, available: string[]): string {
-  const prefer = author === 'codex' ? ['claude', 'opencode', 'agy'] : ['codex', 'opencode', 'agy', 'claude'];
-  for (const p of prefer) if (p !== author && available.includes(p)) return p;
-  return available.find((a) => a !== author) ?? available[0] ?? 'claude';
-}
-
-// A model to start from for each reviewer; empty means the agent's default.
-export function defaultModel(agent: string): string {
-  return agent === 'claude' ? 'sonnet' : '';
-}
-
-export function modelHints(agent: string): string[] {
-  switch (agent) {
-    case 'claude':
-      return ['sonnet', 'opus', 'haiku'];
-    case 'codex':
-      return ['gpt-5.5'];
-    case 'opencode':
-      return ['opencode/big-pickle'];
-    default:
-      return [];
-  }
-}
-
-// The words and colour for a turn's state. A review reads its verdict; a
-// finished review with no verdict reads as no verdict.
+// The words and colour for a turn's state.
 export function outcome(t: ApiTurn): { label: string; cls: string } {
   switch (t.state) {
     case 'queued':
@@ -219,10 +167,7 @@ export function outcome(t: ApiTurn): { label: string; cls: string } {
     case 'failed':
       return { label: t.error ? `${STATE.failed} · ${t.error}` : STATE.failed, cls: 'bad' };
     case 'finished':
-      if (t.kind !== 'review') return { label: STATE.finished, cls: 'ok' };
-      if (t.verdict === 'pass') return { label: 'passed', cls: 'ok' };
-      if (t.verdict === 'fail') return { label: STATE.failed, cls: 'bad' };
-      return { label: 'no verdict', cls: 'warn' };
+      return { label: STATE.finished, cls: 'ok' };
   }
   return { label: t.state, cls: '' };
 }
@@ -232,27 +177,6 @@ export function outcome(t: ApiTurn): { label: string; cls: string } {
 export function agentLabel(t: ApiTurn): string {
   const who = t.agent_id || t.agent || 'agent';
   return t.model ? `${who} · ${t.model}` : who;
-}
-
-export function findingPlace(f: Finding): string {
-  if (!f.file) return '';
-  return f.line ? `${f.file}:${f.line}` : f.file;
-}
-
-// The message Fix puts in the message box after a failed review: each
-// finding with its severity and place, as a prompt the person can edit before
-// they send it. Nothing is sent by itself. It names the reviewed turn, which
-// need not be the session's newest: a review can end after the next turn was
-// sent.
-export function fixPrompt(findings: Finding[], turnNumber: number): string {
-  if (findings.length === 0) {
-    return `A review of turn ${turnNumber} failed without naming a problem. Read that change again and fix what is wrong.`;
-  }
-  const lines = findings.map((f) => {
-    const place = findingPlace(f);
-    return `- ${f.severity}${place ? ` ${place}` : ''}: ${f.summary.trim()}`;
-  });
-  return `A review of turn ${turnNumber} found these problems. Fix them:\n\n${lines.join('\n')}`;
 }
 
 // m:ss from milliseconds.
