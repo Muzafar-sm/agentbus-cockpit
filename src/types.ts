@@ -671,8 +671,26 @@ export interface AppSummary {
   where: string;
 }
 
-// AppRun is what an app's call runs. In 0.6 every app runs an AgentBus API
-// route (kind 'api'); the rest of the fields describe that request.
+// AppStep is one step of an app's workflow (kind 'app'): an API operation,
+// named by its operationId, with its request values and the outputs it exposes.
+export interface AppStep {
+  stepId: string;
+  operationId: string;
+  requestBody?: Record<string, unknown>;
+  parameters?: Record<string, unknown>;
+  outputs?: Record<string, string>;
+}
+
+// AppWorkflow is an app's Arazzo workflow: ordered steps over the API, and the
+// app's own outputs read from step outputs.
+export interface AppWorkflow {
+  steps: AppStep[];
+  outputs?: Record<string, string>;
+}
+
+// AppRun is what an app's call runs. An 'api' app runs one AgentBus API route
+// (the method/path fields describe it); an 'app' runs an Arazzo workflow over
+// several operations (the app field), B15.
 export interface AppRun {
   kind: string;
   method?: string;
@@ -681,6 +699,7 @@ export interface AppRun {
   own_session?: boolean;
   query?: string[];
   body?: boolean;
+  app?: AppWorkflow;
 }
 
 // AppDef is an app's whole definition (GET /api/v0/tools/{name}): the summary's

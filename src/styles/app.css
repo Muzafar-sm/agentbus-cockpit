@@ -645,57 +645,15 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .tcard-open { margin-top: 0.5rem; }
 .tgroup-t { font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink3); padding: 0 0.25rem; }
 
-/* ---------- jobs: Review and CI/CD (mockup v5) ---------- */
+/* ---------- running state, next-agent controls, spinner ---------- */
 .run { color: var(--blue); }
 .nd-seg { display: inline-flex; align-self: flex-start; background: var(--gray-bg); border-radius: 0.4375rem; padding: 2px; gap: 2px; }
 .nd-seg button { font-size: var(--fs-s); padding: 0.25rem 0.625rem; border-radius: 0.3125rem; color: var(--ink2); }
 .nd-seg button.on { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 .new-dialog input[name="base"], .new-dialog input[name="model"] { font-family: var(--mono); font-size: var(--fs-xs); }
 
-.review-bar { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.3125rem; }
-.rb-row { display: flex; gap: 0.5rem; align-items: stretch; }
-.rb-pick { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 0.375rem 0.625rem; border: 1px solid var(--line2); border-radius: 0.5rem; background: var(--panel); }
-.rb-pick > span:first-child { font-size: var(--fs-xs); color: var(--ink3); }
-.rb-fields { display: flex; gap: 0.375rem; align-items: center; }
-.rb-fields input { font: inherit; font-size: var(--fs-m); font-weight: 600; border: 0; background: transparent; color: var(--ink); padding: 0; min-width: 0; }
-.rb-fields input { flex: 1; font-family: var(--mono); font-weight: 500; font-size: var(--fs-s); border-left: 1px solid var(--line); padding-left: 0.5rem; }
-.rb-fields input:focus { outline: none; }
-.rb-note { font-size: var(--fs-s); }
-.rb-verdict { display: flex; align-items: baseline; gap: 0.75rem; font-size: var(--fs-m); }
-.rb-line { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 0.25rem; flex-wrap: wrap; }
-.rb-verdict .lnk { font-size: var(--fs-s); }
-.rb-earlier { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-s); }
-.rb-toggle { align-self: flex-start; color: var(--ink3); font-size: var(--fs-s); }
-.rb-toggle:hover { color: var(--ink); }
 .spin { width: 0.6875rem; height: 0.6875rem; border-radius: 50%; border: 1.5px solid var(--blue-bg); border-top-color: var(--blue); display: inline-block; flex: none; animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-
-.jobs .tab-sum { margin-bottom: 0.625rem; }
-.job-row { border: 1px solid var(--line); border-left: 3px solid var(--line2); border-radius: 0.5rem; padding: 0.625rem 0.75rem; margin-bottom: 0.5rem; background: var(--panel); }
-.job-row.s-ok { border-left-color: var(--green); }
-.job-row.s-bad { border-left-color: var(--bad); }
-.job-row.s-warn { border-left-color: var(--amber); }
-.job-row.s-run { border-left-color: var(--blue); }
-.job-row.turn-job { background: #FBFBFA; }
-.job-h { display: flex; align-items: baseline; gap: 0.5rem; font-size: var(--fs-m); }
-.job-h .spin { align-self: center; }
-.job-h code { font-size: var(--fs-xs); color: var(--ink3); }
-.job-st { margin-left: auto; font-weight: 600; white-space: nowrap; }
-.job-sub { font-size: var(--fs-m); color: var(--ink2); margin-top: 2px; }
-.job-facts { font-size: var(--fs-s); color: var(--ink3); margin-top: 2px; }
-.job-facts .sep { margin: 0 0.3125rem; }
-.findings { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.3125rem; }
-.findings li { display: grid; grid-template-columns: 1.75rem auto 1fr; gap: 0.5rem; align-items: baseline; font-size: var(--fs-m); }
-.findings li code { font-size: var(--fs-xs); color: var(--ink); white-space: nowrap; }
-.sev { font-size: var(--fs-xs); font-family: var(--mono); }
-.sev-p1 { color: var(--bad); }
-.sev-p2 { color: var(--amber); }
-.sev-p3 { color: var(--ink3); }
-.job-acts { display: flex; gap: 0.875rem; margin-top: 0.375rem; font-size: var(--fs-s); }
-.job-acts:empty { display: none; }
-.job-reply { max-height: 22rem; overflow-y: auto; white-space: pre-wrap; }
-.job-foot { font-size: var(--fs-s); margin-top: 0.75rem; }
-.jobs-table td .note code { color: var(--ink3); }
 
 /* A turn the person did not type: a delivered result, or a turn another
    agent asked for. The line above it says so. */
@@ -921,6 +879,16 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .apps-in-req { font-size: var(--fs-xs); font-weight: 600; color: var(--amber); }
 .apps-inputs dd { margin: 0; font-size: var(--fs-s); color: var(--ink2); line-height: 1.4; }
 
+/* An app's workflow steps (kind 'app'): a numbered sequence of operations. */
+.apps-steps { margin: 0 0 0.6rem; padding-left: 1.4rem; display: flex; flex-direction: column; gap: 0.6rem; }
+.apps-step { font-size: var(--fs-m); }
+.apps-op { font-family: var(--mono); font-size: var(--fs-xs); font-weight: 700; color: var(--ink2); }
+.apps-step-vals { margin: 0.2rem 0 0; display: flex; flex-direction: column; gap: 2px; }
+.apps-step-vals div { display: flex; gap: 0.4rem; align-items: baseline; }
+.apps-step-vals dt code { font-family: var(--mono); font-size: var(--fs-xs); }
+.apps-step-vals dd { margin: 0; }
+.apps-expr { font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink3); }
+
 /* Narrow windows: the columns stack and the page scrolls as one. */
 @media (max-width: 900px) {
   .page { flex-direction: column; height: auto; min-height: 100vh; overflow: visible; }
@@ -959,8 +927,6 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .prow .pr-dirty, .pg-dirty { font-size: var(--fs-xs); font-weight: 600; color: var(--amber); }
 .prow .pr-dirty { margin-left: 0.4rem; }
 .leave-ask { display: flex; flex-direction: column; gap: 0.625rem; }
-.rb-fields .ctl-select.quiet { flex: none; height: auto; padding: 0; color: var(--ink); font-weight: 600; background: none; }
-.rb-fields .ctl-select.quiet:hover:not(:disabled) { background: none; color: var(--ink); }
 .pg-save-at { display: inline-flex; align-items: center; gap: 0.6rem; }
 
 /* ---------- one look for every list, table, button and link ----------
@@ -1009,8 +975,6 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .empty { margin: 0; padding: 0.5rem 0.75rem; font-size: var(--fs-m); line-height: 1.4; color: var(--ink3); }
 #d-body .empty, .pg-body .empty { padding: 0; }
 /* The places buttons sit. */
-.rb-fix { margin-left: auto; }
-.rb-row .rb-go { height: auto; }
 .rn-approve label, .rn-remove .dim { font-size: var(--fs-m); color: var(--ink2); }
 
 

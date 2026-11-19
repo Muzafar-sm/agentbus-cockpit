@@ -48,11 +48,11 @@ with no console errors. Open it in a browser and look before saying it works.
   `session.registered` event, so the replay source must work without them.
 - **The token stays in the browser session.** It is sent only to the service address the user
   entered.
-- **One API, one address, one token.** The turn queue and reviews come from the same agentbus API
-  as sessions (`src/data/jobs.ts`). Every action is on a turn: start, stop, review, diff, apply.
-  Its contract is the same OpenAPI description. The cockpit probes `GET /api/v0/turns`; a 404
-  there means no queue, and the cockpit then shows no Review and no CI/CD. A service with the
-  turns API but no queue answers a review with 404, and the bar shows its words.
+- **One API, one address, one token.** The turn queue comes from the same agentbus API
+  as sessions (`src/data/jobs.ts`). Every action is on a turn: start, stop, diff, apply. Its
+  contract is the same OpenAPI description. The cockpit probes `GET /api/v0/turns`; a 404 there
+  means no queue. Reviewing a turn is no longer a cockpit action: a person asks an agent in chat
+  to review instead.
 
 ## Conventions
 

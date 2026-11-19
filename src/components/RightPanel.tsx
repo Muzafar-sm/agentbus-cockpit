@@ -24,10 +24,6 @@ import { ToolsTab } from './ToolsTab';
 import { formatElapsed, liveStatus } from '../data/liveStatus';
 import { useNow } from '../utils/useNow';
 import { SessionPanel } from './SessionPanel';
-import { ApiTurn } from '../data/jobs';
-import { QueueView } from '../data/useJobs';
-import { ReviewBar, TurnTab } from './Jobs';
-import { reviewUI } from '../features';
 import { folderLabel, useFolders } from '../data/folders';
 import { turnToolbox } from '../data/toolbox';
 import { McpTab } from './McpTab';
@@ -61,16 +57,6 @@ interface RightPanelProps {
   // True for a source that streams: a running turn's strip and Tools tab
   // follow its events as they arrive. Recorded data shows turns as they are.
   live?: boolean;
-  // The service's turn list, when it keeps a queue: the Review button and
-  // the CI/CD tab read it.
-  queue?: QueueView;
-  onReview?: (turn: Turn, agent: string, model: string) => Promise<void>;
-  onStopQueued?: (t: ApiTurn) => Promise<void>;
-  // Fix on a failed review: puts a prompt in the message box. Given only
-  // where the source can send a next message.
-  onFix?: (prompt: string) => void;
-  // The agents the service can run, to pick a reviewer from.
-  loadAgents?: () => Promise<{ name: string; found: boolean }[]>;
   // Closes the panel (its ×).
   onClose?: () => void;
   // Esc collapses an open row first, and only the next Esc closes the
@@ -95,7 +81,7 @@ interface RightPanelProps {
   tabs?: PanelTabs;
 }
 
-type TabKey = 'result' | 'changes' | 'events' | 'model' | 'context' | 'tools' | 'prompt' | 'mcp' | 'cicd';
+type TabKey = 'result' | 'changes' | 'events' | 'model' | 'context' | 'tools' | 'prompt' | 'mcp';
 
 // Follows the selected level: the session, one turn, or one model call. The
 // turn and call tabs are kept here, so stepping down and back keeps them.
@@ -125,8 +111,6 @@ export const RightPanel: React.FC<RightPanelProps> = (props) => {
         agentName={props.agentName ?? session.agent}
         onSelectTurn={(t) => props.onSelectTurn?.(t)}
         onClose={props.onClose}
-        queue={props.queue ? props.queue.ofSession(session.id) : undefined}
-        queueError={props.queue?.error}
       />
     );
   }
@@ -191,11 +175,6 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
   openRow,
   setOpenRow,
   live,
-  queue,
-  onReview,
-  onStopQueued,
-  onFix,
-  loadAgents,
   loadDiff,
   loadChanges,
   loadTurnContext,
@@ -277,20 +256,14 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
   // The turn's MCP tools, from its record: the header's line and the MCP tab.
   const box = turn.detail ? turnToolbox(turn.detail) : null;
 
-  // The turn's row in the turn list, and its reviews, with the queue.
-  const row = queue?.turnOf(turn.sessionId, turn.id);
-  const reviews = queue ? queue.reviewsOf(turn.id) : [];
-  const showJobs = !!queue && reviewUI();
   const hasContext = !!loadTurnContext && !!loadSessionContext;
   let baseTabs = loadDiff ? TURN_TABS : TURN_TABS.filter(([k]) => k !== 'changes');
   if (!hasContext) baseTabs = baseTabs.filter(([k]) => k !== 'context');
-  const tabs = showJobs ? [...baseTabs, ['cicd', 'CI/CD'] as [TabKey, string]] : baseTabs;
+  const tabs = baseTabs;
   const tab: TabKey =
-    (activeTab === 'cicd' && !showJobs) || (activeTab === 'changes' && !loadDiff) || (activeTab === 'context' && !hasContext)
-      ? 'result'
-      : activeTab;
+    (activeTab === 'changes' && !loadDiff) || (activeTab === 'context' && !hasContext) ? 'result' : activeTab;
 
-  // The head reads the turn list's row, so it shows while the events load.
+  // The head reads the turn's own facts, so it shows while the events load.
   const head = (
     <>
       <PanelHead up={[{ level: 'session', label: Session }]} onLevel={onLevel} onClose={onClose}>
@@ -347,18 +320,6 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
           )}
         </div>
         {continued && <div className="turn-cont">{continued}</div>}
-        {showJobs && onReview && (
-          <ReviewBar
-            key={turn.id}
-            turn={turn}
-            row={row}
-            reviews={reviews}
-            loadAgents={loadAgents}
-            onReview={(agent, model) => onReview(turn, agent, model)}
-            onShowTurns={() => setActiveTab('cicd')}
-            onFix={onFix}
-          />
-        )}
       </div>
 
     </>
@@ -608,9 +569,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
       </div>
 
       <div id="d-body">
-        {tab !== 'cicd' && tab !== 'changes' && tab !== 'context' && <TabSum tab={tab} turn={turn} detail={detail} />}
-
-        {tab === 'cicd' && <TurnTab turn={turn} row={row} reviews={reviews} onStop={onStopQueued} />}
+        {tab !== 'changes' && tab !== 'context' && <TabSum tab={tab} turn={turn} detail={detail} />}
 
         {tab === 'changes' && loadDiff && (
           <TurnChangesTab
@@ -829,8 +788,8 @@ export function continuedLine(detail: TurnDetail | undefined, turns: { id: strin
   return `${label.charAt(0).toUpperCase() + label.slice(1)} (replay)`;
 }
 
-// The turn tabs, in the mockup's order. Reasoning and CI/CD are not here:
-// the API has no data for them yet.
+// The turn tabs, in the mockup's order. Reasoning is not here: the API has
+// no data for it yet.
 const TURN_TABS: [TabKey, string][] = [
   ['result', 'Result'],
   ['changes', 'Changes'],
@@ -882,7 +841,6 @@ export const TabSum: React.FC<{ tab: TabKey; turn: Turn; detail: TurnDetail }> =
     }
     // The AgentBus tools tab is its own list: a line would only repeat it.
     case 'mcp':
-    case 'cicd':
     case 'changes':
       return null;
   }

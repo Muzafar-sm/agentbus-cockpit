@@ -64,7 +64,7 @@ describe('asked work in the conversation', () => {
     const lines = Array.from(r.container.querySelectorAll('.m-origin')).map((x) => x.textContent);
     expect(lines).toEqual([
       'Result from DeepSeek flash, sent by AgentBus · open its session',
-      'Review result from Codex, sent by AgentBus · open its session',
+      'Result from Codex, sent by AgentBus · open its session',
     ]);
     const bubbles = r.container.querySelectorAll('.tb .bubble');
     expect(bubbles[0].classList.contains('delivered')).toBe(false);

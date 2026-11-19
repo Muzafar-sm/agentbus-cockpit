@@ -3,7 +3,7 @@ import { ColHead, PageFrame } from './PageFrame';
 import { Button } from './Controls';
 import { ConfirmDialog } from './Dialog';
 import { Loading, Notice } from './Notice';
-import { AppDef, AppSummary } from '../types';
+import { AppDef, AppSummary, AppWorkflow } from '../types';
 
 // The Apps page (/apps): the apps AgentBus serves to agents — our reusable
 // capabilities and the person's own. The left column lists them; picking one
@@ -214,8 +214,8 @@ export const AppsPage: React.FC<AppsPageProps> = ({
         <ColHead title="Add an app" />
         <div className="colbody pg-body apps-main">
           <p className="pg-note">
-            An app is one definition: a name, a description for a model, its inputs and what it runs. In 0.6 an app runs
-            an AgentBus API route. Paste or edit the definition below.
+            An app is one definition: a name, a description for a model, its inputs and what it runs — one AgentBus API
+            route (kind api), or a workflow of several (kind app). Paste or edit the definition below.
           </p>
           {/* While busy every control of the form is held — the field and
               both buttons — so an edit or a second submit made during the add
@@ -335,6 +335,41 @@ export const AppsPage: React.FC<AppsPageProps> = ({
   );
 };
 
+// Steps shows an app's workflow as a readable sequence (B15): one row per step,
+// the operation it calls and where each of its values comes from ($inputs, an
+// earlier step's output, or the caller). This is the proof an app is data: a
+// person can read exactly what it does, built-in or their own.
+const Steps: React.FC<{ app: AppWorkflow }> = ({ app }) => {
+  const steps = Array.isArray(app.steps) ? app.steps : [];
+  const values = (m?: Record<string, unknown>) => (m && typeof m === 'object' ? Object.entries(m) : []);
+  return (
+    <ol className="apps-steps">
+      {steps.map((s, i) => {
+        const vals = [...values(s.requestBody), ...values(s.parameters)];
+        return (
+          <li key={s.stepId || i} className="apps-step">
+            <code className="apps-op">{s.operationId}</code>
+            {vals.length > 0 && (
+              <dl className="apps-step-vals">
+                {vals.map(([field, v]) => (
+                  <div key={field}>
+                    <dt>
+                      <code>{field}</code>
+                    </dt>
+                    <dd>
+                      <code className="apps-expr">{asText(v)}</code>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+};
+
 // asText shows a schema value the API did not force to a string. A property's
 // type or description is free JSON (the registry's schema check does not pin
 // them to strings), so a bare render could be an object — which React throws
@@ -360,6 +395,8 @@ const Definition: React.FC<{ def: AppDef }> = ({ def }) => {
         <p className="apps-run">
           <span className="apps-run-m">{def.run.method}</span> <code className="apps-run-p">{def.run.path}</code>
         </p>
+      ) : def.run.kind === 'app' && def.run.app ? (
+        <Steps app={def.run.app} />
       ) : (
         <p className="apps-run">{def.run.kind}</p>
       )}

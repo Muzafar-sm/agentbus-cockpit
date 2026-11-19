@@ -4,9 +4,6 @@ import { formatDuration, formatTokens, stateLabel, turnStateClass } from '../uti
 import { Cost } from './Cost';
 import { CopyButton } from './Icons';
 import { PanelHead } from './PanelHead';
-import { ApiTurn } from '../data/jobs';
-import { SessionTurns } from './Jobs';
-import { reviewUI } from '../features';
 import { folderLabel, sessionFolderRef, useFolders } from '../data/folders';
 import { Session } from '../words';
 
@@ -18,9 +15,6 @@ interface SessionPanelProps {
   agentName: string;
   onSelectTurn: (turn: Turn) => void;
   onClose?: () => void;
-  // With the turn queue: the session's turns and their reviews, live.
-  queue?: ApiTurn[];
-  queueError?: string | null;
 }
 
 // The session level: what the whole session cost and used, and its turns.
@@ -31,8 +25,6 @@ export const SessionPanel: React.FC<SessionPanelProps> = ({
   agentName,
   onSelectTurn,
   onClose,
-  queue,
-  queueError,
 }) => {
   const turns = session.turnsList;
   const folder = folderLabel(session.folder, sessionFolderRef(session), useFolders());
@@ -103,9 +95,6 @@ export const SessionPanel: React.FC<SessionPanelProps> = ({
           </tbody>
         </table>
         </div>
-        {queue && reviewUI() && (
-          <SessionTurns rows={queue} turns={turns} onSelectTurn={onSelectTurn} error={queueError} />
-        )}
       </div>
     </section>
   );

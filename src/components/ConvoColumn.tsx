@@ -73,9 +73,9 @@ interface ConvoColumnProps {
   // events. A running turn then shows one live status line where its reply
   // will be. Recorded data has none, and its turns show as they are.
   live?: LiveTurn;
-  // A prompt to put in the message box, such as Fix's after a failed review.
-  // It replaces the draft once, and is then handed back with onPrefillTaken.
-  // The person edits it and presses Send; nothing is sent by itself.
+  // A prompt to put in the message box. It replaces the draft once, and is
+  // then handed back with onPrefillTaken. The person edits it and presses
+  // Send; nothing is sent by itself.
   prefill?: { session: string; text: string } | null;
   onPrefillTaken?: () => void;
   // Opens another session, for the links of a delivered result (to the
@@ -182,7 +182,7 @@ const OriginLine: React.FC<{ turn: Turn; agents?: SavedAgent[]; onOpenSession?: 
   if (o.kind === 'result') {
     return (
       <div className="m-origin">
-        {o.turnKind === 'review' ? 'Review result from ' : 'Result from '}
+        {'Result from '}
         <b>{agentNameOf(o.agent, agents)}</b>, sent by {PRODUCT}
         {link(`open its ${SESSION}`)}
       </div>
