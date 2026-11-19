@@ -641,6 +641,8 @@ export interface HeldApproval {
   session: string;
   turn?: string;
   agent?: string;
+  tool_id?: string;
+  tool_name?: string;
   commands: string[];
   rule: string;
   requested: string;
