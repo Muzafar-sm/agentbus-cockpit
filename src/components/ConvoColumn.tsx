@@ -74,8 +74,9 @@ interface ConvoColumnProps {
   live?: LiveTurn;
   // A prompt to put in the message box. It replaces the draft once, and is
   // then handed back with onPrefillTaken. The person edits it and presses
-  // Send; nothing is sent by itself.
-  prefill?: { session: string; text: string } | null;
+  // Send; nothing is sent by itself. agent, when given, also switches the
+  // picker beside Send to that agent (the Review button names a reviewer).
+  prefill?: { session: string; text: string; agent?: string } | null;
   onPrefillTaken?: () => void;
   // Opens another session, for the links of a delivered result (to the
   // session that did the work) and of an asked turn (to the session that
@@ -412,14 +413,16 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
     ro.observe(el);
     return () => ro.disconnect();
   }, [draft]);
+  // The agent picked beside Send; null follows the session's latest turn.
+  const [picked, setPicked] = useState<string | null>(null);
   useEffect(() => {
     if (!prefill || prefill.session !== session.id) return;
     setDraft(prefill.text);
+    // A Review prefill also names the reviewer: switch the picker to it.
+    if (prefill.agent !== undefined) setPicked(prefill.agent);
     onPrefillTaken?.();
     inputRef.current?.focus();
   }, [prefill, session.id]);
-  // The agent picked beside Send; null follows the session's latest turn.
-  const [picked, setPicked] = useState<string | null>(null);
   // Messages sent that are not yet turns on screen, oldest first.
   const [localPending, setLocalPending] = useState<Pending[]>([]);
   const pending = keptPending ?? localPending;

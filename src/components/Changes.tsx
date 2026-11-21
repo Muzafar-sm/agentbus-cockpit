@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ApplyPreview, ApplyState, TurnChangesPage, TurnDiff, TurnDiffFile } from '../types';
 import { PanelHead } from './PanelHead';
-import { Button } from './Controls';
+import { Button, Select } from './Controls';
 import { Loading, Notice } from './Notice';
 import { SESSION } from '../words';
 
@@ -224,15 +224,27 @@ interface ApplyPanelProps {
   onRefresh?: () => void;
   onClose?: () => void;
   pollMs?: number;
+  // When set, a Review button beside Apply. It fills the message box with a
+  // plain request to a reviewer -- an agent of a different vendor by default,
+  // chosen from options -- and switches the picker beside Send to it; the
+  // person presses Send. A shortcut, not a separate action: nothing is sent
+  // here. options are the agents to offer, defaultAgent the one shown first.
+  review?: {
+    options: { id: string; name: string }[];
+    defaultAgent: string;
+    onReview: (agentId: string) => void;
+  };
 }
 
 // The right panel's apply preview for the conversation on screen: every
 // file applying would write, its diff against the person's folder now, any
 // file the person changed since (which the apply would refuse), and one
 // "Apply to my folder" for the turn the preview names.
-export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, readApply, onApplyEnded, onRefresh, onClose, pollMs = 2000 }) => {
+export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, readApply, onApplyEnded, onRefresh, onClose, pollMs = 2000, review }) => {
   // The apply this panel asked for: its turn, and its state as last read.
   const [asked, setAsked] = useState<{ turn: string; state: ApplyState | null } | null>(null);
+  // The reviewer the small picker shows; empty follows review.defaultAgent.
+  const [reviewer, setReviewer] = useState('');
   const [applyError, setApplyError] = useState<string | null>(null);
   const endedRef = useRef(onApplyEnded);
   endedRef.current = onApplyEnded;
@@ -295,6 +307,12 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
   const conflicted = conflicts.length > 0;
   const has = !!preview && preview.unapplied && (preview.count > 0 || preview.files.length > 0 || conflicted);
   const canApply = !!apply && !!preview?.turn && has && !pending && !conflicted && !tooBig;
+  // The reviewer offered beside Apply: the small picker's choice, or the
+  // default (an agent of a different vendor). Review stays available even
+  // when an apply would be refused -- a person can ask about it regardless.
+  const reviewers = review?.options ?? [];
+  const reviewerId = reviewers.some((o) => o.id === reviewer) ? reviewer : review?.defaultAgent ?? '';
+  const canReview = reviewers.length > 0 && has && !tooBig;
 
   return (
     <section id="right" className="apply-panel">
@@ -380,11 +398,30 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
               </Notice>
             )}
             {applyError && <Notice kind="error">{applyError}</Notice>}
-            {apply && !applied && has && (
+            {!applied && has && (apply || canReview) && (
               <div className="ap-actions">
-                <Button kind="primary" disabled={!canApply} onClick={doApply}>
-                  {pending ? 'Applying…' : 'Apply to my folder'}
-                </Button>
+                {canReview && (
+                  <span className="ap-review">
+                    <Select
+                      name="reviewer"
+                      variant="quiet"
+                      label="Agent to review these changes"
+                      title="Agent to review these changes"
+                      value={reviewerId}
+                      options={reviewers.map((o) => ({ value: o.id, label: o.name }))}
+                      onChange={setReviewer}
+                      align="right"
+                    />
+                    <Button kind="secondary" onClick={() => review?.onReview(reviewerId)}>
+                      Review
+                    </Button>
+                  </span>
+                )}
+                {apply && (
+                  <Button kind="primary" className="ap-apply" disabled={!canApply} onClick={doApply}>
+                    {pending ? 'Applying…' : 'Apply to my folder'}
+                  </Button>
+                )}
               </div>
             )}
           </>
