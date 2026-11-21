@@ -7,7 +7,7 @@ import { SavedAgent, SessionSummary } from '../types';
 import { useNow } from '../utils/useNow';
 import { formatAgo, formatCost, formatTokens } from '../utils/format';
 import { Cost } from './Cost';
-import { CopyButton, LockIcon, PlusIcon } from './Icons';
+import { CopyButton, PlusIcon, SessionStatus } from './Icons';
 import { LiveLine } from './LiveLine';
 import { PencilIcon, TitleEdit } from './TitleEdit';
 
@@ -117,24 +117,30 @@ export const SessionsColumn: React.FC<SessionsColumnProps> = ({
           const isEditing = editing === s.id && !!onRename;
           // While its turn runs, the cost moves to the title line (as in the sketch).
           // The selected card's name starts a rename when clicked.
+          {/* One slot of status marks after the name: running dot, Sandbox
+              shield, archived/closed lock. It goes inside the title span so it
+              flows right after the last word when the name wraps to two lines. */}
+          const statusIcons = (
+            <SessionStatus
+              running={!!s.open}
+              sandbox={!!s.sandbox}
+              lock={s.closed ? 'Closed' : s.archived ? 'Archived' : null}
+            />
+          );
           const title = (
             <span className="s-t">
-              {s.open ? <i className="live" /> : null}
-              {s.closed || s.archived ? (
-                // Archived uses the same lock the closed state used, in the
-                // same place: a quiet mark, not a word.
-                <span className="s-lock" title={s.closed ? 'Closed' : 'Archived'} aria-label={s.closed ? 'Closed' : 'Archived'}>
-                  <LockIcon />
-                </span>
-              ) : null}
               {isEditing ? (
                 <TitleEdit title={s.title} onSave={(t) => onRename!(s.id, t)} onDone={() => setEditing(null)} />
               ) : isSelected && onRename ? (
                 <span className="s-tt s-tt-edit" title="Rename" onClick={() => setEditing(s.id)}>
                   {s.title}
+                  {statusIcons}
                 </span>
               ) : (
-                <span className="s-tt">{s.title}</span>
+                <span className="s-tt">
+                  {s.title}
+                  {statusIcons}
+                </span>
               )}
               {/* A new session's row says $0 before its first reply is priced; show nothing until one is. */}
               {status && formatCost(s.cost_usd) && !(s.cost_usd === 0 && status.costUsd === null) ? (

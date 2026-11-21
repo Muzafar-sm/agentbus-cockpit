@@ -128,6 +128,11 @@ export interface Turn {
   error?: string;
   // True when the person stopped the turn (POST /api/v0/turns/<id>/stop).
   stopped?: boolean;
+  // True when a Discard dropped this turn's file changes (its id was in a
+  // workspace.discarded event's dropped_turns). The conversation stays; the
+  // turn carries a small "Discarded" mark. The record keeps it durably; the
+  // cockpit also sets it live when a discard it made returns.
+  discarded?: boolean;
   outcome?: string;
   // Sums the turn's replies that carried usage; null when none did.
   usage: Usage | null;
@@ -187,6 +192,14 @@ export interface SessionSummary {
   folder?: string;
   // The reference of the folder, when the source gives it.
   folder_ref?: string;
+  // The session's workspace, where its turns run (GET /api/v0/sessions folds
+  // it in). Apply, Discard and the changes preview act on this workspace; with
+  // none, the cockpit offers neither (there is no backward-compatible path).
+  workspace?: string;
+  // The session's mode, its workspace's: true when it runs in a copy behind a
+  // wall (a sandbox) whose changes are applied on request, false when it runs
+  // in the folder as it is.
+  sandbox?: boolean;
   title: string;
   started: string;
   last: string;
@@ -341,12 +354,22 @@ export interface SavedAgent extends AgentFields {
 // The service gives the session its own copy of the folder. The folder is a
 // path typed for the machine in machine, or a listed folder by folder_ref
 // and machine (GET /api/v0/folders). The session runs on that machine.
+// A new session, the cockpit's New Session send. The source creates it as three
+// calls in order: POST /api/v0/workspaces (the folder and the mode), POST
+// /api/v0/sessions (the workspace and the name), then POST /api/v0/turns (the
+// first message). The turn carries no folder or mode; its workspace owns them.
 export interface RunRequest {
   agent: string;
   folder?: string;
   folder_ref?: string;
   machine?: string;
-  isolate?: boolean;
+  // True (the default) for a sandbox: a copy of the folder behind a wall whose
+  // changes are applied on request. False: the agent works in the folder as it
+  // is. The workspace's one mode, set when it is created.
+  sandbox?: boolean;
+  // The session's name, set on POST /api/v0/sessions. Absent leaves the first
+  // message as its title.
+  title?: string;
   prompt: string;
   model?: string;
   idempotency_key?: string;
@@ -376,6 +399,20 @@ export interface ApplyState {
   count?: number;
   truncated?: boolean;
   conflicts?: { path: string; why: string }[];
+  error?: string;
+}
+
+// POST /api/v0/workspaces/<id>/discard: dropping a sandbox workspace's
+// unapplied changes. already is true when there was nothing to drop;
+// dropped_turns are the turns whose file changes were dropped (the
+// conversation stays), so the cockpit can mark them "Discarded" at once.
+export interface DiscardState {
+  // queued, running, discarded, or already (nothing to drop). A source may
+  // answer with no state when the discard is done; the cockpit treats a
+  // resolved call as a discard.
+  state?: string;
+  already?: boolean;
+  dropped_turns?: string[];
   error?: string;
 }
 
@@ -841,11 +878,19 @@ export interface DataSource {
   // failure rejects with the API's words.
   getTurnDiff?(sessionId: string, turnId: string): Promise<TurnDiff>;
   getTurnChanges?(sessionId: string, turnId: string, before?: number): Promise<TurnChangesPage>;
-  applyTurn?(turnId: string): Promise<ApplyState>;
-  // What applying the whole conversation now would do (a dry run): the files
-  // not yet in the person's folder, their diffs and conflicts. Rejects with
-  // the API's words.
-  getApplyPreview?(sessionId: string, fresh?: boolean): Promise<ApplyPreview>;
+  // A source that keeps sandbox workspaces has these, each on the workspace the
+  // session's turns run in (its `workspace` field). applyWorkspace writes the
+  // workspace's unapplied changes to the person's folder, up to `turn` when
+  // given (POST /api/v0/workspaces/{id}/apply); it resolves on 200, 202 and 409
+  // (a refusal names each file). discardWorkspace drops them instead (POST
+  // /api/v0/workspaces/{id}/discard). Any other failure rejects with the API's
+  // words.
+  applyWorkspace?(workspace: string, turn?: string): Promise<ApplyState>;
+  discardWorkspace?(workspace: string): Promise<DiscardState>;
+  // What applying the workspace now would do (a dry run,
+  // GET /api/v0/workspaces/{id}/changes): the files not yet in the person's
+  // folder, their diffs and conflicts. Rejects with the API's words.
+  getWorkspaceChanges?(workspace: string, fresh?: boolean): Promise<ApplyPreview>;
   // A source that keeps request bodies has this: one model call's request
   // and reply by its turn and exchange. Rejects with an Error in the API's
   // own words.

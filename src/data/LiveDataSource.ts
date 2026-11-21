@@ -24,6 +24,7 @@ import {
   Started,
   ApplyPreview,
   ApplyState,
+  DiscardState,
   Turn,
   TurnDiff,
   TurnChangesPage,
@@ -92,6 +93,7 @@ function turnRow(t: ApiTurn, n: number): Turn {
     state: t.state,
     error: turnError((t as { error?: unknown }).error),
     stopped: t.stopped === true || t.state === 'stopped' || undefined,
+    discarded: t.discarded === true || undefined,
     outcome: t.outcome,
     usage: t.usage ?? null,
     costUsd: typeof t.cost_usd === 'number' ? t.cost_usd : null,
@@ -669,10 +671,33 @@ export class LiveDataSource implements DataSource {
     }
   }
 
-  // POST /api/v0/turns: start an agent with a first prompt, in a new session.
-  // 202 {session, turn, state}: the turn's id is there even while it waits.
+  // A new session is three calls in order, each noun created by its own POST
+  // (his API rules, 2026-11-21): POST /api/v0/workspaces (the folder and the
+  // mode) -> POST /api/v0/sessions (the workspace and the name) -> POST
+  // /api/v0/turns (the first message). The turn carries no folder or mode; its
+  // workspace owns them. One idempotency_key covers all three (kept apart by
+  // noun on the service), so a retry reuses the same workspace, session and
+  // turn instead of making new ones. 202 {session, turn, state} from the turn.
   async startRun(req: RunRequest): Promise<Started> {
-    return this.post('/api/v0/turns', req);
+    const key = req.idempotency_key;
+    const wsBody: Record<string, unknown> = {};
+    if (req.folder_ref) wsBody.folder_ref = req.folder_ref;
+    else if (req.folder) wsBody.folder = req.folder;
+    if (req.machine) wsBody.machine = req.machine;
+    // Sent explicitly, both ways, so the record carries the person's choice.
+    wsBody.sandbox = req.sandbox !== false;
+    if (key) wsBody.idempotency_key = key;
+    const ws = await this.send<{ workspace: string }>('POST', '/api/v0/workspaces', wsBody);
+
+    const sBody: Record<string, unknown> = { workspace: ws.workspace };
+    if (req.title) sBody.title = req.title;
+    if (key) sBody.idempotency_key = key;
+    const session = await this.send<{ session: string }>('POST', '/api/v0/sessions', sBody);
+
+    const tBody: Record<string, unknown> = { session: session.session, agent: req.agent, prompt: req.prompt };
+    if (req.model) tBody.model = req.model;
+    if (key) tBody.idempotency_key = key;
+    return this.post('/api/v0/turns', tBody);
   }
 
   // POST /api/v0/turns with session: the next turn of a session, in its own
@@ -753,11 +778,11 @@ export class LiveDataSource implements DataSource {
     return res.json();
   }
 
-  // GET /api/v0/sessions/<id>/changes: the apply preview. The runner
-  // answers within 30 s. A machine that is offline or does not answer is
-  // said plainly; other refusals are in the API's words.
-  async getApplyPreview(sessionId: string, fresh?: boolean): Promise<ApplyPreview> {
-    const path = `${this.baseUrl}/api/v0/sessions/${encodeURIComponent(sessionId)}/changes`;
+  // GET /api/v0/workspaces/<id>/changes: the apply preview, on the session's
+  // workspace. The runner answers within 30 s. A machine that is offline or
+  // does not answer is said plainly; other refusals are in the API's words.
+  async getWorkspaceChanges(workspace: string, fresh?: boolean): Promise<ApplyPreview> {
+    const path = `${this.baseUrl}/api/v0/workspaces/${encodeURIComponent(workspace)}/changes`;
     const q = new URLSearchParams({ limit: '1000' });
     if (fresh) q.set('fresh', 'true');
     const res = await fetch(`${path}?${q.toString()}`, { headers: this.headers() });
@@ -794,14 +819,15 @@ export class LiveDataSource implements DataSource {
     return { ...preview, files, next_before: null, stale, why };
   }
 
-  // POST /api/v0/turns/<id>/apply: 200 applied (or already), 202 still
-  // running, 409 refused with each file and why. All three are answers. A
-  // 409 with no state (an apply of an earlier turn has not ended) is an
-  // error in the API's words.
-  async applyTurn(turnId: string): Promise<ApplyState> {
-    const res = await fetch(`${this.baseUrl}/api/v0/turns/${encodeURIComponent(turnId)}/apply`, {
+  // POST /api/v0/workspaces/<id>/apply: writes the workspace's unapplied
+  // changes to the person's folder, up to `turn` when given. 200 applied (or
+  // already), 202 still running, 409 refused with each file and why. All three
+  // are answers; any other status is an error in the API's words.
+  async applyWorkspace(workspace: string, turn?: string): Promise<ApplyState> {
+    const res = await fetch(`${this.baseUrl}/api/v0/workspaces/${encodeURIComponent(workspace)}/apply`, {
       method: 'POST',
-      headers: this.headers(),
+      headers: { ...this.headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(turn ? { turn } : {}),
     });
     if (res.ok) return res.json();
     if (res.status === 409) {
@@ -816,6 +842,19 @@ export class LiveDataSource implements DataSource {
       const msg = (body as { error?: unknown } | undefined)?.error;
       throw new Error(typeof msg === 'string' && msg ? msg : text.trim() || 'agentbus answered 409');
     }
+    throw new Error(await apiError(res));
+  }
+
+  // POST /api/v0/workspaces/<id>/discard: drops the workspace's unapplied
+  // changes. 200 with the changes dropped (or already, nothing to drop); 202
+  // still running; 409 when a turn or apply is in flight. The conversation
+  // stays; dropped_turns names the turns whose file changes went.
+  async discardWorkspace(workspace: string): Promise<DiscardState> {
+    const res = await fetch(`${this.baseUrl}/api/v0/workspaces/${encodeURIComponent(workspace)}/discard`, {
+      method: 'POST',
+      headers: this.headers(),
+    });
+    if (res.ok) return res.json().catch(() => ({}));
     throw new Error(await apiError(res));
   }
 

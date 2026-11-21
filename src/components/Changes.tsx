@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ApplyPreview, ApplyState, TurnChangesPage, TurnDiff, TurnDiffFile } from '../types';
+import { ApplyPreview, ApplyState, DiscardState, TurnChangesPage, TurnDiff, TurnDiffFile } from '../types';
 import { PanelHead } from './PanelHead';
 import { Button, Select } from './Controls';
 import { Loading, Notice } from './Notice';
@@ -234,18 +234,30 @@ interface ApplyPanelProps {
     defaultAgent: string;
     onReview: (agentId: string) => void;
   };
+  // On a sandbox session, drops the workspace's unapplied changes
+  // (POST /api/v0/workspaces/{id}/discard). The button sits beside Apply and
+  // asks once, in place, before it runs. onDiscarded carries the turns whose
+  // changes were dropped, so the conversation can mark them. Absent: no
+  // Discard (a direct session, or a source that cannot discard).
+  discard?: () => Promise<DiscardState>;
+  onDiscarded?: (droppedTurns: string[]) => void;
 }
 
 // The right panel's apply preview for the conversation on screen: every
 // file applying would write, its diff against the person's folder now, any
 // file the person changed since (which the apply would refuse), and one
 // "Apply to my folder" for the turn the preview names.
-export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, readApply, onApplyEnded, onRefresh, onClose, pollMs = 2000, review }) => {
+export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, readApply, onApplyEnded, onRefresh, onClose, pollMs = 2000, review, discard, onDiscarded }) => {
   // The apply this panel asked for: its turn, and its state as last read.
   const [asked, setAsked] = useState<{ turn: string; state: ApplyState | null } | null>(null);
   // The reviewer the small picker shows; empty follows review.defaultAgent.
   const [reviewer, setReviewer] = useState('');
   const [applyError, setApplyError] = useState<string | null>(null);
+  // Discard asks once, in place: confirming shows the question beside Apply;
+  // discarding is true while the drop runs.
+  const [confirming, setConfirming] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
+  const [discardError, setDiscardError] = useState<string | null>(null);
   const endedRef = useRef(onApplyEnded);
   endedRef.current = onApplyEnded;
 
@@ -264,6 +276,22 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
     } catch (err) {
       setAsked(null);
       setApplyError((err as Error).message);
+    }
+  };
+
+  const doDiscard = async () => {
+    if (!discard) return;
+    setDiscarding(true);
+    setDiscardError(null);
+    try {
+      const s = await discard();
+      setConfirming(false);
+      onDiscarded?.(s.dropped_turns ?? []);
+      endedRef.current?.();
+    } catch (err) {
+      setDiscardError((err as Error).message);
+    } finally {
+      setDiscarding(false);
     }
   };
 
@@ -313,6 +341,11 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
   const reviewers = review?.options ?? [];
   const reviewerId = reviewers.some((o) => o.id === reviewer) ? reviewer : review?.defaultAgent ?? '';
   const canReview = reviewers.length > 0 && has && !tooBig;
+  // How many files would be dropped, for the confirm question. Discard drops
+  // the copy's changes whether or not a file in the folder also changed, so a
+  // conflict does not block it.
+  const changedCount = preview ? preview.count || preview.files.length : 0;
+  const canDiscard = !!discard && has && !pending && !discarding && !tooBig;
 
   return (
     <section id="right" className="apply-panel">
@@ -398,9 +431,10 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
               </Notice>
             )}
             {applyError && <Notice kind="error">{applyError}</Notice>}
-            {!applied && has && (apply || canReview) && (
+            {discardError && <Notice kind="error">{discardError}</Notice>}
+            {!applied && has && (apply || canReview || discard) && (
               <div className="ap-actions">
-                {canReview && (
+                {canReview && !confirming && (
                   <span className="ap-review">
                     <Select
                       name="reviewer"
@@ -417,10 +451,39 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
                     </Button>
                   </span>
                 )}
-                {apply && (
-                  <Button kind="primary" className="ap-apply" disabled={!canApply} onClick={doApply}>
-                    {pending ? 'Applying…' : 'Apply to my folder'}
-                  </Button>
+                {confirming ? (
+                  // The question in place, no pop-up window: Discard N files?
+                  <span className="ap-confirm" role="group" aria-label="Discard changes">
+                    <span className="ap-confirm-q">Discard {files(changedCount)}?</span>
+                    <Button kind="quiet" className="ap-discard-no" onClick={() => setConfirming(false)} disabled={discarding}>
+                      Cancel
+                    </Button>
+                    <Button kind="secondary" className="ap-discard-go" onClick={doDiscard} disabled={discarding}>
+                      {discarding ? 'Discarding…' : 'Discard'}
+                    </Button>
+                  </span>
+                ) : (
+                  <span className="ap-right">
+                    {discard && (
+                      <Button
+                        kind="secondary"
+                        className="ap-discard"
+                        disabled={!canDiscard}
+                        title="Drop these changes and reset the copy"
+                        onClick={() => {
+                          setDiscardError(null);
+                          setConfirming(true);
+                        }}
+                      >
+                        Discard
+                      </Button>
+                    )}
+                    {apply && (
+                      <Button kind="primary" className="ap-apply" disabled={!canApply} onClick={doApply} title="Apply these changes to your folder">
+                        {pending ? 'Applying…' : 'Apply'}
+                      </Button>
+                    )}
+                  </span>
                 )}
               </div>
             )}

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FolderInfo, lastMachine, recentFolders } from '../data/folders';
+import { FolderInfo, lastMachine, lastSandbox, recentFolders, rememberSandbox } from '../data/folders';
 import { Harness, RunRequest, RunnerInfo, SavedAgent } from '../types';
 import { agentLine } from './AgentsDialog';
-import { Button, Select } from './Controls';
+import { Button, Select, Switch } from './Controls';
 import { Dialog, DialogActions } from './Dialog';
 import { Notice, WithCode } from './Notice';
 import { LOADING, PRODUCT, SESSION } from '../words';
@@ -106,6 +106,10 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
   const path = where && 'path' in where ? where.path : '';
   const [prompt, setPrompt] = useState('');
   const [name, setName] = useState('');
+  // The session's mode, remembered per viewer. On (the default): a sandbox,
+  // run in a copy of the folder whose changes you apply. Off: the agent works
+  // in the folder as it is.
+  const [sandbox, setSandbox] = useState(lastSandbox);
   const [starting, setStarting] = useState(false);
   // Start was pressed with something missing: the missing field says so.
   const [tried, setTried] = useState(false);
@@ -150,7 +154,8 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
         'ref' in where!
           ? { folder_ref: where!.ref, machine: where!.machine }
           : { folder: where!.path.trim(), ...(byMachine ? { machine: machine } : {}) };
-      await onStart({ agent, ...at, prompt: prompt.trim() === '' ? '' : prompt }, name.trim() || undefined);
+      rememberSandbox(sandbox);
+      await onStart({ agent, ...at, sandbox, prompt: prompt.trim() === '' ? '' : prompt }, name.trim() || undefined);
     } catch (err) {
       const msg = (err as Error).message;
       setError(('path' in where! && folderRefusal(msg)) || msg);
@@ -252,8 +257,21 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
           </Notice>
         )}
         <div className="nd-note">
-          {byMachine ? `A folder on ${picked?.name ?? 'the machine picked'}. ` : `A folder on the machine ${PRODUCT} runs on. `}
-          The {SESSION} works on a copy until you apply its changes.
+          {byMachine ? `A folder on ${picked?.name ?? 'the machine picked'}.` : `A folder on the machine ${PRODUCT} runs on.`}
+        </div>
+        <div className="nd-sandbox">
+          <Switch
+            name="sandbox"
+            label="Sandbox"
+            on={sandbox}
+            onChange={setSandbox}
+            title="Run in a copy of the folder; apply its changes when you are ready"
+          />
+          <div className="nd-note">
+            {sandbox
+              ? 'Works in a copy. Your folder changes only when you apply.'
+              : 'Works in your folder as it is — no copy to apply.'}
+          </div>
         </div>
         <label>
           <span>Name (optional)</span>

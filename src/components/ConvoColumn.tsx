@@ -9,7 +9,7 @@ import { Cost } from './Cost';
 import { folderLabel, sessionFolderRef, useFolders } from '../data/folders';
 import { LiveLine } from './LiveLine';
 import { PencilIcon, TitleEdit } from './TitleEdit';
-import { LockIcon } from './Icons';
+import { LockIcon, SessionStatus } from './Icons';
 import { ShellEntry } from './ShellEntry';
 import { Button, Select } from './Controls';
 import { Notice } from './Notice';
@@ -68,6 +68,9 @@ interface ConvoColumnProps {
   onStop?: (turn: Turn) => Promise<void>;
   // The turns the person asked to stop that have not ended yet.
   stopping?: ReadonlySet<string>;
+  // Turns whose file changes a Discard dropped: each carries a small
+  // "Discarded" mark. The record's own turn.discarded is folded in with this.
+  discardedTurns?: ReadonlySet<string>;
   // Given only by a source that streams: the session's latest turn with its
   // events. A running turn then shows one live status line where its reply
   // will be. Recorded data has none, and its turns show as they are.
@@ -264,6 +267,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   onSend,
   onStop,
   stopping,
+  discardedTurns,
   live,
   prefill,
   onPrefillTaken,
@@ -694,6 +698,9 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
             >
               {session.title}
             </div>
+            {/* The same status slot as the list card: Sandbox shield, and a
+                lock when archived (a closed session keeps its own mark below). */}
+            <SessionStatus sandbox={!!session.sandbox} lock={archived ? 'Archived' : null} />
             {onRename && (
               <button type="button" className="c-rename" aria-label="Rename" title="Rename" onClick={() => setRenaming(true)}>
                 <PencilIcon />
@@ -876,6 +883,11 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                       >
                         {turn.state === 'running' && stopping?.has(turn.id) ? STATE.stopping : replyIn ? STATE.finishing : stateLabel(turn)}
                         {turn.state === 'failed' && !turn.stopped && turn.error ? ` · ${turn.error}` : ''}
+                      </span>
+                    )}
+                    {(turn.discarded || discardedTurns?.has(turn.id)) && (
+                      <span className="tb-discarded" title="A Discard dropped this turn's changes">
+                        Discarded
                       </span>
                     )}
                     <span className="tb-stat">

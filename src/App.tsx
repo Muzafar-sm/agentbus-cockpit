@@ -101,7 +101,7 @@ const TURN_LIST_KINDS = new Set([
 
 // Kinds that change what applying a conversation would write: a turn ended,
 // its changes recorded, or an apply done. On these the preview is read again.
-const PREVIEW_KINDS = new Set(['turn.completed', 'turn.changed', 'turn.applied']);
+const PREVIEW_KINDS = new Set(['turn.completed', 'turn.changed', 'turn.applied', 'workspace.applied', 'workspace.discarded']);
 
 // Whether a streamed event changes the turn list of `session`.
 function changesTurns(event: CockpitEvent, session: string): boolean {
@@ -538,6 +538,11 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         if (s && event.session === s.session.id && PREVIEW_KINDS.has(event.kind)) {
           readPreviewRef.current(s.session.id);
         }
+        // A Discard dropped some turns' changes: mark them in the conversation.
+        if (event.kind === 'workspace.discarded') {
+          const dropped = (event.discarded as { dropped_turns?: unknown } | undefined)?.dropped_turns;
+          if (Array.isArray(dropped)) markDiscardedRef.current(dropped.filter((t): t is string => typeof t === 'string'));
+        }
         // A turn's end: its last reply's plan usage is stored by then, so a
         // subscription agent's bar reads it now rather than at the next
         // minute. A turn whose start is not held may be one: read anyway.
@@ -675,9 +680,27 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // after it. A reply for a session no longer on screen is dropped.
   const [preview, setPreview] = useState<{ session: string; p: ApplyPreview | null; error: string | null } | null>(null);
   const previewReads = useRef(new Map<string, { again: boolean; fresh: boolean }>());
+  // Turns a Discard dropped, learned live from workspace.discarded events (and
+  // from a discard this cockpit made). The conversation marks them "Discarded".
+  // A turn the record already marks (turn.discarded) is folded in at render.
+  const [discardedTurns, setDiscardedTurns] = useState<Set<string>>(new Set());
+  const markDiscarded = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    setDiscardedTurns((prev) => {
+      if (ids.every((id) => prev.has(id))) return prev;
+      const next = new Set(prev);
+      for (const id of ids) next.add(id);
+      return next;
+    });
+  }, []);
+  const markDiscardedRef = useRef(markDiscarded);
+  markDiscardedRef.current = markDiscarded;
   const readPreview = useCallback(
     (sessionId: string, fresh?: boolean) => {
-      if (!dataSource.getApplyPreview) return;
+      if (!dataSource.getWorkspaceChanges) return;
+      // The preview is of the session's workspace, which GET /sessions folds in.
+      const workspace = allSessionsRef.current?.find((x) => x.id === sessionId)?.workspace;
+      if (!workspace) return;
       const reads = previewReads.current;
       const inflight = reads.get(sessionId);
       if (inflight) {
@@ -695,7 +718,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         reads.delete(sessionId);
         if (st?.again) readPreviewRef.current(sessionId, st.fresh);
       };
-      dataSource.getApplyPreview(sessionId, fresh).then(
+      dataSource.getWorkspaceChanges(workspace, fresh).then(
         (p) => done(() => ({ session: sessionId, p, error: null })),
         (err) =>
           done((cur) => ({ session: sessionId, p: cur?.session === sessionId ? cur.p : null, error: (err as Error).message }))
@@ -712,10 +735,6 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   useEffect(() => {
     if (!panelOpen) setApplyOpen(false);
   }, [panelOpen]);
-  const applyTurn = useMemo(
-    () => (dataSource.applyTurn ? (turn: string) => dataSource.applyTurn!(turn) : undefined),
-    [dataSource]
-  );
   // One turn's own diff, for the turn panel's Changes tab.
   const loadTurnDiff = useCallback((sessionId: string, turnId: string) => dataSource.getTurnDiff!(sessionId, turnId), [dataSource]);
   const loadTurnChanges = useCallback(
@@ -901,23 +920,16 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // person gave is set right after, with PATCH /api/v0/sessions/<id>.
   const launch = async (req: RunRequest, title: string | undefined, gen: number): Promise<Started> => {
     // A listed folder goes by its reference; a typed path goes with the
-    // machine picked, whose runner checks it. The session runs there.
+    // machine picked, whose runner checks it. The session runs there. The
+    // source makes the three calls (workspace, session, turn); the name goes
+    // on the session, the folder and the mode on the workspace.
     const at = req.folder_ref
-      ? { folder_ref: req.folder_ref, machine: req.machine, isolate: true }
+      ? { folder_ref: req.folder_ref, machine: req.machine }
       : { folder: req.folder, ...(req.machine ? { machine: req.machine } : {}) };
-    // POST /api/v0/turns names the turn at once, even while it waits for a
-    // runner. With the queue, the session gets its own copy of the folder.
-    const started = await dataSource.startRun!(queue ? { ...req, ...at, isolate: true } : { ...req, ...at });
+    const started = await dataSource.startRun!({ ...req, ...at, title });
     refreshQueue?.();
     if (req.folder) rememberFolder(req.folder, req.machine);
     if (req.machine) rememberMachine(req.machine);
-    if (title && dataSource.renameSession) {
-      // The session runs either way; a refused name leaves the first message as its title.
-      dataSource
-        .renameSession(started.session, title)
-        .then(() => setListKey((k) => k + 1))
-        .catch((err) => console.warn(`Naming session ${started.session} failed:`, err));
-    }
     awaitTurn(gen, started);
     return started;
   };
@@ -1532,6 +1544,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           onPending={onPending}
           onStop={stopTurn}
           stopping={stopping}
+          discardedTurns={discardedTurns}
           live={dataSource.subscribe ? liveTurns[sessionView.id] : undefined}
           selectedTurn={selectedTurn}
           onSelectTurn={clickTurn}
@@ -1598,14 +1611,18 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           key={previewSession}
           preview={shownPreview?.p ?? null}
           error={shownPreview?.error}
-          apply={applyTurn}
+          apply={
+            dataSource.applyWorkspace && sessionView?.workspace
+              ? (turn: string) => dataSource.applyWorkspace!(sessionView.workspace!, turn)
+              : undefined
+          }
           readApply={
             dataSource.getTurnDiff
               ? (turn: string) => dataSource.getTurnDiff!(previewSession, turn).then((d) => d.apply)
               : undefined
           }
           onApplyEnded={() => readPreview(previewSession, true)}
-          onRefresh={dataSource.getApplyPreview ? () => readPreview(previewSession, true) : undefined}
+          onRefresh={dataSource.getWorkspaceChanges ? () => readPreview(previewSession, true) : undefined}
           onClose={closePanel}
           review={
             sendMessage && reviewOptions.length > 0
@@ -1616,6 +1633,16 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
                 }
               : undefined
           }
+          discard={
+            // Discard drops a sandbox copy's changes; a direct session has none.
+            sessionView?.sandbox && sessionView?.workspace && dataSource.discardWorkspace
+              ? () => dataSource.discardWorkspace!(sessionView.workspace!)
+              : undefined
+          }
+          onDiscarded={(dropped) => {
+            markDiscarded(dropped);
+            readPreview(previewSession, true);
+          }}
         />
       ) : (
       <RightPanel

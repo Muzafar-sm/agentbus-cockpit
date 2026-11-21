@@ -40,6 +40,14 @@ code { font-size: .86em; }
 .s-t { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9062rem; font-weight: 600; line-height: 1.3; }
 .s-p { font-size: var(--fs-xs); color: var(--ink2); }
 .s-m { font-size: var(--fs-s); color: var(--ink3); }
+/* One slot of status icons right after the session name: running dot, Sandbox
+   shield, archived/closed lock. Muted, currentColor, from the existing tokens. */
+.s-icons { display: inline-flex; align-items: center; align-self: center; gap: 0.3rem; flex: none; color: var(--ink3); }
+.s-icons .s-ic { display: inline-flex; align-items: center; color: var(--ink3); }
+/* In the list card the slot flows inline inside the title, so it sits right
+   after the last word when the name wraps to two lines. */
+.s-tt .s-icons { margin-left: 0.35rem; vertical-align: middle; }
+.s-mode-val { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--ink2); }
 .s-from { font-size: var(--fs-s); color: var(--ink2); line-height: 1.35; margin-top: 2px; }
 .s-from code { font-size: var(--fs-xs); }
 .sess.ended .s-t { color: var(--ink2); font-weight: 500; }
@@ -246,6 +254,7 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .tb-foot .after:hover { color: var(--ink); }
 .tb-state { font-size: var(--fs-s); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 65%; }
 .tb-stat { margin-left: auto; font-size: var(--fs-s); color: var(--ink3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tb-discarded { flex: none; font-size: var(--fs-xs); color: var(--ink3); background: var(--gray-bg); border-radius: 0.3rem; padding: 0 0.35rem; white-space: nowrap; }
 
 /* Turn panel header: title, one check line, one strip of small label/value pairs. */
 #p-head .p-title { font-size: 1.0938rem; color: var(--ink2); font-weight: 600; }
@@ -261,6 +270,9 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 /* Every column starts with a 3.5rem header. Same title style, same baseline, one divider across. */
 .colhead { height: 3.5rem; flex: none; display: flex; align-items: center; gap: 0.75rem; padding: 0 1.25rem; border-bottom: 1px solid var(--line); box-sizing: border-box; }
 .colhead-title { flex: 1; min-width: 0; font-size: 1rem; line-height: 1.5rem; font-weight: 650; letter-spacing: -.005em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* In the conversation header the title shrinks to its text so the status slot
+   sits right after the name, not pushed to the far edge. */
+#c-head .colhead-title { flex: 0 1 auto; }
 #agents, #sessions { padding: 0; gap: 0; }
 .colbody { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0.375rem; padding: 1.25rem 0.75rem; overflow-y: auto; }
 #agents .colbody .agent { margin: 0; }
@@ -451,6 +463,8 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .nd-recent button:hover, .nd-recent button.on { color: var(--ink); }
 .nd-recent code { font-size: var(--fs-xs); }
 .nd-note { font-size: var(--fs-xs); color: var(--ink3); margin-top: -0.375rem; }
+.nd-sandbox { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.125rem; }
+.nd-sandbox .nd-note { margin-top: 0; }
 /* A quiet confirmation: Settings' "Saved.", the apply panel's "Applied." */
 .nd-note.ok { color: var(--green); }
 .nd-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.1875rem; }
@@ -716,9 +730,13 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 /* The apply preview in the right panel, and a turn's Changes tab. */
 .apply-panel .ap-conflicts { margin: 0 0 0.625rem; }
 .apply-panel .ap-actions { position: sticky; bottom: 0; margin-top: 0.75rem; padding: 0.625rem 0; background: var(--panel); border-top: 1px solid var(--line); display: flex; align-items: center; gap: 0.5rem; }
+/* Review controls, Discard and Apply on one line; the picker shrinks last. */
 .apply-panel .ap-review { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
-.apply-panel .ap-review .ctl-select { max-width: 9rem; min-width: 0; }
-.apply-panel .ap-actions .ap-apply { margin-left: auto; }
+.apply-panel .ap-review .ctl-select { max-width: 8.5rem; min-width: 0; }
+/* Discard sits with Apply on the right; the confirm takes their place. */
+.apply-panel .ap-actions .ap-right,
+.apply-panel .ap-actions .ap-confirm { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; flex: none; }
+.apply-panel .ap-confirm-q { font-size: var(--fs-s); color: var(--ink2); white-space: nowrap; }
 .ch-conflict { display: block; margin-top: 0.125rem; font-size: var(--fs-xs); color: var(--bad); }
 .ch-file.conflict > .ch-path code { color: var(--bad); }
 .ch-files { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
@@ -1024,8 +1042,8 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 /* The archived/closed mark sits in the row's upper-right corner, laid over it
    (absolute) so the row text keeps its own margins and padding. On hover it
    slides left of the rename pencil, which shares that corner. */
-.s-lock { position: absolute; top: 0.5rem; right: 0.5rem; display: inline-flex; align-items: center; color: var(--ink3); transition: right .12s; }
-.sess-row:hover .s-lock, .sess-row:focus-within .s-lock { right: 1.9rem; }
+/* The lock now sits inline in the status slot (.s-icons), not the card corner. */
+.s-lock { display: inline-flex; align-items: center; color: var(--ink3); }
 /* Settings: a small heading inside a group, the copy method under Folder, Use my config. */
 .pg-ctl-h { padding: 1.1rem 0 0.1rem; font-size: var(--fs-s); font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink2); }
 .pg-detail { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.3rem; padding-left: 0.8rem; border-left: 2px solid var(--line); }

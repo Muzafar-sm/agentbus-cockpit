@@ -7,7 +7,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { ApplyPanel, TOO_BIG, TurnChangesTab, turnTooBig } from '../components/Changes';
 import { LiveDataSource } from '../data/LiveDataSource';
-import { ApplyPreview, ApplyState, TurnChangesPage, TurnDiff } from '../types';
+import { ApplyPreview, ApplyState, DiscardState, TurnChangesPage, TurnDiff } from '../types';
+// getWorkspaceChanges/applyWorkspace/discardWorkspace act on the session's
+// workspace; these tests build sessions without a workspace field, so the
+// cockpit falls back to the session id ('c1') as the workspace.
 import { click, ev, flush, liveReplay, panelOpen, render } from './helpers';
 
 const finished = [
@@ -55,19 +58,29 @@ const bar = (c: HTMLElement) => c.querySelector('#c-reply .apply-bar') as HTMLEl
 const button = (c: ParentNode, text: string) =>
   Array.from(c.querySelectorAll('button')).find((b) => b.textContent === text) as HTMLButtonElement | undefined;
 
+// GET /sessions folds each session's workspace and mode in. The replay source
+// does not, so wrap it: session c1 runs in workspace ws_c1, in sandbox mode.
+// Apply, Discard and the preview act on that workspace (no session-id fallback).
+const withWorkspace = <T extends { id: string }>(list: T[]) => list.map((s) => ({ ...s, workspace: `ws_${s.id}`, sandbox: true }));
+
 async function open(extra: Parameters<typeof liveReplay>[1]) {
   const lr = liveReplay(finished, extra);
-  const r = await render(<App dataSource={lr.source} />);
+  const source: typeof lr.source = {
+    ...lr.source,
+    getSessions: async () => withWorkspace(await lr.source.getSessions!()),
+    subscribe: (cb, snap, st) => lr.source.subscribe!(cb, (sessions, c) => snap?.(withWorkspace(sessions), c), st),
+  };
+  const r = await render(<App dataSource={source} />);
   await flush();
   await flush();
-  return { ...lr, r };
+  return { ...lr, source, r };
 }
 
 describe('The apply bar', () => {
   it('shows "● 2 files changed, not applied  Changes ▸" above the message box while there is unapplied work', async () => {
-    const getApplyPreview = vi.fn(async () => preview);
-    const { r } = await open({ getApplyPreview, applyTurn: vi.fn() });
-    expect(getApplyPreview).toHaveBeenCalledWith('c1', undefined);
+    const getWorkspaceChanges = vi.fn(async () => preview);
+    const { r } = await open({ getWorkspaceChanges, applyWorkspace: vi.fn() });
+    expect(getWorkspaceChanges).toHaveBeenCalledWith('ws_c1', undefined);
     const b = bar(r.container)!;
     expect(b).not.toBeNull();
     expect(b.querySelector('.ab-dot')!.textContent).toBe('●');
@@ -79,7 +92,7 @@ describe('The apply bar', () => {
   });
 
   it('is not shown when nothing is unapplied, or when the source has no preview', async () => {
-    const a = await open({ getApplyPreview: vi.fn(async () => nothing) });
+    const a = await open({ getWorkspaceChanges: vi.fn(async () => nothing) });
     expect(bar(a.r.container)).toBeNull();
     a.r.unmount();
     const b = await open({});
@@ -89,7 +102,7 @@ describe('The apply bar', () => {
 
   it('the old per-turn "N files changed · Review" header control is gone', async () => {
     const getTurnDiff = vi.fn(async () => diff);
-    const { r } = await open({ getApplyPreview: vi.fn(async () => preview), getTurnDiff, applyTurn: vi.fn() });
+    const { r } = await open({ getWorkspaceChanges: vi.fn(async () => preview), getTurnDiff, applyWorkspace: vi.fn() });
     expect(r.container.querySelector('#convo .tb-changes')).toBeNull();
     expect(r.container.querySelector('#convo .tb-applied')).toBeNull();
     // No turn's diff is read for the chat itself.
@@ -99,38 +112,38 @@ describe('The apply bar', () => {
 
   it('is read again when a turn ends, records its changes, or is applied', async () => {
     let p = nothing;
-    const getApplyPreview = vi.fn(async () => p);
-    const { r, push } = await open({ getApplyPreview });
+    const getWorkspaceChanges = vi.fn(async () => p);
+    const { r, push } = await open({ getWorkspaceChanges });
     expect(bar(r.container)).toBeNull();
-    const reads = getApplyPreview.mock.calls.length;
+    const reads = getWorkspaceChanges.mock.calls.length;
     p = preview;
     await act(async () => push(ev({ seq: 6, session: 'c1', kind: 'turn.changed', turn: 'T1' })));
     await flush();
-    expect(getApplyPreview.mock.calls.length).toBe(reads + 1);
+    expect(getWorkspaceChanges.mock.calls.length).toBe(reads + 1);
     expect(bar(r.container)).not.toBeNull();
     p = nothing;
     await act(async () => push(ev({ seq: 7, session: 'c1', kind: 'turn.applied', turn: 'T1' })));
     await flush();
     expect(bar(r.container)).toBeNull();
     // Another session's events do not read it.
-    const before = getApplyPreview.mock.calls.length;
+    const before = getWorkspaceChanges.mock.calls.length;
     await act(async () => push(ev({ seq: 8, session: 'c2', kind: 'turn.changed', turn: 'X' })));
     await flush();
-    expect(getApplyPreview.mock.calls.length).toBe(before);
+    expect(getWorkspaceChanges.mock.calls.length).toBe(before);
     r.unmount();
   });
 
   it('runs one read at a time: events during a read make one more read after it', async () => {
     let release: (() => void) | null = null;
     let reads = 0;
-    const getApplyPreview = vi.fn(() => {
+    const getWorkspaceChanges = vi.fn(() => {
       reads++;
       if (reads === 1) return Promise.resolve(nothing);
       return new Promise<ApplyPreview>((done) => {
         release = () => done(preview);
       });
     });
-    const { r, push } = await open({ getApplyPreview });
+    const { r, push } = await open({ getWorkspaceChanges });
     expect(reads).toBe(1);
     await act(async () => push(ev({ seq: 6, session: 'c1', kind: 'turn.completed', turn: 'T1' })));
     await act(async () => push(ev({ seq: 7, session: 'c1', kind: 'turn.changed', turn: 'T1' })));
@@ -145,7 +158,7 @@ describe('The apply bar', () => {
 
 describe('The apply preview', () => {
   it('Changes ▸ opens it in the right panel: each file with counts and a coloured diff', async () => {
-    const { r } = await open({ getApplyPreview: vi.fn(async () => preview), applyTurn: vi.fn() });
+    const { r } = await open({ getWorkspaceChanges: vi.fn(async () => preview), applyWorkspace: vi.fn() });
     expect(panelOpen(r.container)).toBe(false);
     await click(bar(r.container)!.querySelector('.ab-review'));
     await flush();
@@ -159,7 +172,7 @@ describe('The apply preview', () => {
     expect(lines('hunk')).toEqual(['@@ -1 +1 @@']);
     expect(panel.querySelector('.ch-count')!.textContent).toBe('+1 −1');
     expect(panel.textContent).toContain('No diff here');
-    const apply = button(panel, 'Apply to my folder')!;
+    const apply = button(panel, 'Apply')!;
     expect(apply.className).toContain('btn-primary');
     expect(apply.disabled).toBe(false);
     r.unmount();
@@ -167,19 +180,19 @@ describe('The apply preview', () => {
 
   it('Apply applies the turn the preview names; then "Applied. Your folder matches this session." and the bar goes', async () => {
     let p = preview;
-    const getApplyPreview = vi.fn(async () => p);
-    const applyTurn = vi.fn(async () => {
+    const getWorkspaceChanges = vi.fn(async () => p);
+    const applyWorkspace = vi.fn(async () => {
       p = nothing;
       return { state: 'applied', files: ['a.txt', 'logo.png'] } as ApplyState;
     });
-    const { r } = await open({ getApplyPreview, applyTurn });
+    const { r } = await open({ getWorkspaceChanges, applyWorkspace });
     await click(bar(r.container)!.querySelector('.ab-review'));
     await flush();
-    await click(button(r.container.querySelector('#right')!, 'Apply to my folder'));
+    await click(button(r.container.querySelector('#right')!, 'Apply'));
     await flush();
-    expect(applyTurn).toHaveBeenCalledWith('T1');
+    expect(applyWorkspace).toHaveBeenCalledWith('ws_c1', 'T1');
     expect(r.container.querySelector('#right .nd-note.ok[role="status"]')!.textContent).toBe('Applied. Your folder matches this session.');
-    expect(button(r.container.querySelector('#right')!, 'Apply to my folder')).toBeUndefined();
+    expect(button(r.container.querySelector('#right')!, 'Apply')).toBeUndefined();
     expect(bar(r.container)).toBeNull();
     r.unmount();
   });
@@ -193,7 +206,7 @@ describe('The apply preview', () => {
     const box = r.container.querySelector('.form-warn.ap-conflicts')!;
     expect(box.textContent).toContain('1 file would be refused.');
     expect(box.querySelector('li')!.textContent).toBe('a.txt: changed in your folder since the checkpoint');
-    expect(button(r.container, 'Apply to my folder')!.disabled).toBe(true);
+    expect(button(r.container, 'Apply')!.disabled).toBe(true);
     r.unmount();
   });
 
@@ -206,7 +219,7 @@ describe('The apply preview', () => {
     const apply = vi.fn(async () => refused);
     const onApplyEnded = vi.fn();
     const r = await render(<ApplyPanel preview={preview} apply={apply} onApplyEnded={onApplyEnded} />);
-    await click(button(r.container, 'Apply to my folder'));
+    await click(button(r.container, 'Apply'));
     await flush();
     expect(apply).toHaveBeenCalledWith('T1');
     expect(onApplyEnded).toHaveBeenCalled();
@@ -221,7 +234,7 @@ describe('The apply preview', () => {
     const readApply = vi.fn(async () => (ended ? { state: 'applied' } : { state: 'queued' }) as ApplyState);
     const apply = vi.fn(async () => ({ state: 'queued' }) as ApplyState);
     const r = await render(<ApplyPanel preview={preview} apply={apply} readApply={readApply} pollMs={5} />);
-    await click(button(r.container, 'Apply to my folder'));
+    await click(button(r.container, 'Apply'));
     await flush();
     expect(r.container.textContent).toContain('Applying…');
     ended = true;
@@ -287,7 +300,7 @@ describe('The apply preview', () => {
       <ApplyPanel preview={{ ...nothing, isolated: false, why: 'this conversation works in your folder itself' }} apply={vi.fn()} />
     );
     expect(r.container.textContent).toContain('this conversation works in your folder itself');
-    expect(button(r.container, 'Apply to my folder')).toBeUndefined();
+    expect(button(r.container, 'Apply')).toBeUndefined();
     r.unmount();
   });
 
@@ -311,7 +324,7 @@ describe('The apply preview', () => {
   });
 
   it('clicking a turn shows the turn panel again', async () => {
-    const { r } = await open({ getApplyPreview: vi.fn(async () => preview), applyTurn: vi.fn() });
+    const { r } = await open({ getWorkspaceChanges: vi.fn(async () => preview), applyWorkspace: vi.fn() });
     await click(bar(r.container)!.querySelector('.ab-review'));
     await flush();
     expect(r.container.querySelector('#right.apply-panel')).not.toBeNull();
@@ -327,7 +340,7 @@ describe("A turn's Changes tab", () => {
   it('sits beside Result and shows the turn\'s own diff, read-only', async () => {
     const getTurnDiff = vi.fn(async () => diff);
     const getTurnChanges = vi.fn(async () => changesPage);
-    const { r } = await open({ getTurnDiff, getTurnChanges, applyTurn: vi.fn() });
+    const { r } = await open({ getTurnDiff, getTurnChanges, applyWorkspace: vi.fn() });
     await click(r.container.querySelector('#convo .tb'));
     await flush();
     const tabs = Array.from(r.container.querySelectorAll('#d-tabs .tab')).map((t) => t.textContent);
@@ -340,7 +353,7 @@ describe("A turn's Changes tab", () => {
     const body = r.container.querySelector('#d-body')!;
     expect(body.querySelector('.tab-sum')!.textContent).toContain('1 file');
     expect(body.querySelector('.ch-diff .dl.add')!.textContent).toBe('+two');
-    expect(button(body, 'Apply to my folder')).toBeUndefined();
+    expect(button(body, 'Apply')).toBeUndefined();
     r.unmount();
   });
 
@@ -394,8 +407,91 @@ describe("A turn's Changes tab", () => {
   });
 });
 
+describe('No workspace', () => {
+  it('a session without a workspace reads no preview and offers no apply (no backward-compatible fallback)', async () => {
+    // liveReplay does not fold a workspace in, so c1 has none.
+    const getWorkspaceChanges = vi.fn(async () => preview);
+    const lr = liveReplay(finished, { getWorkspaceChanges, applyWorkspace: vi.fn(), discardWorkspace: vi.fn() });
+    const r = await render(<App dataSource={lr.source} />);
+    await flush();
+    await flush();
+    expect(getWorkspaceChanges).not.toHaveBeenCalled();
+    expect(bar(r.container)).toBeNull();
+    r.unmount();
+  });
+});
+
+describe('Discard', () => {
+  it('a sandbox session shows Discard beside Apply; it asks once in place, then drops the changes', async () => {
+    const discard = vi.fn(async (): Promise<DiscardState> => ({ dropped_turns: ['T1'] }));
+    const onDiscarded = vi.fn();
+    const r = await render(<ApplyPanel preview={preview} apply={vi.fn()} discard={discard} onDiscarded={onDiscarded} />);
+    // Both actions on the right; the question is not shown yet.
+    expect(button(r.container, 'Discard')).not.toBeUndefined();
+    expect(button(r.container, 'Apply')).not.toBeUndefined();
+    expect(r.container.querySelector('.ap-confirm')).toBeNull();
+    // Discard asks in place: "Discard 2 files?", no pop-up window.
+    await click(button(r.container, 'Discard'));
+    const confirm = r.container.querySelector('.ap-confirm')!;
+    expect(confirm.querySelector('.ap-confirm-q')!.textContent).toBe('Discard 2 files?');
+    expect(r.container.querySelector('[role="dialog"]')).toBeNull();
+    expect(discard).not.toHaveBeenCalled();
+    // Confirming drops the changes and reports the dropped turns.
+    await click(button(confirm, 'Discard'));
+    await flush();
+    expect(discard).toHaveBeenCalledTimes(1);
+    expect(onDiscarded).toHaveBeenCalledWith(['T1']);
+  });
+
+  it('Cancel leaves the changes and asks nothing of the source', async () => {
+    const discard = vi.fn(async (): Promise<DiscardState> => ({}));
+    const r = await render(<ApplyPanel preview={preview} apply={vi.fn()} discard={discard} onDiscarded={vi.fn()} />);
+    await click(button(r.container, 'Discard'));
+    expect(r.container.querySelector('.ap-confirm')).not.toBeNull();
+    await click(button(r.container, 'Cancel'));
+    expect(r.container.querySelector('.ap-confirm')).toBeNull();
+    expect(button(r.container, 'Apply')).not.toBeUndefined();
+    expect(discard).not.toHaveBeenCalled();
+    r.unmount();
+  });
+
+  it('no Discard for a session the panel was given no discard for (a direct session)', async () => {
+    const r = await render(<ApplyPanel preview={preview} apply={vi.fn()} />);
+    expect(button(r.container, 'Discard')).toBeUndefined();
+    r.unmount();
+  });
+
+  it('a refused discard shows the API words and keeps the changes', async () => {
+    const discard = vi.fn(async (): Promise<DiscardState> => {
+      throw new Error('a turn is still running; wait for it to end before discarding');
+    });
+    const r = await render(<ApplyPanel preview={preview} apply={vi.fn()} discard={discard} onDiscarded={vi.fn()} />);
+    await click(button(r.container, 'Discard'));
+    await click(button(r.container.querySelector('.ap-confirm')!, 'Discard'));
+    await flush();
+    expect(r.container.textContent).toContain('a turn is still running');
+    r.unmount();
+  });
+
+  it('the live source posts to the workspace discard route', async () => {
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? 'GET'} ${url}`);
+      return new Response(JSON.stringify({ dropped_turns: ['T1', 'T2'] }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const src = new LiveDataSource({ baseUrl: 'http://cockpit.test', token: 'tok' });
+      expect((await src.discardWorkspace('ws_1')).dropped_turns).toEqual(['T1', 'T2']);
+      expect(calls).toEqual(['POST http://cockpit.test/api/v0/workspaces/ws_1/discard']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe('The live source', () => {
-  it('reads the diff and GET /sessions/<id>/changes, says a machine offline plainly, and takes a 409 apply as an answer', async () => {
+  it('reads the diff and GET /workspaces/<id>/changes, says a machine offline plainly, and takes a 409 apply as an answer', async () => {
     const calls: string[] = [];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       calls.push(`${init?.method ?? 'GET'} ${url}`);
@@ -403,26 +499,26 @@ describe('The live source', () => {
         return new Response(JSON.stringify({ state: 'refused', conflicts: [{ path: 'a.txt', why: 'x' }] }), { status: 409 });
       }
       if (url.includes('/diff')) return new Response(JSON.stringify(diff), { status: 200 });
-      if (url.includes('/sessions/c1/changes')) return new Response(JSON.stringify(preview), { status: 200 });
-      if (url.includes('/sessions/off/changes')) return new Response('{"error":"offline"}', { status: 503 });
-      if (url.includes('/sessions/slow/changes')) return new Response('{"error":"timeout"}', { status: 504 });
-      if (url.includes('/sessions/busy/changes')) return new Response('{"error":"an apply is running"}', { status: 409 });
+      if (url.includes('/workspaces/c1/changes')) return new Response(JSON.stringify(preview), { status: 200 });
+      if (url.includes('/workspaces/off/changes')) return new Response('{"error":"offline"}', { status: 503 });
+      if (url.includes('/workspaces/slow/changes')) return new Response('{"error":"timeout"}', { status: 504 });
+      if (url.includes('/workspaces/busy/changes')) return new Response('{"error":"an apply is running"}', { status: 409 });
       return new Response(JSON.stringify({ error: 'no' }), { status: 404 });
     });
     vi.stubGlobal('fetch', fetchMock);
     try {
       const src = new LiveDataSource({ baseUrl: 'http://cockpit.test', token: 'tok' });
       expect((await src.getTurnDiff('c1', 'T1')).files!.count).toBe(1);
-      expect((await src.getApplyPreview('c1')).count).toBe(2);
-      expect((await src.applyTurn('T1')).state).toBe('refused');
+      expect((await src.getWorkspaceChanges('c1')).count).toBe(2);
+      expect((await src.applyWorkspace('c1', 'T1')).state).toBe('refused');
       expect(calls).toEqual([
         'GET http://cockpit.test/api/v0/turns/T1/diff?session=c1',
-        'GET http://cockpit.test/api/v0/sessions/c1/changes?limit=1000',
-        'POST http://cockpit.test/api/v0/turns/T1/apply',
+        'GET http://cockpit.test/api/v0/workspaces/c1/changes?limit=1000',
+        'POST http://cockpit.test/api/v0/workspaces/c1/apply',
       ]);
-      await expect(src.getApplyPreview('off')).rejects.toThrow('The machine with this folder is offline.');
-      await expect(src.getApplyPreview('slow')).rejects.toThrow('The machine with this folder did not answer in 30 seconds.');
-      await expect(src.getApplyPreview('busy')).rejects.toThrow('an apply is running');
+      await expect(src.getWorkspaceChanges('off')).rejects.toThrow('The machine with this folder is offline.');
+      await expect(src.getWorkspaceChanges('slow')).rejects.toThrow('The machine with this folder did not answer in 30 seconds.');
+      await expect(src.getWorkspaceChanges('busy')).rejects.toThrow('an apply is running');
     } finally {
       vi.unstubAllGlobals();
     }
@@ -433,7 +529,7 @@ const TRUNCATED_ERR = 'the copy had more files than a checkpoint holds, so its c
 
 describe('A folder too big to track (over 200,000 files)', () => {
   it('the bar says so in place of a count, with no Review', async () => {
-    const { r } = await open({ getApplyPreview: vi.fn(async () => Promise.reject(new Error(TRUNCATED_ERR))), applyTurn: vi.fn() });
+    const { r } = await open({ getWorkspaceChanges: vi.fn(async () => Promise.reject(new Error(TRUNCATED_ERR))), applyWorkspace: vi.fn() });
     const b = bar(r.container)!;
     expect(b.className).toContain('too-big');
     expect(b.querySelector('.ab-text')!.textContent).toBe(TOO_BIG);
@@ -445,14 +541,14 @@ describe('A folder too big to track (over 200,000 files)', () => {
   it('the preview panel says so, with no count and no Apply, also when an apply is refused for it', async () => {
     const a = await render(<ApplyPanel preview={preview} error={TRUNCATED_ERR} apply={vi.fn()} />);
     expect(a.container.querySelector('#d-body')!.textContent).toBe(TOO_BIG);
-    expect(button(a.container, 'Apply to my folder')).toBeUndefined();
+    expect(button(a.container, 'Apply')).toBeUndefined();
     a.unmount();
     const apply = vi.fn(async (): Promise<ApplyState> => ({ state: 'refused', error: TRUNCATED_ERR }));
     const b = await render(<ApplyPanel preview={preview} apply={apply} />);
-    await click(button(b.container, 'Apply to my folder'));
+    await click(button(b.container, 'Apply'));
     await flush();
     expect(b.container.querySelector('#d-body')!.textContent).toBe(TOO_BIG);
-    expect(button(b.container, 'Apply to my folder')).toBeUndefined();
+    expect(button(b.container, 'Apply')).toBeUndefined();
     b.unmount();
   });
 
@@ -484,7 +580,7 @@ describe('A folder too big to track (over 200,000 files)', () => {
 
 describe('The turn panel after the preview', () => {
   it('keeps the chosen tab when the preview was open in its place', async () => {
-    const { r } = await open({ getApplyPreview: vi.fn(async () => preview), getTurnDiff: vi.fn(async () => diff), applyTurn: vi.fn() });
+    const { r } = await open({ getWorkspaceChanges: vi.fn(async () => preview), getTurnDiff: vi.fn(async () => diff), applyWorkspace: vi.fn() });
     await click(r.container.querySelector('#convo .tb'));
     await flush();
     const tab = (t: string) => Array.from(r.container.querySelectorAll('#d-tabs .tab')).find((x) => x.textContent === t);
