@@ -715,7 +715,10 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .apply-bar.too-big .ab-text { white-space: normal; }
 /* The apply preview in the right panel, and a turn's Changes tab. */
 .apply-panel .ap-conflicts { margin: 0 0 0.625rem; }
-.apply-panel .ap-actions { position: sticky; bottom: 0; margin-top: 0.75rem; padding: 0.625rem 0; background: var(--panel); border-top: 1px solid var(--line); }
+.apply-panel .ap-actions { position: sticky; bottom: 0; margin-top: 0.75rem; padding: 0.625rem 0; background: var(--panel); border-top: 1px solid var(--line); display: flex; align-items: center; gap: 0.5rem; }
+.apply-panel .ap-review { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.apply-panel .ap-review .ctl-select { max-width: 9rem; min-width: 0; }
+.apply-panel .ap-actions .ap-apply { margin-left: auto; }
 .ch-conflict { display: block; margin-top: 0.125rem; font-size: var(--fs-xs); color: var(--bad); }
 .ch-file.conflict > .ch-path code { color: var(--bad); }
 .ch-files { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }

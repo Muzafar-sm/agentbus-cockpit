@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import rawSessionsJsonl from '../testdata/sessions-v0.jsonl?raw';
 import { AgentsColumn } from './components/AgentsColumn';
-import { agentNameOf, ConvoColumn, Pending, PendingUpdate } from './components/ConvoColumn';
+import { agentNameOf, ConvoColumn, currentAgent, Pending, PendingUpdate } from './components/ConvoColumn';
 import { ApprovalsPanel } from './components/ApprovalsPanel';
 import { AgentsDialog } from './components/AgentsDialog';
 import { SettingsPage } from './components/SettingsPage';
@@ -1240,6 +1240,30 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     if (previewSession) readPreview(previewSession, true);
   };
 
+  // A Review prefill for the message box: the Review button beside Apply
+  // fills it, the conversation takes it once, then it is cleared.
+  const [prefill, setPrefill] = useState<{ session: string; text: string; agent?: string } | null>(null);
+  // The harness (vendor) an agent reference belongs to: a saved agent's
+  // harness, or the reference itself when it already names a harness.
+  const harnessOfRef = (ref: string) => savedAgents?.find((a) => a.id === ref)?.harness ?? ref;
+  // Agents offered as reviewer, one of a different vendor than the agent that
+  // did the work first, which becomes the default.
+  const authorHarness = harnessOfRef(currentAgent(turns));
+  const reviewOptions = [...(savedAgents ?? [])].sort(
+    (a, b) => Number(a.harness === authorHarness) - Number(b.harness === authorHarness)
+  );
+  const defaultReviewer = reviewOptions.find((a) => a.harness !== authorHarness)?.id ?? reviewOptions[0]?.id ?? '';
+  // Fills the message box with a plain review request for the turn the apply
+  // preview names, and switches the picker beside Send to the reviewer. The
+  // person presses Send; nothing is sent here.
+  const reviewTurn = (agentId: string) => {
+    const p = shownPreview?.p;
+    if (!previewSession || !p?.turn) return;
+    const n = turns.find((t) => t.id === p.turn)?.turnNumber;
+    const what = n ? `the changes from turn ${n}` : 'these changes';
+    setPrefill({ session: previewSession, text: `Please review ${what}. List any problems, most serious first.`, agent: agentId });
+  };
+
   // Ask whether the selected session is closed, each time it is read.
   useEffect(() => {
     if (selectedSessionId === null || !dataSource.sessionClosed) return;
@@ -1500,6 +1524,8 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           archived={sessionView.archived}
           open={sessionView.open}
           onSend={sendMessage}
+          prefill={prefill}
+          onPrefillTaken={() => setPrefill(null)}
           queuedTurn={queuedTurn}
           keyed={!!dataSource.queuedTurn}
           pending={pendingBySession[sessionView.id] ?? NO_PENDING}
@@ -1581,6 +1607,15 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           onApplyEnded={() => readPreview(previewSession, true)}
           onRefresh={dataSource.getApplyPreview ? () => readPreview(previewSession, true) : undefined}
           onClose={closePanel}
+          review={
+            sendMessage && reviewOptions.length > 0
+              ? {
+                  options: reviewOptions.map((a) => ({ id: a.id, name: a.name })),
+                  defaultAgent: defaultReviewer,
+                  onReview: reviewTurn,
+                }
+              : undefined
+          }
         />
       ) : (
       <RightPanel
