@@ -13,7 +13,7 @@ import { Loading } from './components/Notice';
 import { PRODUCT, Session, SESSION, Sessions, SESSIONS } from './words';
 import { useColumns } from './columns';
 import { BackButton } from './components/BackButton';
-import { sandboxOffer, type SettingsApi } from './data/settings';
+import { type SettingsApi } from './data/settings';
 import { useTabShown } from './data/useTabShown';
 import { SubscriptionApi } from './components/ConnectStep';
 import { SignInDot, signInOf } from './components/SignInDot';
@@ -1415,7 +1415,6 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         streamUp={dataSource.subscribe ? streamUp ?? false : undefined}
         onDisconnect={onDisconnect}
         disconnectLabel={disconnectLabel}
-        sandbox={loadRunners ? sandboxOffer(runners.runners, runners.error) : undefined}
         subscriptions={subscriptionApi}
         atSubscriptions={settingsAtSubs}
       />
