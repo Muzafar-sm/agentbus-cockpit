@@ -33,18 +33,12 @@ export interface ToolboxServer {
   tools: ToolboxTool[];
 }
 
-export interface HiddenTool {
-  name: string;
-  why: string;
-}
-
 export interface Toolbox {
   // The turn has a tools.listed. False: the AgentBus tools below, if any,
   // were read from the calls alone (a turn recorded before the event).
   listed: boolean;
   server: string;
   agentbus: ToolboxTool[];
-  hidden: HiddenTool[];
   other: ToolboxServer[];
 }
 
@@ -143,20 +137,12 @@ export function turnToolbox(detail: TurnDetail): Toolbox | null {
     for (const m of text.matchAll(MCP_IN_CODE)) tool(m[1], m[2]).uses++;
   }
 
-  const hidden: HiddenTool[] = [];
-  if (listedEv && Array.isArray(listedEv.tools_hidden)) {
-    for (const h of listedEv.tools_hidden as unknown[]) {
-      if (!h || typeof h !== 'object') continue;
-      const { name, why } = h as Record<string, unknown>;
-      if (typeof name === 'string') hidden.push({ name, why: typeof why === 'string' ? why : '' });
-    }
-  }
   const agentbus = [...(servers.get(server)?.values() ?? [])];
   const other = [...servers.entries()]
     .filter(([s]) => s !== server)
     .map(([s, m]) => ({ server: s, tools: [...m.values()] }));
   if (!listedEv && agentbus.length === 0 && other.length === 0) return null;
-  return { listed: !!listedEv, server, agentbus, hidden, other };
+  return { listed: !!listedEv, server, agentbus, other };
 }
 
 // One tool's state, in words: "used ×2", "loaded in call 3", "available".
@@ -169,12 +155,11 @@ export function toolState(t: ToolboxTool): string {
   return parts.join(' · ');
 }
 
-// The turn header's line: "11 AgentBus tools · 2 used · 4 hidden".
+// The turn header's line: "11 AgentBus tools · 2 used".
 export function toolboxSummary(box: Toolbox): string {
   const n = box.agentbus.length;
   const used = box.agentbus.filter((t) => t.uses > 0).length;
   const parts = [`${n} AgentBus tool${n === 1 ? '' : 's'}`, `${used} used`];
-  if (box.hidden.length) parts.push(`${box.hidden.length} hidden`);
   const others = box.other.length;
   if (others) parts.push(`${others} other server${others === 1 ? '' : 's'}`);
   return parts.join(' · ');

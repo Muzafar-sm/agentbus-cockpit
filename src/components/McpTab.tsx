@@ -6,8 +6,8 @@ interface McpTabProps {
   running: boolean;
 }
 
-// The turn's toolbox by source: AgentBus tools with each one's state, the
-// harness's own tools AgentBus hid, and any other tool server in the record.
+// The turn's toolbox by source: AgentBus tools with each one's state, and any
+// other tool server in the record.
 export const McpTab: React.FC<McpTabProps> = ({ box, running }) => {
   if (!box) {
     return (
@@ -21,26 +21,6 @@ export const McpTab: React.FC<McpTabProps> = ({ box, running }) => {
       <div className="sub-h">AgentBus tools</div>
       {!box.listed && <p className="dim mcp-note">No tool list in the record. These are the tools its calls used.</p>}
       {box.agentbus.length ? <Tools tools={box.agentbus} server={box.server} /> : <p className="dim">No AgentBus tools yet.</p>}
-
-      <div className="sub-h">Hidden by AgentBus</div>
-      {box.hidden.length ? (
-        <div className="grid-scroll">
-        <table className="grid mcp-t">
-          <tbody>
-            {box.hidden.map((h) => (
-              <tr key={h.name}>
-                <td>
-                  <code>{h.name}</code>
-                </td>
-                <td className="dim">{h.why}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
-      ) : (
-        <p className="dim">{box.listed ? 'No tools hidden. The harness keeps all its own.' : 'No list in the record.'}</p>
-      )}
 
       {box.other.map((s) => (
         <React.Fragment key={s.server}>

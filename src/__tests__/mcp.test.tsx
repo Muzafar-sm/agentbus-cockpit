@@ -19,7 +19,6 @@ const SERVED = [
   'search_history',
   'rename_session',
 ];
-const HIDDEN = ['Task', 'Agent', 'ListAgents', 'SendMessage'].map((name) => ({ name, why: 'replaced by AgentBus tools' }));
 
 // A claude turn as the record holds it (Claude Code 2.1.321, 2026-11-11): the
 // first call offers ToolSearch and a placeholder, its reply selects three
@@ -27,7 +26,7 @@ const HIDDEN = ['Task', 'Agent', 'ListAgents', 'SendMessage'].map((name) => ({ n
 function claudeTurn() {
   return [
     ev({ kind: 'turn.started', turn: 't1', text: 'review my last turn' }),
-    ev({ kind: 'tools.listed', turn: 't1', server: 'agentbus', tools: SERVED, tools_hidden: HIDDEN }),
+    ev({ kind: 'tools.listed', turn: 't1', server: 'agentbus', tools: SERVED }),
     ev({ kind: 'model.requested', turn: 't1', exchange: 'x1', model: 'haiku', tools_offered: ['Bash', 'Read', 'ToolSearch', 'DeferredToolPlaceholder'] }),
     ev({ kind: 'model.responded', turn: 't1', exchange: 'x1', status: 200, stop_reason: 'tool_use' }),
     ev({
@@ -99,7 +98,7 @@ function codexTurn() {
 }
 
 describe('turnToolbox', () => {
-  it('claude: served, loaded by ToolSearch, used, hidden', () => {
+  it('claude: served, loaded by ToolSearch, used', () => {
     const box = turnToolbox(turnDetail(claudeTurn()))!;
     expect(box.listed).toBe(true);
     expect(box.agentbus.map((t) => t.name)).toEqual(SERVED);
@@ -109,9 +108,8 @@ describe('turnToolbox', () => {
     expect(toolState(by('review_turn'))).toBe('loaded in call 2');
     expect(by('review_turn').searchedIn).toBe(1);
     expect(toolState(by('ask_agent'))).toBe('available');
-    expect(box.hidden).toEqual(HIDDEN);
     expect(box.other).toEqual([]);
-    expect(toolboxSummary(box)).toBe('11 AgentBus tools · 2 used · 4 hidden');
+    expect(toolboxSummary(box)).toBe('11 AgentBus tools · 2 used');
   });
 
   it('codex: uses read from exec code, its own list_agents left out, another server found', () => {
@@ -121,7 +119,6 @@ describe('turnToolbox', () => {
     expect(toolState(by('list_agents'))).toBe('used ×1');
     expect(toolState(by('review_turn'))).toBe('used ×1');
     expect(toolState(by('apply_turn'))).toBe('available');
-    expect(box.hidden).toEqual([]);
     expect(box.other).toEqual([{ server: 'other_srv', tools: [{ name: 'ping', uses: 1 }] }]);
     expect(toolboxSummary(box)).toBe('11 AgentBus tools · 3 used · 1 other server');
   });
@@ -176,11 +173,10 @@ describe('the MCP tab', () => {
     const body = r.container.querySelector('#d-body')!;
     expect(body.querySelector('.tab-sum')).toBeNull();
     const heads = Array.from(body.querySelectorAll('.sub-h')).map((h) => h.textContent);
-    expect(heads).toEqual(['AgentBus tools', 'Hidden by AgentBus']);
+    expect(heads).toEqual(['AgentBus tools']);
     const rows = Array.from(body.querySelectorAll('.mcp-t tr')).map((tr) => tr.textContent);
     expect(rows).toContain('list_agentsused ×2 · loaded in call 2');
     expect(rows).toContain('ask_agentavailable');
-    expect(rows).toContain('ListAgentsreplaced by AgentBus tools');
     r.unmount();
   });
 

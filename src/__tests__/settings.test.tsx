@@ -15,7 +15,6 @@ function policy(): Policy {
     allow: [],
     ask: [],
     forbid: ['git push'],
-    unlisted: 'ask',
     isolation: 'auto',
     home_files: [],
     limits: { max_depth: 2, max_jobs_per_turn: 10, max_jobs_per_tree: 30, max_cost_usd_per_tree: 0 },
@@ -87,13 +86,13 @@ afterEach(() => {
 describe('a change of the policy', () => {
   it('holds only the keys whose value differs, nested as a policy', () => {
     const read = policy();
-    const draft = { ...policy(), unlisted: 'refuse', limits: { ...read.limits as object, max_depth: 3 }, forbid: ['git push'] };
-    expect(changeOf(read, draft)).toEqual({ unlisted: 'refuse', limits: { max_depth: 3 } });
+    const draft = { ...policy(), isolation: 'copy', limits: { ...read.limits as object, max_depth: 3 }, forbid: ['git push'] };
+    expect(changeOf(read, draft)).toEqual({ isolation: 'copy', limits: { max_depth: 3 } });
     expect(isEmpty(changeOf(read, policy()))).toBe(true);
     // A list counts as one value: any change sends the whole list.
     expect(changeOf(read, { ...policy(), forbid: ['git push', 'rm'] })).toEqual({ forbid: ['git push', 'rm'] });
     // A key left out of the draft is not a change.
-    expect(changeOf(read, { unlisted: 'ask' })).toEqual({});
+    expect(changeOf(read, { isolation: 'auto' })).toEqual({});
   });
 
   it('reads and writes dotted keys', () => {
@@ -127,9 +126,9 @@ describe('the settings routes', () => {
     const src = new LiveDataSource({ baseUrl: 'http://127.0.0.1:8787', token: 'tok' });
     const got = await src.getPolicy();
     expect(got.etag).toBe('"v1"');
-    await src.patchPolicy({ unlisted: 'refuse' }, got.etag);
-    expect(seen[1]).toEqual({ method: 'PATCH', ifMatch: '"v1"', body: { unlisted: 'refuse' } });
-    await expect(src.patchPolicy({ unlisted: 'refuse' }, '"v0"')).rejects.toMatchObject({ status: 412 });
+    await src.patchPolicy({ forbid: ['git push'] }, got.etag);
+    expect(seen[1]).toEqual({ method: 'PATCH', ifMatch: '"v1"', body: { forbid: ['git push'] } });
+    await expect(src.patchPolicy({ forbid: ['git push'] }, '"v0"')).rejects.toMatchObject({ status: 412 });
     expect((await src.getInstructions()).value).toBe('hi');
     // No ETag is an error, never a write that overwrites whatever is there.
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(policy()), { status: 200 })));
@@ -284,7 +283,7 @@ describe('the Settings page', () => {
     const advancedOnly = ['isolation'];
     expect([...SETTINGS_CONTROLS].sort()).toEqual(Object.keys(flatPolicy(policy())).filter((k) => !advancedOnly.includes(k)).sort());
     const groups: Record<string, string[]> = {
-      permissions: ['agent_api.apply', 'allow', 'ask', 'forbid', 'allow.tool', 'ask.tool', 'forbid.tool', 'unlisted'],
+      permissions: ['agent_api.apply', 'allow', 'ask', 'forbid', 'allow.tool', 'ask.tool', 'forbid.tool'],
       config: ['home_files'],
       limits: ['limits.max_depth', 'limits.max_jobs_per_turn', 'limits.max_jobs_per_tree', 'limits.max_cost_usd_per_tree'],
     };
@@ -492,17 +491,17 @@ describe('the Settings page', () => {
     await pick(container, '[data-part="advanced"]');
     await setValue(container.querySelector('textarea[name="policy"]'), JSON.stringify({ ...policy(), forbid: ['git push', 'rm'] }));
     await pick(container, '[data-part="permissions"]');
-    await click(button(container, 'Refuse'));
+    await setValue(container.querySelector('textarea[name="ask"]'), 'git pull');
     await click(button(container, 'Save permissions'));
     await flush();
-    expect(state.policy.unlisted).toBe('refuse');
+    expect(state.policy.ask).toEqual(['git pull']);
     await pick(container, '[data-part="advanced"]');
     expect((container.querySelector('textarea[name="policy"]') as HTMLTextAreaElement).value).toContain('"rm"');
     await click(button(container, 'Save policy'));
     await flush();
-    // Only what was edited in Advanced: the unlisted choice saved before stays.
+    // Only what was edited in Advanced: the ask list saved before stays.
     expect(api.patchPolicy).toHaveBeenLastCalledWith({ forbid: ['git push', 'rm'] }, expect.any(String));
-    expect(state.policy.unlisted).toBe('refuse');
+    expect(state.policy.ask).toEqual(['git pull']);
     expect(state.policy.forbid).toEqual(['git push', 'rm']);
     // A group draft, then an Advanced save of another key in that group.
     await pick(container, '[data-part="permissions"]');
