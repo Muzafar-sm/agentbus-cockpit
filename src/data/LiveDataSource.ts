@@ -671,14 +671,10 @@ export class LiveDataSource implements DataSource {
     }
   }
 
-  // A new session is three calls in order, each noun created by its own POST
-  // (his API rules, 2026-11-21): POST /api/v0/workspaces (the folder and the
-  // mode) -> POST /api/v0/sessions (the workspace and the name) -> POST
-  // /api/v0/turns (the first message). The turn carries no folder or mode; its
-  // workspace owns them. One idempotency_key covers all three (kept apart by
-  // noun on the service), so a retry reuses the same workspace, session and
-  // turn instead of making new ones. 202 {session, turn, state} from the turn.
-  async startRun(req: RunRequest): Promise<Started> {
+  // POST /api/v0/workspaces: the folder (or folder_ref) and the mode. The
+  // runner checks the folder here, so a bad one is refused at this call, before
+  // any session exists. Returns the workspace's id.
+  async createWorkspace(req: RunRequest): Promise<string> {
     const key = req.idempotency_key;
     const wsBody: Record<string, unknown> = {};
     if (req.folder_ref) wsBody.folder_ref = req.folder_ref;
@@ -688,8 +684,15 @@ export class LiveDataSource implements DataSource {
     wsBody.sandbox = req.sandbox !== false;
     if (key) wsBody.idempotency_key = key;
     const ws = await this.send<{ workspace: string }>('POST', '/api/v0/workspaces', wsBody);
+    return ws.workspace;
+  }
 
-    const sBody: Record<string, unknown> = { workspace: ws.workspace };
+  // POST /api/v0/sessions then POST /api/v0/turns in a workspace already made:
+  // the name goes on the session, the first message on its turn. The folder is
+  // not re-checked -- createWorkspace did that.
+  async startInWorkspace(workspace: string, req: RunRequest): Promise<Started> {
+    const key = req.idempotency_key;
+    const sBody: Record<string, unknown> = { workspace };
     if (req.title) sBody.title = req.title;
     if (key) sBody.idempotency_key = key;
     const session = await this.send<{ session: string }>('POST', '/api/v0/sessions', sBody);
@@ -698,6 +701,19 @@ export class LiveDataSource implements DataSource {
     if (req.model) tBody.model = req.model;
     if (key) tBody.idempotency_key = key;
     return this.post('/api/v0/turns', tBody);
+  }
+
+  // A new session with a first message is three calls in order, each noun
+  // created by its own POST (his API rules, 2026-11-21): workspace -> session
+  // -> turn. The turn carries no folder or mode; its workspace owns them. One
+  // idempotency_key covers all three (kept apart by noun on the service), so a
+  // retry reuses the same workspace, session and turn instead of making new
+  // ones. 202 {session, turn, state} from the turn. A session opened empty
+  // instead makes the workspace up front (createWorkspace) and these last two
+  // when its first message is sent (startInWorkspace).
+  async startRun(req: RunRequest): Promise<Started> {
+    const workspace = await this.createWorkspace(req);
+    return this.startInWorkspace(workspace, req);
   }
 
   // POST /api/v0/turns with session: the next turn of a session, in its own

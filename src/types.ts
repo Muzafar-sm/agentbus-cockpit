@@ -843,10 +843,17 @@ export interface DataSource {
   getApp?(name: string): Promise<AppDef>;
   addApp?(def: AppDef): Promise<AppDef>;
   removeApp?(name: string): Promise<void>;
-  // A source that can start and continue sessions has these two. Each
-  // rejects with an Error whose message is the API's own words. Starting
-  // resolves with the session id and, from the live API, the new turn's id.
+  // A source that can start and continue sessions has these. Each rejects with
+  // an Error whose message is the API's own words. Starting resolves with the
+  // session id and, from the live API, the new turn's id.
   startRun?(req: RunRequest): Promise<Started>;
+  // The two halves of startRun, for a session opened empty (no first message).
+  // createWorkspace makes only the workspace, which is where the runner checks
+  // the folder, so a bad folder is refused before any draft or session exists.
+  // startInWorkspace makes the session and its first turn in a workspace
+  // createWorkspace already made, so the folder is never re-checked there.
+  createWorkspace?(req: RunRequest): Promise<string>;
+  startInWorkspace?(workspace: string, req: RunRequest): Promise<Started>;
   // agent names a saved agent: the turn runs on it, in the session's folder.
   sendMessage?(
     sessionId: string,

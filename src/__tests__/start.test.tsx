@@ -816,6 +816,180 @@ describe('New session: name, no first message, folders', () => {
     r.unmount();
   });
 
+  const workspacePosts = (svc: { reqs: Req[] }) => svc.reqs.filter((q) => q.method === 'POST' && q.path === '/api/v0/workspaces');
+
+  it('a bad folder for an empty-draft session is refused at the form: the dialog stays with the input and the refusal, and nothing is created', async () => {
+    const svc = fakeService({
+      sessions: [row('s1')],
+      events: { s1: oneTurn('s1', 'hi') },
+      agents: AGENTS,
+      // The folder is checked when the workspace is created, which now happens
+      // while the form is still open.
+      workspaces: () => json({ error: 'folder must be an absolute path to an existing directory, at most 4096 bytes' }, 400),
+    });
+    const { r, dialog } = await openDialog(svc);
+    await setValue(dialog.querySelector('input[name="folder"]'), '/config/Sites/temp');
+    await setValue(dialog.querySelector('input[name="name"]'), 'Fix login');
+    // No first message: a session opened empty. The workspace is still made now.
+    await submitForm(dialog);
+    await settle();
+
+    // The dialog stays open with the folder and name kept and the refusal in
+    // plain words. No draft conversation and no session were made.
+    const back = r.container.querySelector('.new-dialog')!;
+    expect(back).not.toBeNull();
+    expect((back.querySelector('input[name="folder"]') as HTMLInputElement).value).toBe('/config/Sites/temp');
+    expect((back.querySelector('input[name="name"]') as HTMLInputElement).value).toBe('Fix login');
+    expect(back.querySelector('.form-error')?.textContent).toBe('That folder does not exist.');
+    expect(workspacePosts(svc)).toHaveLength(1);
+    expect(sessionBody(svc)).toBeUndefined();
+    expect(posts(svc)).toEqual([]);
+    // No message card anywhere: the failure never reached a conversation.
+    expect(r.container.querySelector('.tb.pending')).toBeNull();
+    r.unmount();
+  });
+
+  it('an empty-draft session makes its workspace up front; the first message adds the session and turn to it', async () => {
+    const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS });
+    const { r, dialog } = await openDialog(svc);
+    await setValue(dialog.querySelector('input[name="folder"]'), '/Users/ana/x');
+    await setValue(dialog.querySelector('input[name="name"]'), 'Fix login');
+    await submitForm(dialog);
+    await settle();
+    // The workspace was made as the draft opened (the folder checked then), and
+    // the folder is remembered. No session or turn yet.
+    expect(r.container.querySelector('.new-dialog')).toBeNull();
+    expect(workspaceBody(svc)).toEqual({ folder: '/Users/ana/x', sandbox: true });
+    expect(workspacePosts(svc)).toHaveLength(1);
+    expect(sessionBody(svc)).toBeUndefined();
+    expect(posts(svc)).toEqual([]);
+    expect(r.container.querySelector('#c-head .colhead-title')?.textContent).toBe('Fix login');
+    expect(JSON.parse(localStorage.getItem('agentbus.folders') ?? '[]')).toEqual(['/Users/ana/x']);
+
+    // The first message adds the session and turn to the workspace already
+    // made; it is not re-created.
+    await setValue(r.container.querySelector('#c-reply textarea'), 'read the README');
+    await submitForm(r.container.querySelector('#c-reply form'));
+    await settle();
+    expect(workspacePosts(svc)).toHaveLength(1);
+    expect(sessionBody(svc)).toEqual({ workspace: 'ws_new1', title: 'Fix login', idempotency_key: expect.stringMatching(/^cockpit-msg-/) });
+    expect(sentBody(svc)).toEqual({ session: 'new1', agent: 'claude', prompt: 'read the README', idempotency_key: expect.stringMatching(/^cockpit-msg-/) });
+    r.unmount();
+  });
+
+  it("a draft's first message refused at the turn stays a failed card and does not disturb a newer draft", async () => {
+    let failTurn: ((r: Response) => void) | null = null;
+    const svc = fakeService({
+      sessions: [row('s1')],
+      events: { s1: oneTurn('s1', 'hi') },
+      agents: AGENTS,
+      // The workspace and session succeed; the first turn is held, then refused
+      // (an agent problem, not the folder).
+      runs: () => new Promise<Response>((resolve) => (failTurn = resolve)),
+    });
+    const { r, dialog } = await openDialog(svc);
+    await setValue(dialog.querySelector('input[name="folder"]'), '/Users/ana/x');
+    await submitForm(dialog);
+    await settle();
+    await setValue(r.container.querySelector('#c-reply textarea'), 'first in A');
+    await submitForm(r.container.querySelector('#c-reply form'));
+    await settle();
+    // Open a second empty draft while the first turn is still in flight.
+    await click(r.container.querySelector('#sessions button.new-session'));
+    await settle();
+    const d2 = r.container.querySelector('.new-dialog')!;
+    await setValue(d2.querySelector('input[name="folder"]'), '/Users/ana/y');
+    await submitForm(d2);
+    await settle();
+    expect(r.container.querySelector('.new-dialog')).toBeNull();
+
+    // The first turn is refused now. The form does not reopen, and the second
+    // draft and its box are untouched.
+    await act(async () => failTurn!(json({ error: 'no saved agent named claude' }, 400)));
+    await settle();
+    expect(r.container.querySelector('.new-dialog')).toBeNull();
+    expect(r.container.querySelector('#c-head .colhead-title')?.textContent).toBe('New session');
+    expect((r.container.querySelector('#c-reply textarea') as HTMLTextAreaElement).disabled).toBe(false);
+    r.unmount();
+  });
+
+  it("a draft's first turn refused keeps a second pending message rather than losing it", async () => {
+    let failTurn: ((r: Response) => void) | null = null;
+    const svc = fakeService({
+      sessions: [row('s1')],
+      events: { s1: oneTurn('s1', 'hi') },
+      agents: AGENTS,
+      runs: () => new Promise<Response>((resolve) => (failTurn = resolve)),
+    });
+    const { r, dialog } = await openDialog(svc);
+    await setValue(dialog.querySelector('input[name="folder"]'), '/Users/ana/x');
+    await submitForm(dialog);
+    await settle();
+    // Two messages before the first turn resolves: the second rides on it.
+    await setValue(r.container.querySelector('#c-reply textarea'), 'first');
+    await submitForm(r.container.querySelector('#c-reply form'));
+    await settle();
+    await setValue(r.container.querySelector('#c-reply textarea'), 'second');
+    await submitForm(r.container.querySelector('#c-reply form'));
+    await settle();
+
+    // The first turn is refused. Both messages stay as failed cards, each
+    // recoverable with Edit; nothing is torn down, so no input is lost.
+    await act(async () => failTurn!(json({ error: 'no saved agent named claude' }, 400)));
+    await settle();
+    expect(r.container.querySelector('.new-dialog')).toBeNull();
+    const bubbles = Array.from(r.container.querySelectorAll('.tb.pending.failed .bubble')).map((b) => b.textContent);
+    expect(bubbles.sort()).toEqual(['first', 'second']);
+    r.unmount();
+  });
+
+  it('a refused second empty-draft folder does not strand the first draft\'s awaited turn', async () => {
+    let releaseTurn: ((r: Response) => void) | null = null;
+    let badFolder = false;
+    const svc = fakeService({
+      sessions: [row('s1')],
+      events: { s1: oneTurn('s1', 'hi') },
+      agents: AGENTS,
+      // The first draft's turn is held in flight; the second draft's workspace
+      // is refused while it is still pending.
+      runs: () => new Promise<Response>((resolve) => (releaseTurn = resolve)),
+      workspaces: (body) => {
+        if (badFolder) return json({ error: 'folder must be an absolute path to an existing directory, at most 4096 bytes' }, 400);
+        const b = body as { folder?: string; folder_ref?: string; machine?: string; sandbox?: boolean };
+        return json({ workspace: 'ws_new1', folder: b.folder, folder_ref: b.folder_ref, machine: b.machine, sandbox: b.sandbox !== false }, 201);
+      },
+    });
+    const { r, dialog } = await openDialog(svc);
+    await setValue(dialog.querySelector('input[name="folder"]'), '/Users/ana/x');
+    await submitForm(dialog);
+    await settle();
+    // First draft's first message: its turn hangs, so its awaited-turn is still
+    // pending.
+    await setValue(r.container.querySelector('#c-reply textarea'), 'go');
+    await submitForm(r.container.querySelector('#c-reply form'));
+    await settle();
+    // A second empty session with a bad folder is refused at its workspace call.
+    badFolder = true;
+    await click(r.container.querySelector('#sessions button.new-session'));
+    await settle();
+    const d2 = r.container.querySelector('.new-dialog')!;
+    await setValue(d2.querySelector('input[name="folder"]'), '/bad');
+    await submitForm(d2);
+    await settle();
+    expect(d2.querySelector('.form-error')?.textContent).toBe('That folder does not exist.');
+
+    // The first draft's turn now completes and its session streams in: it must
+    // still be selected, not stranded by the refused second draft.
+    await act(async () => releaseTurn!(json({ session: 'new1', turn: 'Tn', state: 'running', base_url: `${BASE}/s/new1/t/Tn` }, 202)));
+    await settle();
+    svc.state.sessions = [row('new1', { open: true, last: '2026-11-05T10:00:00Z' }), row('s1')];
+    await svc.push(ev({ session: 'new1', kind: 'session.registered', agent: 'claude', folder: '/Users/ana/x' }));
+    await svc.push(ev({ session: 'new1', kind: 'turn.started', turn: 'Tn', text: 'go' }));
+    await settle();
+    expect(r.container.querySelector('#sessions .sess.on code')?.textContent).toBe('new1');
+    r.unmount();
+  });
+
   it('picking a session drops the draft', async () => {
     const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS });
     const { r, dialog } = await openDialog(svc);

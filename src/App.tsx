@@ -933,22 +933,46 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     awaitTurn(gen, started);
     return started;
   };
+  // A draft's first message: the session and its first turn, in the workspace
+  // the draft already holds. The folder was checked when that workspace was
+  // made, so this cannot be refused for the folder.
+  const launchInWorkspace = async (workspace: string, req: RunRequest, title: string | undefined, gen: number): Promise<Started> => {
+    const started = await dataSource.startInWorkspace!(workspace, { ...req, title });
+    refreshQueue?.();
+    awaitTurn(gen, started);
+    return started;
+  };
   // A session with no first message is a draft here: an empty conversation
   // with the agent, folder and name. A session in AgentBus starts with its
-  // first turn, so the draft becomes one when its first message is sent.
-  const [draft, setDraft] = useState<{ id: number; req: RunRequest; title?: string; session?: string } | null>(null);
+  // first turn, so the draft becomes one when its first message is sent. Its
+  // workspace is made up front (startRun), so the folder is already checked:
+  // the draft always names a good folder, and its first message cannot be
+  // refused for one.
+  const [draft, setDraft] = useState<{ id: number; req: RunRequest; title?: string; session?: string; workspace: string } | null>(null);
   const draftSeq = useRef(0);
   const startRun = async (req: RunRequest, title?: string) => {
-    const gen = nextSend();
     if (req.prompt.trim() === '') {
+      // Make the workspace now, while the form is still open. That is where the
+      // runner checks the folder, so a bad one is refused here: the error
+      // throws out to the dialog, which stays open with everything kept, and no
+      // draft -- and no session -- is ever made from a folder that cannot be
+      // used.
+      const workspace = await dataSource.createWorkspace!(req);
+      if (req.folder) rememberFolder(req.folder, req.machine);
+      if (req.machine) rememberMachine(req.machine);
+      // Only now that the workspace exists do we make this the newest send and
+      // open the draft. Bumping after the refusal above would have stranded any
+      // other draft's in-flight turn (it reads the generation to auto-select).
+      nextSend();
       setAwaitedTurn(null);
       setAwaitedSession(null);
       setPanelOpen(false);
-      setDraft({ id: ++draftSeq.current, req, title });
+      setDraft({ id: ++draftSeq.current, req, title, workspace });
       setNewSession(null);
       columns.forward('convo');
       return;
     }
+    const gen = nextSend();
     await launch(req, title, gen);
     setDraft(null);
     setNewSession(null);
@@ -968,7 +992,8 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           refreshQueue?.();
           return next;
         }
-        const run = launch(
+        const run = launchInWorkspace(
+          draft.workspace,
           { ...draft.req, agent: agent ?? draft.req.agent, prompt, idempotency_key: key },
           draft.title,
           gen
@@ -978,7 +1003,10 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         try {
           started = await run;
         } catch (err) {
-          // Refused: the next message tries a new session again.
+          // Refused (e.g. the agent cannot start, not the folder -- that was
+          // checked when the workspace was made). The message stays as a failed
+          // card the person can edit and send again, the agent picked right
+          // there.
           if (draftRun.current?.started === run) draftRun.current = null;
           throw err;
         }
