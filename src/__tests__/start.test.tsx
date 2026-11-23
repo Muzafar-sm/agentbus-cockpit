@@ -464,16 +464,20 @@ describe('New session', () => {
   });
 });
 
-describe('The Sandbox switch', () => {
-  const sandboxSwitch = (dialog: Element) => dialog.querySelector('[role="switch"][name="sandbox"]') as HTMLButtonElement;
+describe('The mode selector', () => {
+  const mode = (dialog: Element, v: string) => dialog.querySelector(`[data-mode="${v}"]`) as HTMLButtonElement;
 
-  it('is on by default, so the workspace is created as a sandbox', async () => {
+  it('defaults to Copy, so the workspace is created as a sandbox', async () => {
     const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS });
     const r = await mount(svc);
     await click(r.container.querySelector('#sessions button.new-session'));
     await settle();
     const dialog = r.container.querySelector('.new-dialog')!;
-    expect(sandboxSwitch(dialog).getAttribute('aria-checked')).toBe('true');
+    expect(mode(dialog, 'copy').getAttribute('aria-checked')).toBe('true');
+    expect(mode(dialog, 'direct').getAttribute('aria-checked')).toBe('false');
+    // Locked is shown but cannot be picked yet.
+    expect(mode(dialog, 'locked').disabled).toBe(true);
+    expect(mode(dialog, 'locked').getAttribute('title')).toContain('Coming later');
     await setValue(dialog.querySelector('input[name="folder"]'), '/Users/ana/x');
     await setValue(dialog.querySelector('textarea[name="prompt"]'), 'go');
     await submitForm(dialog);
@@ -481,14 +485,14 @@ describe('The Sandbox switch', () => {
     r.unmount();
   });
 
-  it('turned off creates a direct workspace and remembers the choice for next time', async () => {
+  it('Direct creates a direct workspace and remembers the choice for next time', async () => {
     const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS });
     const r = await mount(svc);
     await click(r.container.querySelector('#sessions button.new-session'));
     await settle();
     const dialog = r.container.querySelector('.new-dialog')!;
-    await click(sandboxSwitch(dialog));
-    expect(sandboxSwitch(dialog).getAttribute('aria-checked')).toBe('false');
+    await click(mode(dialog, 'direct'));
+    expect(mode(dialog, 'direct').getAttribute('aria-checked')).toBe('true');
     await setValue(dialog.querySelector('input[name="folder"]'), '/Users/ana/x');
     await setValue(dialog.querySelector('textarea[name="prompt"]'), 'go');
     await submitForm(dialog);
@@ -503,7 +507,7 @@ describe('The Sandbox switch', () => {
     const r = await mount(svc);
     await click(r.container.querySelector('#sessions button.new-session'));
     await settle();
-    expect(sandboxSwitch(r.container.querySelector('.new-dialog')!).getAttribute('aria-checked')).toBe('false');
+    expect(mode(r.container.querySelector('.new-dialog')!, 'direct').getAttribute('aria-checked')).toBe('true');
     r.unmount();
   });
 });

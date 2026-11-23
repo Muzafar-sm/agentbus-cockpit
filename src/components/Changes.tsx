@@ -214,8 +214,9 @@ interface ApplyPanelProps {
   // The conversation's preview: null while it is read the first time.
   preview: ApplyPreview | null;
   error?: string | null;
-  // POST /api/v0/turns/<turn>/apply, and a read of that apply's state while
-  // it is queued or running. Absent when the source cannot apply.
+  // Applies the workspace's changes up to this turn (POST
+  // /api/v0/workspaces/<id>/apply), and a read of that apply's state while it
+  // is queued or running. Absent when the source cannot apply.
   apply?: (turn: string) => Promise<ApplyState>;
   readApply?: (turn: string) => Promise<ApplyState>;
   // Told when an apply ends, applied or not, so the preview is read again.

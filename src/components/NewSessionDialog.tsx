@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { FolderInfo, lastMachine, lastSandbox, recentFolders, rememberSandbox } from '../data/folders';
 import { Harness, RunRequest, RunnerInfo, SavedAgent } from '../types';
 import { agentLine } from './AgentsDialog';
-import { Button, Select, Switch } from './Controls';
+import { Button, Seg, Select } from './Controls';
 import { Dialog, DialogActions } from './Dialog';
 import { Notice, WithCode } from './Notice';
 import { LOADING, PRODUCT, SESSION } from '../words';
@@ -259,20 +259,30 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
         <div className="nd-note">
           {byMachine ? `A folder on ${picked?.name ?? 'the machine picked'}.` : `A folder on the machine ${PRODUCT} runs on.`}
         </div>
-        <div className="nd-sandbox">
-          <Switch
-            name="sandbox"
-            label="Sandbox"
-            on={sandbox}
-            onChange={setSandbox}
-            title="Run in a copy of the folder; apply its changes when you are ready"
+        <label className="nd-sandbox">
+          <span>Where it runs</span>
+          <Seg
+            label="Where the session runs"
+            dataKey="mode"
+            value={sandbox ? 'copy' : 'direct'}
+            options={[
+              { value: 'direct', label: 'Direct' },
+              { value: 'copy', label: 'Copy' },
+              {
+                value: 'locked',
+                label: 'Locked',
+                disabled: true,
+                title: 'Coming later: also hides your secrets and holds anything going out',
+              },
+            ]}
+            onChange={(v) => setSandbox(v === 'copy')}
           />
           <div className="nd-note">
             {sandbox
               ? 'Works in a copy. Your folder changes only when you apply.'
               : 'Works in your folder as it is — no copy to apply.'}
           </div>
-        </div>
+        </label>
         <label>
           <span>Name (optional)</span>
           <input
