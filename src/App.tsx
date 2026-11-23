@@ -103,6 +103,19 @@ const TURN_LIST_KINDS = new Set([
 // its changes recorded, or an apply done. On these the preview is read again.
 const PREVIEW_KINDS = new Set(['turn.completed', 'turn.changed', 'turn.applied', 'workspace.applied', 'workspace.discarded']);
 
+// Kinds that change what a turn's Changes or Context tab would read: the turn
+// ended by its own completion, or its run closed (a stop or a failure ends
+// that way, with no turn.completed); its changes were recorded; or an apply or
+// a discard moved them. On these the shown turn's fetching tabs read again.
+const TURN_DATA_KINDS = new Set([
+  'turn.completed',
+  'turn.changed',
+  'turn.applied',
+  'workspace.applied',
+  'workspace.discarded',
+  'run.ended',
+]);
+
 // Whether a streamed event changes the turn list of `session`.
 function changesTurns(event: CockpitEvent, session: string): boolean {
   if (event.kind === 'events.dropped') {
@@ -134,6 +147,18 @@ function mergeIntoDetails(details: Record<string, TurnDetail>, events: CockpitEv
     if (next !== held) out = { ...out, [e.turn!]: next };
   }
   return out;
+}
+
+// Bump the data revision of the turns a TURN_DATA_KINDS event changes: the one
+// it names, or, for an event that carries no turn (an apply, a discard, or a
+// run closing), every turn whose events are loaded. The Changes and Context
+// tabs re-read on a bump, so they follow the turn's live events without a timer.
+function bumpTurnRev(cur: Record<string, number>, event: CockpitEvent, details: Record<string, TurnDetail>): Record<string, number> {
+  const ids = event.turn ? [event.turn] : Object.keys(details);
+  if (ids.length === 0) return cur;
+  const next = { ...cur };
+  for (const id of ids) next[id] = (next[id] ?? 0) + 1;
+  return next;
 }
 
 function emptyRow(id: string): SessionSummary {
@@ -172,6 +197,10 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // While switching, it stays the previous session until the new one's turns
   // arrive.
   const [shown, setShown] = useState<Shown | null>(null);
+  // Each loaded turn's data revision, by turn id: bumped when a streamed event
+  // changes what the turn's Changes and Context tabs would read. Those tabs
+  // depend on it, so they re-read on the turn's live events.
+  const [turnRev, setTurnRev] = useState<Record<string, number>>({});
   const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null);
   // A selection is an action: the nonce changes on every click, so selecting
   // the same event again still reaches the panel.
@@ -285,13 +314,14 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // How many of the person's sessions are set aside, so the list offers the
   // "Show archived" toggle only when there is something behind it.
   const archivedCount = useMemo(() => sessions.filter((s) => s.origin?.kind !== 'asked' && s.archived).length, [sessions]);
-  // The sessions a session asked for (ask_agent), from the recorded origin:
-  // shown as links in its conversation so an asked session, kept off the list,
-  // is reachable while it runs, before its result comes back.
+  // The sessions a session asked for (ask_agent), from the recorded origin.
+  // An asked session is one-off and stays off the list; the person never opens
+  // one. Its conversation shows only a plain "waiting" line while one still
+  // runs, so each is given its agent and whether a run still holds it open.
   const askedOf = (sessionId: string) =>
     (allSessions ?? [])
       .filter((s) => s.origin?.kind === 'asked' && s.origin.session === sessionId)
-      .map((s) => ({ id: s.id, title: s.title }));
+      .map((s) => ({ id: s.id, agent: s.first_agent_id ?? s.agent, running: !!s.open }));
   const loading = allSessions === null;
   // A session's title, from the sessions the cockpit holds (GET /sessions).
   // Overview views (the queue) name a turn by this session fact, not by its
@@ -397,6 +427,25 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
       .getTurns(sessionId)
       .then(async (list) => {
         const texts = await loadTexts(sessionId, list.turns);
+        // A turn settling (running -> finished/failed/stopped) is discovered
+        // through several paths -- a streamed event, the end poll, or an
+        // events.dropped refresh -- and the job's end has no event of its own.
+        // Whichever path re-read the list, bump the revision of each loaded
+        // turn whose state changed, here at the one place the list is re-read,
+        // so the Changes and Context tabs follow every path and a settled turn
+        // is current without each path having to know to bump.
+        const prev = shownRef.current;
+        if (prev && prev.session.id === sessionId && isNewerList(prev.cursor, list)) {
+          const was = new Map(prev.session.turnsList.map((t) => [t.id, t.state]));
+          const moved = list.turns.filter((t) => was.has(t.id) && was.get(t.id) !== t.state).map((t) => t.id);
+          if (moved.length > 0) {
+            setTurnRev((cur) => {
+              const next = { ...cur };
+              for (const id of moved) next[id] = (next[id] ?? 0) + 1;
+              return next;
+            });
+          }
+        }
         setShown((s) =>
           s && s.session.id === sessionId && isNewerList(s.cursor, list)
             ? {
@@ -435,6 +484,9 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           const st = await dataSource.queuedTurn!(shownSession, turn).catch(() => null);
           if (!active) return;
           if (st?.ended) {
+            // The job ended with no event to say so. Read the list again: it
+            // now reads the turn as settled, and refreshTurns bumps the turn's
+            // revision on that change, so the Changes and Context tabs re-read.
             refreshTurns.current(shownSession);
             return;
           }
@@ -533,6 +585,11 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         // an apply would write: the bar above the message box reads it again.
         if (s && event.session === s.session.id && PREVIEW_KINDS.has(event.kind)) {
           readPreviewRef.current(s.session.id);
+        }
+        // The shown turn's Changes and Context tabs re-read when its data
+        // changes (its end among them), so a settled turn is current.
+        if (s && event.session === s.session.id && TURN_DATA_KINDS.has(event.kind)) {
+          setTurnRev((cur) => bumpTurnRev(cur, event, s.details));
         }
         // A Discard dropped some turns' changes: mark them in the conversation.
         if (event.kind === 'workspace.discarded') {
@@ -1560,19 +1617,6 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           onAddAgent={canKeepAgents ? () => setAgentsDialog({}) : undefined}
           agentDot={agentDot}
           asked={askedOf(sessionView.id)}
-          onOpenSession={(id) => {
-            // A session not listed yet is opened once its row arrives, as for
-            // a session just started.
-            const s = allSessions?.find((x) => x.id === id);
-            nextSend();
-            setAwaitedTurn(null);
-            if (!s) {
-              setAwaitedSession(id);
-              return;
-            }
-            setAwaitedSession(null);
-            chooseSession(id);
-          }}
           onRename={renameSession}
           applyBar={
             previewTooBig
@@ -1676,6 +1720,11 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         loadSessionContext={dataSource.getSessionContext ? loadSessionContext : undefined}
         panelOpen={panelOpen}
         tooBig={previewTooBig}
+        // Streamed events bump turnRev; a fresh snapshot (the stream restarts,
+        // e.g. on returning to a hidden tab) bumps reloadKey. Either means the
+        // turn's data may have moved since the fetching tabs last read — a
+        // stream that was down could have missed its end — so fold in both.
+        rev={selectedTurn ? (turnRev[selectedTurn.id] ?? 0) + reloadKey : 0}
         tabs={panelTabs}
       />
       )}

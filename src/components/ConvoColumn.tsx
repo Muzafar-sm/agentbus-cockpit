@@ -79,15 +79,12 @@ interface ConvoColumnProps {
   // picker beside Send to that agent (the Review button names a reviewer).
   prefill?: { session: string; text: string; agent?: string } | null;
   onPrefillTaken?: () => void;
-  // Opens another session, for the links of a delivered result (to the
-  // session that did the work) and of an asked turn (to the session that
-  // asked). Without it the links are not shown.
-  onOpenSession?: (sessionId: string) => void;
-  // The sessions this one asked for (ask_agent), newest first: shown as links
-  // under the header so an asked session -- which is kept off the sessions
-  // list -- is reachable while it runs, before its result comes back. Needs
-  // onOpenSession to open them.
-  asked?: { id: string; title?: string }[];
+  // The sessions this one asked for (ask_agent). An asked session is one-off
+  // and stays off the sessions list; the person never opens one. While one
+  // still runs, the conversation shows a plain "waiting" line naming its
+  // agent; the line goes when it ends. running is whether a run still holds
+  // it open; agent is the id its name is read from.
+  asked?: { id: string; agent?: string; running: boolean }[];
   // Given when the source can name sessions: a new title for this one.
   // Rejects with the API's words.
   onRename?: (sessionId: string, title: string) => Promise<void>;
@@ -155,45 +152,20 @@ export function agentNameOf(id: string | undefined, agents?: SavedAgent[]): stri
 }
 
 // The line above a turn's message when the person did not type it: a
-// delivered result names the agent that did the work and links to its
-// session; an asked turn links to the session that asked.
-const OriginLine: React.FC<{ turn: Turn; agents?: SavedAgent[]; onOpenSession?: (id: string) => void }> = ({
-  turn,
-  agents,
-  onOpenSession,
-}) => {
+// delivered result names the agent that did the work; an asked turn says so.
+// Neither links out: an asked session is one-off and the person never opens it.
+const OriginLine: React.FC<{ turn: Turn; agents?: SavedAgent[] }> = ({ turn, agents }) => {
   const o = turn.origin;
   if (!o) return null;
-  const link = (label: string) =>
-    o.session && onOpenSession ? (
-      <>
-        {' · '}
-        <Button
-          kind="link"
-          className="origin-link"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenSession(o.session!);
-          }}
-        >
-          {label}
-        </Button>
-      </>
-    ) : null;
   if (o.kind === 'result') {
     return (
       <div className="m-origin">
         {'Result from '}
         <b>{agentNameOf(o.agent, agents)}</b>, sent by {PRODUCT}
-        {link(`open its ${SESSION}`)}
       </div>
     );
   }
-  return (
-    <div className="m-origin">
-      Asked by another agent{link(`open its ${SESSION}`)}
-    </div>
-  );
+  return <div className="m-origin">Asked by another agent</div>;
 };
 
 // The saved agent a session's next message goes to by default: the one that
@@ -272,7 +244,6 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   onAddAgent,
   agentDot,
   defaultAgent,
-  onOpenSession,
   asked,
   queuedTurn,
   keyed,
@@ -671,6 +642,11 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   // Each "!" command goes after the turn that started before it.
   const placed = commandsAfter(session.turnsList, commands ?? []);
 
+  // The agents of the asked sessions still running, by name. While any are
+  // running, one plain "Waiting on …" line stands above the conversation; it
+  // goes when they end. An asked session is one-off and never opened.
+  const waitingOn = (asked ?? []).filter((a) => a.running).map((a) => agentNameOf(a.agent, agents));
+
   // The chat is prompts and replies, under one header line per turn. A turn's
   // calls and how it continued are in the panel, so opening a turn never
   // makes the chat move. An error line is the exception: it stays on its turn.
@@ -740,17 +716,9 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
           </>
         )}
       </header>
-      {asked && asked.length > 0 && onOpenSession && (
-        <div id="c-asked" className="c-asked" role="note">
-          Asked:{' '}
-          {asked.map((c, i) => (
-            <React.Fragment key={c.id}>
-              {i > 0 ? ', ' : ''}
-              <Button kind="link" className="origin-link" onClick={() => onOpenSession(c.id)}>
-                {c.title || c.id}
-              </Button>
-            </React.Fragment>
-          ))}
+      {waitingOn.length > 0 && (
+        <div id="c-waiting" className="c-waiting" role="status">
+          Waiting on {waitingOn.join(', ')}
         </div>
       )}
       <div id="c-msgs" ref={msgsRef} onScroll={onMsgsScroll}>
@@ -831,7 +799,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                       </>
                     )}
                   </div>
-                  <OriginLine turn={turn} agents={agents} onOpenSession={onOpenSession} />
+                  <OriginLine turn={turn} agents={agents} />
                   <div className={`m-user${turn.origin ? ' from-agent' : ''}`}>
                     <div className={`bubble${turn.origin?.kind === 'result' ? ' delivered' : ''}`}>
                       {turn.prompt}

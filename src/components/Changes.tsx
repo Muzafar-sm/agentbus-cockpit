@@ -121,15 +121,25 @@ type loaded = {
 };
 export const TurnChangesTab: React.FC<{
   turnId: string;
+  // Bumps when the turn's changes change (a streamed turn.changed, its end, an
+  // apply or a discard): the tab reads again, keeping what it shows until the
+  // new read lands, so there is no flash of Loading. Left out: read once.
+  rev?: number;
   loadDiff: () => Promise<TurnDiff>;
   loadChanges?: (before?: number) => Promise<TurnChangesPage>;
   tooBig?: boolean;
-}> = ({ turnId, loadDiff, loadChanges, tooBig }) => {
+}> = ({ turnId, rev, loadDiff, loadChanges, tooBig }) => {
   const [diff, setDiff] = useState<{ turn: string; d: TurnDiff } | null>(null);
   const [changes, setChanges] = useState<loaded | null>(null);
   const [error, setError] = useState<{ turn: string; msg: string } | null>(null);
   const [moreError, setMoreError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  // True while the first page is being read (on open, a new turn, or a rev
+  // re-read). Load more is held until it lands: its cursor (nextBefore) is the
+  // old page's until the new page replaces it, so a Load more begun now would
+  // page from a cursor the incoming page is about to make stale and splice an
+  // unrelated page in. The old files stay on screen meanwhile.
+  const [reading, setReading] = useState(false);
   const diffRef = useRef(loadDiff);
   diffRef.current = loadDiff;
   const changesRef = useRef(loadChanges);
@@ -139,19 +149,32 @@ export const TurnChangesTab: React.FC<{
   const gen = useRef(0);
   useEffect(() => {
     const mine = ++gen.current;
-    setChanges(null);
-    setError(null);
     setMoreError(null);
     setLoadingMore(false);
+    setReading(true);
+    // The shown diff and changes are left in place until the new read lands,
+    // so a re-read for the same turn (rev bumped) does not flash Loading. A
+    // new turn's old data is gated out by its turn id in the render below, so
+    // that case shows Loading at once.
     Promise.all([diffRef.current(), changesRef.current ? changesRef.current() : Promise.resolve(null)]).then(
       ([d, page]) => {
         if (mine !== gen.current) return;
         setDiff({ turn: turnId, d });
-        if (page) setChanges({ turn: turnId, files: page.changes, nextBefore: page.next_before, truncated: !!page.truncated, diffsCut: !!page.diffs_cut });
+        setChanges(
+          page
+            ? { turn: turnId, files: page.changes, nextBefore: page.next_before, truncated: !!page.truncated, diffsCut: !!page.diffs_cut }
+            : null
+        );
+        setError(null);
+        setReading(false);
       },
-      (err) => mine === gen.current && setError({ turn: turnId, msg: (err as Error).message })
+      (err) => {
+        if (mine !== gen.current) return;
+        setError({ turn: turnId, msg: (err as Error).message });
+        setReading(false);
+      }
     );
-  }, [turnId]);
+  }, [turnId, rev]);
   const d = diff?.turn === turnId ? diff.d : null;
   const ch = changes?.turn === turnId ? changes : null;
   const err = error?.turn === turnId ? error.msg : null;
@@ -168,7 +191,7 @@ export const TurnChangesTab: React.FC<{
     );
   }
   const loadMore = () => {
-    if (!ch || ch.nextBefore == null || !changesRef.current || loadingMore) return;
+    if (!ch || ch.nextBefore == null || !changesRef.current || loadingMore || reading) return;
     const mine = gen.current;
     setLoadingMore(true);
     setMoreError(null);
@@ -202,7 +225,7 @@ export const TurnChangesTab: React.FC<{
       {f && f.count > 0 && ch && <FileList files={shown} truncated={ch.truncated} diffsCut={ch.diffsCut} />}
       {moreError && <Notice kind="error">{moreError}</Notice>}
       {ch && ch.nextBefore != null && (
-        <Button kind="quiet" small onClick={loadMore} disabled={loadingMore}>
+        <Button kind="quiet" small onClick={loadMore} disabled={loadingMore || reading}>
           {loadingMore ? 'Loading…' : 'Load more'}
         </Button>
       )}

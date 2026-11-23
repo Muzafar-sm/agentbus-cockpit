@@ -4,7 +4,7 @@
 // "Apply to my folder", and each turn's own read-only Changes tab.
 import { act } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { App } from '../App';
+import { App, TURN_END_POLL_MS } from '../App';
 import { ApplyPanel, TOO_BIG, TurnChangesTab, turnTooBig } from '../components/Changes';
 import { LiveDataSource } from '../data/LiveDataSource';
 import { ApplyPreview, ApplyState, DiscardState, TurnChangesPage, TurnDiff } from '../types';
@@ -381,6 +381,79 @@ describe("A turn's Changes tab", () => {
     r.unmount();
   });
 
+  it('holds Load more while a rev re-read is in flight, so it cannot page from the stale cursor', async () => {
+    const page1: TurnChangesPage = { count: 3, changes: [{ path: 'z.txt', change: 'added', size: 1 }], next_before: 2 };
+    let landSecond: ((p: TurnChangesPage) => void) | null = null;
+    let call = 0;
+    const loadChanges = vi.fn((_before?: number) => {
+      call++;
+      if (call === 1) return Promise.resolve(page1); // the first page, cursor 2
+      if (call === 2) return new Promise<TurnChangesPage>((res) => (landSecond = res)); // the rev re-read, held
+      return new Promise<TurnChangesPage>(() => {}); // a later Load more, never landed
+    });
+    const big: TurnDiff = { ...diff, files: { isolated: true, count: 3 } };
+    const el = (rev: number) => <TurnChangesTab turnId="T1" rev={rev} loadDiff={async () => big} loadChanges={loadChanges} />;
+    const r = await render(el(0));
+    await flush();
+    const more = () => button(r.container, 'Load more');
+    expect(more()?.disabled).toBe(false);
+    // rev bumps: the first-page re-read is in flight, so Load more is held.
+    const { act } = await import('react');
+    await act(async () => {
+      r.root.render(el(1));
+    });
+    expect(more()?.disabled).toBe(true);
+    const callsBefore = loadChanges.mock.calls.length;
+    await click(more()); // a click while held pages nothing: the cursor is stale
+    expect(loadChanges.mock.calls.length).toBe(callsBefore);
+    // The re-read lands with a fresh page and cursor; Load more frees up and
+    // pages from that fresh cursor, not the one the stale page carried.
+    await act(async () => {
+      landSecond!({ count: 3, changes: [{ path: 'm.txt', change: 'added', size: 1 }], next_before: 5 });
+      await Promise.resolve();
+    });
+    await flush();
+    expect(more()?.disabled).toBe(false);
+    await click(more());
+    await flush();
+    expect(loadChanges).toHaveBeenLastCalledWith(5);
+    r.unmount();
+  });
+
+  it('re-reads on a rev bump, keeping the files shown until the new read lands (no flash of Loading)', async () => {
+    let landSecond: (() => void) | null = null;
+    let first = true;
+    const loadChanges = vi.fn((_before?: number) => {
+      if (first) {
+        first = false;
+        return Promise.resolve(changesPage); // a.txt
+      }
+      return new Promise<TurnChangesPage>((res) => {
+        landSecond = () => res({ count: 1, changes: [{ path: 'b.txt', change: 'added', size: 1, diff: A_DIFF }], next_before: null });
+      });
+    });
+    const el = (rev: number) => <TurnChangesTab turnId="T1" rev={rev} loadDiff={async () => diff} loadChanges={loadChanges} />;
+    const r = await render(el(0));
+    await flush();
+    const paths = () => Array.from(r.container.querySelectorAll('.ch-path code')).map((e) => e.textContent);
+    expect(paths()).toEqual(['a.txt']);
+    // rev bumps: the second read is in flight; the old file still shows, no Loading.
+    const { act } = await import('react');
+    await act(async () => {
+      r.root.render(el(1));
+    });
+    expect(paths()).toEqual(['a.txt']);
+    expect(r.container.querySelector('.turn-changes')).not.toBeNull();
+    // The new read lands: the file list swaps.
+    await act(async () => {
+      landSecond!();
+      await Promise.resolve();
+    });
+    await flush();
+    expect(paths()).toEqual(['b.txt']);
+    r.unmount();
+  });
+
   it('shows the API words when Load more fails, and keeps the files already loaded', async () => {
     const page1: TurnChangesPage = { count: 3, changes: [{ path: 'z.txt', change: 'added', size: 1 }], next_before: 2 };
     const loadChanges = vi.fn(async (before?: number) => {
@@ -394,6 +467,126 @@ describe("A turn's Changes tab", () => {
     await flush();
     expect(r.container.textContent).toContain('offline');
     expect(Array.from(r.container.querySelectorAll('.ch-path code')).map((e) => e.textContent)).toEqual(['z.txt']);
+    r.unmount();
+  });
+
+  it('re-reads when the turn gets an event that changes its data (turn.changed), and shows the new file', async () => {
+    let page: TurnChangesPage = changesPage; // a.txt
+    const getTurnDiff = vi.fn(async () => diff);
+    const getTurnChanges = vi.fn(async () => page);
+    const { r, push } = await open({ getTurnDiff, getTurnChanges, applyWorkspace: vi.fn() });
+    await click(r.container.querySelector('#convo .tb'));
+    await flush();
+    await click(Array.from(r.container.querySelectorAll('#d-tabs .tab')).find((t) => t.textContent === 'Changes'));
+    await flush();
+    const paths = () => Array.from(r.container.querySelectorAll('.ch-path code')).map((e) => e.textContent);
+    expect(paths()).toEqual(['a.txt']);
+    const reads = getTurnChanges.mock.calls.length;
+    // The turn's changes change: a new file, delivered by a turn.changed event.
+    page = { count: 1, changes: [{ path: 'b.txt', change: 'added', size: 2, diff: A_DIFF }], next_before: null };
+    await act(async () => push(ev({ seq: 6, session: 'c1', kind: 'turn.changed', turn: 'T1' })));
+    await flush();
+    expect(getTurnChanges.mock.calls.length).toBe(reads + 1);
+    expect(paths()).toEqual(['b.txt']);
+    // The run ending with no turn.completed (a stop or a failure ends the run
+    // that way) also re-reads, so a settled turn is current.
+    const afterChange = getTurnChanges.mock.calls.length;
+    await act(async () => push(ev({ seq: 7, session: 'c1', kind: 'run.ended', hold: 'h1' })));
+    await flush();
+    expect(getTurnChanges.mock.calls.length).toBe(afterChange + 1);
+    // Another session's event does not re-read this turn.
+    const before = getTurnChanges.mock.calls.length;
+    await act(async () => push(ev({ seq: 8, session: 'c2', kind: 'turn.changed', turn: 'X' })));
+    await flush();
+    expect(getTurnChanges.mock.calls.length).toBe(before);
+    r.unmount();
+  });
+
+  // A running turn whose Changes tab is open. Its changeset commits a moment
+  // after its last event, with nothing streamed to say so: the service reads
+  // the turn as settled, a state the events alone do not carry. These build a
+  // source whose getTurns reports that settling once `settled` flips, as the
+  // real service does, over a liveReplay that still serves the turn's events.
+  const runningBase = [
+    ev({ seq: 1, session: 'c1', kind: 'session.registered', agent: 'claude', folder: '/w' }),
+    ev({ seq: 2, session: 'c1', kind: 'run.started', turn: 'T1', hold: 'h1' }),
+    ev({ seq: 3, session: 'c1', kind: 'turn.started', turn: 'T1', exchange: 'x1', text: 'edit a.txt' }),
+    ev({ seq: 4, session: 'c1', kind: 'model.requested', turn: 'T1', exchange: 'x1' }),
+  ];
+  const runningSource = (extra: Parameters<typeof liveReplay>[1], settledRef: { v: boolean }) => {
+    const lr = liveReplay(runningBase, extra);
+    const source: typeof lr.source = {
+      ...lr.source,
+      getTurns: async (id: string) => {
+        const list = await lr.replay().getTurns(id);
+        return settledRef.v
+          ? { ...list, seq: (list.seq ?? 0) + 1, turns: list.turns.map((t) => (t.id === 'T1' ? { ...t, state: 'finished' as const } : t)) }
+          : list;
+      },
+    };
+    return { ...lr, source };
+  };
+  const openChanges = async (r: { container: HTMLElement }) => {
+    await click(r.container.querySelector('#convo .tb'));
+    await flush();
+    await click(Array.from(r.container.querySelectorAll('#d-tabs .tab')).find((t) => t.textContent === 'Changes'));
+    await flush();
+  };
+  const paths = (c: HTMLElement) => Array.from(c.querySelectorAll('.ch-path code')).map((e) => e.textContent);
+
+  it('re-reads the Changes tab when the end poll sees the turn settle (no event says so)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let page: TurnChangesPage = { count: 0, changes: [], next_before: null };
+      const settledRef = { v: false };
+      const getTurnChanges = vi.fn(async () => page);
+      const queuedTurn = vi.fn(async () => ({ ended: settledRef.v, failed: false }));
+      const { source } = runningSource({ getTurnDiff: async () => diff, getTurnChanges, queuedTurn }, settledRef);
+      const r = await render(<App dataSource={source} />);
+      await flush();
+      await flush();
+      await openChanges(r);
+      expect(paths(r.container)).toEqual([]); // the read made while it ran saw nothing
+      const reads = getTurnChanges.mock.calls.length;
+      // The job ends: the changeset is committed, the service reads the turn
+      // settled, and the poll sees ended.
+      page = { count: 1, changes: [{ path: 'a.txt', change: 'added', size: 2, diff: A_DIFF }], next_before: null };
+      settledRef.v = true;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(TURN_END_POLL_MS + 100);
+      });
+      await flush();
+      expect(getTurnChanges.mock.calls.length).toBeGreaterThan(reads);
+      expect(paths(r.container)).toEqual(['a.txt']);
+      r.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('re-reads the Changes tab when an events.dropped refresh finds the turn settled', async () => {
+    // No queuedTurn: the poll is off, so the only re-read comes from the
+    // events.dropped refresh finding the turn settled. The old running-state
+    // refresh handled this; the revision must still follow it.
+    let page: TurnChangesPage = { count: 0, changes: [], next_before: null };
+    const settledRef = { v: false };
+    const getTurnChanges = vi.fn(async () => page);
+    const { source, push } = runningSource({ getTurnDiff: async () => diff, getTurnChanges }, settledRef);
+    const r = await render(<App dataSource={source} />);
+    await flush();
+    await flush();
+    await openChanges(r);
+    expect(paths(r.container)).toEqual([]);
+    const reads = getTurnChanges.mock.calls.length;
+    // The drop coincides with the turn having settled: the refresh it forces
+    // reads the turn finished, so the tab must read its changes again.
+    page = { count: 1, changes: [{ path: 'a.txt', change: 'added', size: 2, diff: A_DIFF }], next_before: null };
+    settledRef.v = true;
+    await act(async () => push(ev({ seq: 5, session: 'c1', kind: 'events.dropped', sessions: ['c1'] })));
+    await flush();
+    await flush();
+    expect(getTurnChanges.mock.calls.length).toBeGreaterThan(reads);
+    expect(paths(r.container)).toEqual(['a.txt']);
     r.unmount();
   });
 

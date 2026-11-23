@@ -603,12 +603,6 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 
 /* How the turn continued, under the turn strip: the chat leaves it out. */
 .turn-cont { margin-top: 0.6rem; font-size: var(--fs-s); color: var(--ink2); }
-.turn-tools { display: block; background: none; border: 0; padding: 0; font: inherit; font-size: var(--fs-s); color: var(--ink2); cursor: pointer; text-align: left; }
-.turn-tools:hover { text-decoration: underline; }
-.mcp .sub-h { margin-top: 0.875rem; }
-.mcp .sub-h:first-child { margin-top: 0.25rem; }
-.mcp-t td:first-child { width: 40%; white-space: nowrap; }
-.mcp-note { margin: 0 0 0.25rem; font-size: var(--fs-s); }
 
 /* Live status of a running turn (agentbus-notes/plans/LIVE_STATUS.md). The
    running blue and its spinner are the mockup's. One line, fixed height: it
@@ -671,11 +665,9 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 
 /* A turn the person did not type: a delivered result, or a turn another
    agent asked for. The line above it says so. */
-.c-asked { font-size: var(--fs-s); color: var(--ink3); padding: 0.35rem 1rem; border-bottom: 1px solid var(--line); max-height: 4.5rem; overflow-y: auto; }
-.c-asked .origin-link { color: var(--ink2); }
+.c-waiting { font-size: var(--fs-s); color: var(--ink3); padding: 0.35rem 1rem; border-bottom: 1px solid var(--line); }
 .tb .m-origin { font-size: var(--fs-s); color: var(--ink3); margin: 0 0 0.25rem; text-align: right; }
 .tb .m-origin b { color: var(--ink2); font-weight: 600; }
-.tb .m-origin .origin-link { color: var(--ink2); }
 .tb .m-user .bubble.delivered { background: #fff; border: 1.5px dashed var(--line2); font-family: var(--mono); font-size: var(--fs-m); max-width: 100%; }
 
 /* The Agents column: every saved agent, its access under its name, and on
