@@ -569,7 +569,7 @@ describe('The started turn', () => {
     await submitForm(dialog);
 
     svc.state.sessions = [row('new1', { open: true, last: '2026-11-05T10:00:00Z' }), row('s1')];
-    await svc.push(ev({ session: 'new1', kind: 'session.opened', hold: 'h1', turn: 'Tn', agent: 'claude', folder: '/Users/ana/x' }));
+    await svc.push(ev({ session: 'new1', kind: 'run.started', hold: 'h1', turn: 'Tn', agent: 'claude', folder: '/Users/ana/x' }));
     await svc.push(ev({ session: 'new1', kind: 'turn.started', turn: 'Tn', text: 'read the README' }));
     await settle();
     expect(r.container.querySelector('#sessions .sess.on code')?.textContent).toBe('new1');
@@ -591,7 +591,7 @@ describe('The started turn', () => {
     await setValue(dialog.querySelector('textarea[name="prompt"]'), 'read the README');
     await submitForm(dialog);
     svc.state.sessions = [row('new1', { open: true, last: '2026-11-05T10:00:00Z' }), row('s1')];
-    await svc.push(ev({ session: 'new1', kind: 'session.opened', hold: 'h1', turn: 'Tn', agent: 'claude', folder: '/Users/ana/x' }));
+    await svc.push(ev({ session: 'new1', kind: 'run.started', hold: 'h1', turn: 'Tn', agent: 'claude', folder: '/Users/ana/x' }));
     await svc.push(ev({ session: 'new1', kind: 'turn.started', turn: 'Tn', text: 'read the README' }));
     await settle();
     expect(shownSession(r.container)).toBe('new1');
@@ -699,7 +699,7 @@ describe('The started turn', () => {
       await act(async () => reply!(json({ session: 'new1', turn: 'Tn', state: 'running', base_url: `${BASE}/s/new1/t/Tn` }, 202)));
       await settle();
       svc.state.sessions = [row('new1', { open: true, last: '2026-11-05T10:00:00Z' }), ...svc.state.sessions];
-      await svc.push(ev({ session: 'new1', kind: 'session.opened', hold: 'h1', turn: 'Tn', agent: 'claude', folder: '/Users/ana/x' }));
+      await svc.push(ev({ session: 'new1', kind: 'run.started', hold: 'h1', turn: 'Tn', agent: 'claude', folder: '/Users/ana/x' }));
       await svc.push(ev({ session: 'new1', kind: 'turn.started', turn: 'Tn', text: 'go' }));
       await settle();
       expect(r.container.querySelector('#sessions .sess.on code')?.textContent).toBe(want);
@@ -713,13 +713,13 @@ describe('The started turn', () => {
     const r = await mount(svc);
     await setValue(r.container.querySelector('#c-reply textarea'), 'go');
     await submitForm(r.container.querySelector('#c-reply form'));
-    await svc.push(ev({ session: 's1', kind: 'session.opened', hold: 'h2', turn: 'Tnext' }));
+    await svc.push(ev({ session: 's1', kind: 'run.started', hold: 'h2', turn: 'Tnext' }));
     await svc.push(ev({ session: 's1', kind: 'turn.started', turn: 'Tnext', text: 'go', idempotency_key: sentKey(svc) }));
     await settle();
     // A running turn never blocks the box: a message would queue behind it.
     expect((r.container.querySelector('#c-reply textarea') as HTMLTextAreaElement).disabled).toBe(false);
     // The agent exits 1 before any model call: the turn is over.
-    await svc.push(ev({ session: 's1', kind: 'session.closed', hold: 'h2', turn: 'Tnext', exit_code: 1 }));
+    await svc.push(ev({ session: 's1', kind: 'run.ended', hold: 'h2', turn: 'Tnext', exit_code: 1 }));
     await settle();
     const states = Array.from(r.container.querySelectorAll('#convo .tb')).map((t) => t.querySelector('.tb-state')?.textContent ?? '');
     expect(states).toEqual(['', 'failed']);
@@ -1112,58 +1112,6 @@ describe('The prompt box', () => {
     r.unmount();
   });
 
-  it('sets aside a closed session: hidden by default, shown with a lock under Show archived, box disabled', async () => {
-    const svc = fakeService({ sessions: [row('s1', { resumable: true, closed: '2026-11-11T09:00:00Z' })], events: { s1: oneTurn('s1', 'first') } });
-    const r = await mount(svc);
-    // A closed session is set aside (treated like archived): hidden from the
-    // default list. Show archived reveals it with the same lock.
-    expect(r.container.querySelector('#sessions [data-session="s1"]')).toBeNull();
-    await click(r.container.querySelector('#sessions .show-archived'));
-    const row1 = r.container.querySelector('#sessions [data-session="s1"]');
-    expect(row1).not.toBeNull();
-    expect(r.container.querySelector('#sessions [data-session="s1"] .s-lock')).not.toBeNull();
-    // Opening it: the header marks it closed and its box is disabled.
-    await click(row1);
-    await settle();
-    expect((r.container.querySelector('#c-reply textarea') as HTMLTextAreaElement).disabled).toBe(true);
-    expect(r.container.querySelector('#c-reply .reply-why')?.textContent).toBe('This session is closed. Start a new one.');
-    expect(r.container.querySelector('#c-head .c-closed')?.textContent?.trim()).toBe('closed');
-    r.unmount();
-  });
-
-  it('marks a session closed when only GET /sessions/<id> says so, on its copy, and sets it aside', async () => {
-    const svc = fakeService({
-      sessions: [row('s1', { resumable: true })],
-      events: { s1: oneTurn('s1', 'first') },
-      oneSession: (id) => json({ store: 'st_1', seq: 1, session: { ...row(id), copy: { runner: 'run_1', kind: 'copy', name: id, closed: '2026-11-11T09:00:00Z' } } }),
-    });
-    const r = await mount(svc);
-    // s1 is shown and selected; the convo reads GET /sessions/s1, finds its
-    // copy closed, and disables the box and marks the header.
-    expect(svc.reqs.some((q) => q.method === 'GET' && q.path === '/api/v0/sessions/s1')).toBe(true);
-    expect((r.container.querySelector('#c-reply textarea') as HTMLTextAreaElement).disabled).toBe(true);
-    expect(r.container.querySelector('#c-reply .reply-why')?.textContent).toBe('This session is closed. Start a new one.');
-    expect(r.container.querySelector('#c-head .c-closed')?.textContent?.trim()).toBe('closed');
-    // Now that it is known closed it is set aside: gone from the default list,
-    // shown with a lock under Show archived.
-    expect(r.container.querySelector('#sessions [data-session="s1"]')).toBeNull();
-    await click(r.container.querySelector('#sessions .show-archived'));
-    expect(r.container.querySelector('#sessions [data-session="s1"] .s-lock')).not.toBeNull();
-    r.unmount();
-  });
-
-  it('keeps Send for a session whose copy is not closed', async () => {
-    const svc = fakeService({
-      sessions: [row('s1', { resumable: true })],
-      events: { s1: oneTurn('s1', 'first') },
-      oneSession: (id) => json({ store: 'st_1', seq: 1, session: { ...row(id), copy: { runner: 'run_1', kind: 'copy', name: id } } }),
-    });
-    const r = await mount(svc);
-    expect((r.container.querySelector('#c-reply textarea') as HTMLTextAreaElement).disabled).toBe(false);
-    expect(r.container.querySelector('#c-head .c-closed')).toBeNull();
-    r.unmount();
-  });
-
   it("shows a failed turn's reason on its state label, with no error box", async () => {
     const svc = fakeService({
       sessions: [row('s1', { resumable: true })],
@@ -1199,16 +1147,16 @@ describe('The prompt box', () => {
     r.unmount();
   });
 
-  // A turn whose reply is stored but whose session.closed is not: the service
+  // A turn whose reply is stored but whose run.ended is not: the service
   // holds it open for its last writes, so Send must wait.
   const closing = (session: string) => [
-    ev({ session, kind: 'session.opened', turn: `T1-${session}`, hold: 'h1' }),
+    ev({ session, kind: 'run.started', turn: `T1-${session}`, hold: 'h1' }),
     ...oneTurn(session, 'first').slice(0, 3).map((e) => ({ ...e, session, turn: `T1-${session}` })),
   ];
   const sendBtn = (r: { container: HTMLElement }) => r.container.querySelector('#c-reply button.go') as HTMLButtonElement;
   const box = (r: { container: HTMLElement }) => r.container.querySelector('#c-reply textarea') as HTMLTextAreaElement;
 
-  it('between the reply and session.closed a message queues; after it, Send', async () => {
+  it('between the reply and run.ended a message queues; after it, Send', async () => {
     const svc = fakeService({ sessions: [row('s1', { resumable: true, open: true })], events: { s1: closing('s1') } });
     const r = await mount(svc);
     // The reply is on screen; the turn is not closed.
@@ -1220,9 +1168,9 @@ describe('The prompt box', () => {
     expect(r.container.querySelector('#c-reply .reply-why')).toBeNull();
     await setValue(box(r), '');
 
-    // session.closed arrives: the row is no longer open, the turn is finished.
+    // run.ended arrives: the row is no longer open, the turn is finished.
     svc.state.sessions = [row('s1', { resumable: true, open: false })];
-    await svc.push(ev({ session: 's1', kind: 'session.closed', turn: 'T1-s1', hold: 'h1', exit_code: 0 }));
+    await svc.push(ev({ session: 's1', kind: 'run.ended', turn: 'T1-s1', hold: 'h1', exit_code: 0 }));
     await settle();
     expect(box(r).disabled).toBe(false);
     expect(sendBtn(r).textContent).toBe('Send');

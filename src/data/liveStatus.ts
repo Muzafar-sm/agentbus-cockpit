@@ -337,10 +337,10 @@ function toolLine(card: ToolCard): string {
 // A turn's live status at `now` (ms, on the events' clock), from its events.
 //
 // The rules (CLIENT_API "Turns", made finer):
-// - A run's turn (it has session.opened) ends at its session.closed: stopped
+// - A run's turn (it has run.started) ends at its run.ended: stopped
 //   when it says so, finished on exit code 0 with no error, else failed. Any
 //   other turn ends at its turn.completed.
-// - A run's turn with turn.completed and no session.closed yet is finishing,
+// - A run's turn with turn.completed and no run.ended yet is finishing,
 //   and so is one whose last reply asked for no tool (that reply is its answer).
 // - Otherwise the open step is the status: an open model call (no reply yet)
 //   or open tool calls (no result yet); the later one wins.
@@ -362,8 +362,8 @@ export function liveStatus(rawEvents: CockpitEvent[], now: number, agent?: strin
     lastDeltaId: lastPriced?.id,
   };
 
-  const opened = events.some((e) => e.kind === 'session.opened');
-  const closed = events.find((e) => e.kind === 'session.closed');
+  const opened = events.some((e) => e.kind === 'run.started');
+  const closed = events.find((e) => e.kind === 'run.ended');
   const completed = events.filter((e) => e.kind === 'turn.completed').pop();
   const modelCalls = pairModelCalls(events);
 
@@ -472,7 +472,7 @@ export function resetClock(): void {
 
 // The latest turn of each session, with its events, as the stream brings
 // them. The session cards read their status from it. A new turn's
-// session.opened or turn.started starts its entry over; an event of an older
+// run.started or turn.started starts its entry over; an event of an older
 // turn is left out. `backfill` is true when an entry starts from an event
 // other than those two: the turn began before the cockpit saw it, so its
 // earlier events must be read once.
@@ -489,7 +489,7 @@ export function addLiveEvent(cur: LiveTurns, e: CockpitEvent): { next: LiveTurns
     if (held.events.some((x) => x.id === e.id)) return { next: cur, backfill: false };
     return { next: { ...cur, [e.session]: { turn: e.turn, events: [...held.events, e] } }, backfill: false };
   }
-  const starts = e.kind === 'session.opened' || e.kind === 'turn.started';
+  const starts = e.kind === 'run.started' || e.kind === 'turn.started';
   if (held && !starts) return { next: cur, backfill: false };
   return { next: { ...cur, [e.session]: { turn: e.turn, events: [e] } }, backfill: !starts };
 }

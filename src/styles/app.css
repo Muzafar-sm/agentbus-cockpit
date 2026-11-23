@@ -705,7 +705,6 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .s-rename, .c-rename { opacity: 0; transition: opacity .12s; }
 .sess-row:hover .s-rename, #c-head:hover .c-rename, .s-rename:focus-visible, .c-rename:focus-visible { opacity: 1; }
 .s-rename:focus-visible, .c-rename:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-.c-closed { font-size: var(--fs-s); flex: none; }
 /* The conversation's own actions, right of its name: Export is a quiet link, Close a quiet button. */
 .c-acts { display: flex; align-items: center; gap: 0.625rem; flex: none; margin-left: auto; }
 .c-export { border: 0; background: transparent; padding: 0; font: inherit; font-size: var(--fs-xs); color: var(--ink3); }
@@ -1033,12 +1032,6 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 #agents .agent .mark { position: relative; }
 #agents .agent .mark .signin-dot { position: absolute; right: -0.2rem; top: -0.2rem; margin: 0; box-shadow: 0 0 0 2px #fff; }
 
-/* A closed conversation: the message box is greyed and takes no input, the
-   header keeps Export where it was and shows Closed in Close's place, and its
-   card carries a lock. */
-.box.closed { background: var(--bg2, #F2F1EC); opacity: 0.7; }
-.box.closed textarea { cursor: not-allowed; background: transparent; }
-.c-closed { display: inline-flex; align-items: center; gap: 0.3rem; }
 /* The archived/closed mark sits in the row's upper-right corner, laid over it
    (absolute) so the row text keeps its own margins and padding. On hover it
    slides left of the rename pencil, which shares that corner. */
@@ -1080,8 +1073,6 @@ input.invalid, textarea.invalid { border-color: var(--bad); }
 #c-msgs.c-empty { padding: 1.25rem 0.75rem; }
 /* The tab's empty line: the same size as every quiet line. */
 #d-body .dim { font-size: var(--fs-m); }
-/* A closed session: a lock and the word, not a button. */
-.c-closed { color: var(--ink3); font-size: var(--fs-s); }
 /* A table's own column of narrow chevrons. */
 .grid th.c { width: 1.25rem; }
 

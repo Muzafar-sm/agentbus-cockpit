@@ -145,14 +145,14 @@ describe('ConvoColumn', () => {
       ev({ kind: 'model.requested', session: 'st', turn: 'R', exchange: 'xr' }),
       ev({ kind: 'model.responded', session: 'st', turn: 'R', exchange: 'xr', status: 200, stop_reason: 'tool_use' }),
       // A run whose agent exited 1: failed.
-      ev({ kind: 'session.opened', session: 'st', turn: 'F', hold: 'h1' }),
+      ev({ kind: 'run.started', session: 'st', turn: 'F', hold: 'h1' }),
       ev({ kind: 'turn.started', session: 'st', turn: 'F', exchange: 'xf', text: 'two' }),
-      ev({ kind: 'session.closed', session: 'st', turn: 'F', hold: 'h1', exit_code: 1 }),
+      ev({ kind: 'run.ended', session: 'st', turn: 'F', hold: 'h1', exit_code: 1 }),
       // A run whose agent exited 0: finished, shown by its outcome.
-      ev({ kind: 'session.opened', session: 'st', turn: 'D', hold: 'h2' }),
+      ev({ kind: 'run.started', session: 'st', turn: 'D', hold: 'h2' }),
       ev({ kind: 'turn.started', session: 'st', turn: 'D', exchange: 'xd', text: 'three' }),
       ev({ kind: 'turn.completed', session: 'st', turn: 'D', exchange: 'xd', outcome: 'max_tokens' }),
-      ev({ kind: 'session.closed', session: 'st', turn: 'D', hold: 'h2', exit_code: 0 }),
+      ev({ kind: 'run.ended', session: 'st', turn: 'D', hold: 'h2', exit_code: 0 }),
     ];
     const s = await sessionFrom(events, 'st');
     expect(s.turnsList.map((t) => t.state)).toEqual(['running', 'failed', 'finished']);

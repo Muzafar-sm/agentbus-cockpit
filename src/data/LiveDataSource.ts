@@ -178,7 +178,6 @@ export class LiveDataSource implements DataSource {
           sessions.push({
             ...s,
             title: s.title || s.id,
-            closed: isClosed((s as { closed?: unknown }).closed) || undefined,
             archived: isClosed((s as { archived?: unknown }).archived) || undefined,
           });
         }
@@ -189,16 +188,6 @@ export class LiveDataSource implements DataSource {
       return { store: first!.store, seq: first!.seq, sessions };
     }
     throw new Error('Store changed while reading the sessions; try again');
-  }
-
-  // GET /api/v0/sessions/<id>: closed on the session, or on its copy (now
-  // inside the session, where the service says it before the list does). A
-  // failed read is not closed.
-  async sessionClosed(sessionId: string): Promise<boolean> {
-    const res = await fetch(`${this.baseUrl}/api/v0/sessions/${encodeURIComponent(sessionId)}`, { headers: this.headers() });
-    if (!res.ok) return false;
-    const data = await res.json().catch(() => null);
-    return isClosed(data?.session?.closed) || isClosed(data?.session?.copy?.closed);
   }
 
   // The list with the store and seq it was computed at, so the screen can

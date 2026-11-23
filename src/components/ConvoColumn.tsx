@@ -9,7 +9,7 @@ import { Cost } from './Cost';
 import { folderLabel, sessionFolderRef, useFolders } from '../data/folders';
 import { LiveLine } from './LiveLine';
 import { PencilIcon, TitleEdit } from './TitleEdit';
-import { LockIcon, SessionStatus } from './Icons';
+import { SessionStatus } from './Icons';
 import { ShellEntry } from './ShellEntry';
 import { Button, Select } from './Controls';
 import { Notice } from './Notice';
@@ -35,8 +35,6 @@ interface ConvoColumnProps {
   // whether a run still holds the session open.
   resumable?: boolean;
   open?: boolean;
-  // The session was closed: it takes no more turns.
-  closed?: boolean;
   // Given only when the source can continue sessions. Rejects with the API's
   // message. agent is the saved agent picked beside Send, when it is not the
   // agent of the session's latest turn: the turn runs on it. key is the
@@ -263,7 +261,6 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   agentName,
   resumable,
   open,
-  closed,
   onSend,
   onStop,
   stopping,
@@ -457,7 +454,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
 
   const lastTurn = session.turnsList[turnCount - 1];
   const lastState = lastTurn?.state;
-  // The reply is in but the service has not stored session.closed yet (it
+  // The reply is in but the service has not stored run.ended yet (it
   // holds the turn open for its last writes). Send waits for that close. With
   // the turn's events, its status says so (a reply beside a tool call is not
   // the last one); without them, any reply counts.
@@ -518,7 +515,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   // never blocks Send. Only a session the service cannot continue does.
   const active = pending.filter((p) => p.state !== 'failed').length;
   const turnRunning = active > 0 || lastState === 'running' || !!open;
-  const why = closed ? `This ${SESSION} is closed. Start a new one.` : !turnRunning && !resumable ? cannotContinue(session.turnsList) : null;
+  const why = !turnRunning && !resumable ? cannotContinue(session.turnsList) : null;
   const canSend = !!onSend && why === null;
   // While the last turn runs, Send turns into Stop. Only a turn a run started
   // (it names its agent) can be stopped: the service refuses any other. A
@@ -699,14 +696,14 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
               {session.title}
             </div>
             {/* The same status slot as the list card: Sandbox shield, and a
-                lock when archived (a closed session keeps its own mark below). */}
+                lock when archived. */}
             <SessionStatus sandbox={!!session.sandbox} lock={archived ? 'Archived' : null} />
             {onRename && (
               <button type="button" className="c-rename" aria-label="Rename" title="Rename" onClick={() => setRenaming(true)}>
                 <PencilIcon />
               </button>
             )}
-            {(onExport || onArchiveSession || closed) && (
+            {(onExport || onArchiveSession) && (
               <div className="c-acts">
                 {(exportError || archiveError) && (
                   <span className="c-act-error" role="alert" title={exportError || archiveError || ''}>
@@ -737,13 +734,6 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                   >
                     {archived ? 'Unarchive' : 'Archive'}
                   </Button>
-                )}
-                {closed && (
-                  // A state, not an action: an old closed session (close is
-                  // retired) still shows the lock and the word.
-                  <span className="c-closed" title={`This ${SESSION} is closed`}>
-                    <LockIcon /> closed
-                  </span>
                 )}
               </div>
             )}
@@ -937,12 +927,12 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
             </Button>
           </div>
         )}
-        <form className={`box${showPick ? ' with-pick' : ''}${closed ? ' closed' : ''}`} onSubmit={send}>
+        <form className={`box${showPick ? ' with-pick' : ''}`} onSubmit={send}>
           <textarea
             id="input"
             ref={inputRef}
             rows={1}
-            placeholder={closed ? '' : `Message ${nextName || agentName || 'the agent'}…`}
+            placeholder={`Message ${nextName || agentName || 'the agent'}…`}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {

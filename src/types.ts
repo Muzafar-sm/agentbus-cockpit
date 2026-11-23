@@ -211,9 +211,6 @@ export interface SessionSummary {
   // True when the service can take a next message for this session
   // (POST /api/v0/turns with session).
   resumable?: boolean;
-  // True when the session was closed, before close was retired: it took no
-  // more turns, so the cockpit offers no Send. New sessions are never closed.
-  closed?: boolean;
   // True when the session is archived (PATCH archived: true): hidden from the
   // default list. Only a view -- the session keeps its copy and can still take
   // a turn -- so the cockpit still offers Send. Reversible.
@@ -755,9 +752,6 @@ export interface DataSource {
   // The sessions with the cursor they were taken at. A source without it is
   // read through getSessions, and its lists always replace the shown one.
   getSessionList?(): Promise<SessionList>;
-  // True when the service says this session is closed
-  // (GET /api/v0/sessions/<id>). A source without it has no closed sessions.
-  sessionClosed?(sessionId: string): Promise<boolean>;
   // Every turn of one session, oldest first, without their events.
   getTurns(sessionId: string): Promise<TurnList>;
   // One turn's events, paired. null when the turn has no events.

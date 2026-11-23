@@ -85,7 +85,7 @@ const SUBSCRIPTIONS_EVERY = 60_000;
 
 // Kinds that change a session's summary (agent, folder, open) as the service
 // computes it; on these, fetch the sessions again at once.
-const SUMMARY_KINDS = new Set(['session.registered', 'session.opened', 'session.closed', 'session.renamed', 'events.dropped']);
+const SUMMARY_KINDS = new Set(['session.registered', 'run.started', 'run.ended', 'session.renamed', 'events.dropped']);
 
 // Kinds that change a row of GET /api/v0/turns: a new turn, its end, its
 // cost and usage, its state, its model calls, model and reply. On these the
@@ -95,8 +95,8 @@ const TURN_LIST_KINDS = new Set([
   'turn.completed',
   'model.requested',
   'model.responded',
-  'session.opened',
-  'session.closed',
+  'run.started',
+  'run.ended',
 ]);
 
 // Kinds that change what applying a conversation would write: a turn ended,
@@ -255,9 +255,6 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   const [settingsAtSubs, setSettingsAtSubs] = useState(false);
   // An agent's name for a screen: a saved agent's, else its harness's.
   const nameOf = (id?: string) => (id ? agentNameOf(id, savedAgents) : undefined);
-  // The sessions the service said are closed when one was opened
-  // (GET /api/v0/sessions/<id>), for a list that does not say it yet.
-  const [closedIds, setClosedIds] = useState<ReadonlySet<string>>(() => new Set());
   // Archive is a view the person toggles: hidden by default, shown with "Show
   // archived". archivedOverride holds what an Archive/Unarchive click just did,
   // so the row reflects it before the list is read again (the service is the
@@ -268,27 +265,26 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     () =>
       (allSessions ?? []).map((s) => {
         let row = s;
-        if (!s.closed && closedIds.has(s.id)) row = { ...row, closed: true };
         const ov = archivedOverride.get(s.id);
         if (ov !== undefined && !!row.archived !== ov) row = { ...row, archived: ov || undefined };
         return row;
       }),
-    [allSessions, closedIds, archivedOverride]
+    [allSessions, archivedOverride]
   );
   // The list shows only the sessions the person started. A session an agent
   // asked for (origin kind asked, ask_agent) is reached from the ask inside
   // its asking session (ConvoColumn's origin link opens it), not the top-level
   // list -- a view filter on the recorded origin, nothing dropped: the full
   // sessions set still backs selection, titles and the convo.
-  // A session is set aside when archived, or closed under the retired close:
-  // both are hidden from the default list and shown under "Show archived".
+  // A session is set aside when archived: hidden from the default list and
+  // shown under "Show archived".
   const personSessions = useMemo(
-    () => sessions.filter((s) => s.origin?.kind !== 'asked' && (showArchived || (!s.archived && !s.closed))),
+    () => sessions.filter((s) => s.origin?.kind !== 'asked' && (showArchived || !s.archived)),
     [sessions, showArchived]
   );
   // How many of the person's sessions are set aside, so the list offers the
   // "Show archived" toggle only when there is something behind it.
-  const archivedCount = useMemo(() => sessions.filter((s) => s.origin?.kind !== 'asked' && (s.archived || s.closed)).length, [sessions]);
+  const archivedCount = useMemo(() => sessions.filter((s) => s.origin?.kind !== 'asked' && s.archived).length, [sessions]);
   // The sessions a session asked for (ask_agent), from the recorded origin:
   // shown as links in its conversation so an asked session, kept off the list,
   // is reachable while it runs, before its result comes back.
@@ -421,7 +417,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   };
 
   // A turn reads running until its job has ended, a moment after its last
-  // event (session.closed). No event says the job ended, so the stream never
+  // event (run.ended). No event says the job ended, so the stream never
   // asks for the list again. While the shown session has a running turn,
   // read each such turn alone every TURN_END_POLL_MS, and read the list once
   // one has ended.
@@ -1148,7 +1144,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
       return next;
     });
   // POST /api/v0/turns/<id>/stop. The turn's end arrives through the stream
-  // (its session.closed reads the turn list again). A 409 means it had ended
+  // (its run.ended reads the turn list again). A 409 means it had ended
   // already: read the list again now. Any other refusal rejects with the
   // API's words, for the conversation to show.
   const stopTurn = dataSource.stopTurn
@@ -1259,7 +1255,6 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     ? {
         ...(shownRow ?? shown.session),
         turnsList: turns,
-        closed: !!shownRow?.closed || closedIds.has(shown.session.id) || undefined,
         archived: (archivedOverride.get(shown.session.id) ?? !!shownRow?.archived) || undefined,
       }
     : null;
@@ -1303,22 +1298,6 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     const what = n ? `the changes from turn ${n}` : 'these changes';
     setPrefill({ session: previewSession, text: `Please review ${what}. List any problems, most serious first.`, agent: agentId });
   };
-
-  // Ask whether the selected session is closed, each time it is read.
-  useEffect(() => {
-    if (selectedSessionId === null || !dataSource.sessionClosed) return;
-    let active = true;
-    const id = selectedSessionId;
-    dataSource
-      .sessionClosed(id)
-      .then((closed) => {
-        if (active && closed) setClosedIds((set) => (set.has(id) ? set : new Set(set).add(id)));
-      })
-      .catch((err) => console.warn(`Reading whether session ${id} is closed failed:`, err));
-    return () => {
-      active = false;
-    };
-  }, [dataSource, selectedSessionId, reloadKey]);
 
   // Load the events of a selected turn that has none yet. Events streamed
   // while they load join them.
@@ -1559,7 +1538,6 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           key={sessionView.id}
           session={sessionView}
           resumable={sessionView.resumable}
-          closed={sessionView.closed}
           archived={sessionView.archived}
           open={sessionView.open}
           onSend={sendMessage}

@@ -37,7 +37,7 @@ describe('liveStatus, claude turn A (Read, then Edit + Bash from one reply)', ()
   it('reads each step at its own moment', () => {
     // 0.0 turn.started; 3.07 call 1; 6.59 reply + Read; 6.68 Read done, call 2;
     // 11.25 reply + Edit + Bash; 14.65 both done, call 3; 17.52 reply,
-    // turn.completed; 18.16 session.closed exit 0.
+    // turn.completed; 18.16 run.ended exit 0.
     expect(at(T, 2).line).toBe('starting Claude Code · 2s');
     expect(at(T, 2).state).toBe('starting');
     expect(at(T, 5).line).toBe('waiting on the model · call 1 · 1s');
@@ -108,7 +108,7 @@ describe('liveStatus, codex turn B (exec script, exit 1 inside its output)', () 
   const T = TURNS.codexB;
   it('shows the script as code and reads the exit code from its output', () => {
     // 2.88 call 1; 6.64 exec; 12.95 exec result, call 2; 17.27 reply and
-    // turn.completed; 20.36 session.closed.
+    // turn.completed; 20.36 run.ended.
     expect(at(T, 1).line).toBe('starting Codex · 1s');
     expect(at(T, 8).line).toBe('running exec · 1s');
     expect(at(T, 14).line).toBe('waiting on the model · call 2 · 1s');
@@ -126,7 +126,7 @@ describe('liveStatus, codex turn A (two scripts, every step exit 0)', () => {
   it('reads each step result in a script, and the long finish', () => {
     const groups = toolGroups(turnDetail(of(T)));
     expect(groups.map((g) => g.tools[0].result?.text)).toEqual(['ok', 'ok']);
-    // turn.completed 17.92, session.closed 30.02: codex ends slowly.
+    // turn.completed 17.92, run.ended 30.02: codex ends slowly.
     expect(at(T, 25).line).toBe('finishing · 7s');
     expect(at(T, 40).line).toBe('finished · 30.0s · $0.02');
   });
@@ -162,7 +162,7 @@ describe('codexExits', () => {
 describe('liveStatus, how a run ends', () => {
   const base = (extra: Partial<CockpitEvent>[]): CockpitEvent[] =>
     [
-      { kind: 'session.opened', time: '2026-11-07T10:00:00Z' },
+      { kind: 'run.started', time: '2026-11-07T10:00:00Z' },
       { kind: 'turn.started', time: '2026-11-07T10:00:00Z', agent: 'claude' },
       { kind: 'model.requested', time: '2026-11-07T10:00:03Z', exchange: 'x1' },
       ...extra,
@@ -170,18 +170,18 @@ describe('liveStatus, how a run ends', () => {
   const now = Date.parse('2026-11-07T10:01:00Z');
 
   it('stopped', () => {
-    const s = liveStatus(base([{ kind: 'session.closed', time: '2026-11-07T10:00:09Z', exit_code: 143, stopped: true }]), now);
+    const s = liveStatus(base([{ kind: 'run.ended', time: '2026-11-07T10:00:09Z', exit_code: 143, stopped: true }]), now);
     expect(s.state).toBe('stopped');
     expect(s.line).toBe('stopped · 9.0s');
   });
   it('failed on its exit code, or on a failed call', () => {
-    expect(liveStatus(base([{ kind: 'session.closed', time: '2026-11-07T10:00:14Z', exit_code: 2 }]), now).line).toBe(
+    expect(liveStatus(base([{ kind: 'run.ended', time: '2026-11-07T10:00:14Z', exit_code: 2 }]), now).line).toBe(
       'failed · the agent exited 2 · 14.0s'
     );
     const s = liveStatus(
       base([
         { kind: 'model.responded', time: '2026-11-07T10:00:05Z', exchange: 'x1', status: 529 },
-        { kind: 'session.closed', time: '2026-11-07T10:00:06Z', exit_code: 1 },
+        { kind: 'run.ended', time: '2026-11-07T10:00:06Z', exit_code: 1 },
       ]),
       now
     );

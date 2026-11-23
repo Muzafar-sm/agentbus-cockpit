@@ -118,13 +118,13 @@ export const SessionsColumn: React.FC<SessionsColumnProps> = ({
           // While its turn runs, the cost moves to the title line (as in the sketch).
           // The selected card's name starts a rename when clicked.
           {/* One slot of status marks after the name: running dot, Sandbox
-              shield, archived/closed lock. It goes inside the title span so it
+              shield, archived lock. It goes inside the title span so it
               flows right after the last word when the name wraps to two lines. */}
           const statusIcons = (
             <SessionStatus
               running={!!s.open}
               sandbox={!!s.sandbox}
-              lock={s.closed ? 'Closed' : s.archived ? 'Archived' : null}
+              lock={s.archived ? 'Archived' : null}
             />
           );
           const title = (
