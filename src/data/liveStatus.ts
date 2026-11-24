@@ -397,7 +397,15 @@ export function liveStatus(rawEvents: CockpitEvent[], now: number, agent?: strin
     elapsedMs,
   });
 
-  if (completed) return open('finishing', STATE.finishing, ms(completed.time));
+  // Finishing says what the turn still waits on, never a bare "finishing":
+  // a command the agent left running in the background (Claude Code's Bash
+  // with run_in_background keeps its process alive until it ends), else the
+  // agent's own exit.
+  const background = events.filter((e) => e.kind === 'tool.requested' && input(e).run_in_background === true).pop();
+  const finishing = background
+    ? `Waiting on a background command · ${shortCommand(str(input(background).command) ?? '', folderOf(start)) || 'running'}`
+    : `Waiting for ${name ? harnessName(name) : 'the agent'} to exit`;
+  if (completed) return open('finishing', finishing, ms(completed.time));
   // The last reply asked for no tool and did not fail: it is the turn's
   // answer, and the agent is ending (turn.completed comes with it, or soon).
   const lastCall = modelCalls[modelCalls.length - 1];
@@ -407,7 +415,7 @@ export function liveStatus(rawEvents: CockpitEvent[], now: number, agent?: strin
     !callFailed(lastReply) &&
     !events.some((e) => e.kind === 'tool.requested' && (lastCall.requested.exchange ? e.exchange === lastCall.requested.exchange : ms(e.time) >= ms(lastReply.time)))
   ) {
-    return open('finishing', STATE.finishing, ms(lastReply.time));
+    return open('finishing', finishing, ms(lastReply.time));
   }
 
   // The open model call: the last request with no reply.

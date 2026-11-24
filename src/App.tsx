@@ -26,6 +26,7 @@ import { FolderInfo, FoldersContext, rememberFolder, rememberMachine } from './d
 import { ReplayDataSource } from './data/ReplayDataSource';
 import { applyList, countedIn, isNewerList, ListCursor, StreamedCost, streamedCost } from './data/sessionList';
 import { addLiveEvent, LiveTurns, mergeLive, noteEventTime } from './data/liveStatus';
+import { askedWork } from './data/askedWork';
 import { refreshNow } from './utils/useNow';
 import { versionLabel } from './utils/format';
 import { QueueSource } from './data/jobs';
@@ -314,14 +315,24 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // How many of the person's sessions are set aside, so the list offers the
   // "Show archived" toggle only when there is something behind it.
   const archivedCount = useMemo(() => sessions.filter((s) => s.origin?.kind !== 'asked' && s.archived).length, [sessions]);
-  // The sessions a session asked for (ask_agent), from the recorded origin.
-  // An asked session is one-off and stays off the list; the person never opens
-  // one. Its conversation shows only a plain "waiting" line while one still
-  // runs, so each is given its agent and whether a run still holds it open.
-  const askedOf = (sessionId: string) =>
-    (allSessions ?? [])
-      .filter((s) => s.origin?.kind === 'asked' && s.origin.session === sessionId)
-      .map((s) => ({ id: s.id, agent: s.first_agent_id ?? s.agent, running: !!s.open }));
+  // The work a session asked for (ask_agent, review_turn), from the recorded
+  // origin and the turn list: queued until a runner starts it, then running.
+  // An asked session is one-off and stays off the list; its asking
+  // conversation shows one status line for each until its result comes back.
+  const askedOf = (sessionId: string) => askedWork(allSessions ?? [], sessionId, queueView?.ofSession);
+  // The sessions with something under way: their own turn queued or running,
+  // or work they asked for. Each gets the running dot on its row.
+  const active = useMemo(() => {
+    const out = new Set<string>();
+    for (const s of allSessions ?? []) {
+      if (s.origin?.kind === 'asked') continue;
+      const own = queueView?.ofSession(s.id) ?? [];
+      if (s.open || own.some((t) => t.state === 'queued' || t.state === 'running') || askedWork(allSessions ?? [], s.id, queueView?.ofSession).length > 0) {
+        out.add(s.id);
+      }
+    }
+    return out;
+  }, [allSessions, queueView]);
   const loading = allSessions === null;
   // A session's title, from the sessions the cockpit holds (GET /sessions).
   // Overview views (the queue) name a turn by this session fact, not by its
@@ -1557,6 +1568,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
 
       <SessionsColumn
         sessions={personSessions}
+        active={active}
         live={dataSource.subscribe ? liveTurns : undefined}
         // A narrow screen shows the Sessions column alone, and every card is
         // a button that opens its conversation, the one open before included.

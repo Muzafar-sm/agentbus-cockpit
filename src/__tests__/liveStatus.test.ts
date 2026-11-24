@@ -46,7 +46,8 @@ describe('liveStatus, claude turn A (Read, then Edit + Bash from one reply)', ()
     expect(at(T, 13).line).toBe('2 tools running · 1s');
     expect(at(T, 16).line).toBe('waiting on the model · call 3 · 1s');
     expect(at(T, 16).call).toBe(3);
-    expect(at(T, 17.8).line).toBe('finishing · 0s');
+    expect(at(T, 17.8).line).toBe('waiting for Claude Code to exit · 0s');
+    expect(at(T, 17.8).state).toBe('finishing');
     expect(at(T, 17.8).running).toBe(true);
     const end = at(T, 30);
     expect(end.state).toBe('finished');
@@ -112,7 +113,7 @@ describe('liveStatus, codex turn B (exec script, exit 1 inside its output)', () 
     expect(at(T, 1).line).toBe('starting Codex · 1s');
     expect(at(T, 8).line).toBe('running exec · 1s');
     expect(at(T, 14).line).toBe('waiting on the model · call 2 · 1s');
-    expect(at(T, 19).line).toBe('finishing · 1s');
+    expect(at(T, 19).line).toBe('waiting for Codex to exit · 1s');
     const [g] = toolGroups(turnDetail(of(T)));
     const card = g.tools[0];
     expect(card.label).toBe('exec');
@@ -127,8 +128,39 @@ describe('liveStatus, codex turn A (two scripts, every step exit 0)', () => {
     const groups = toolGroups(turnDetail(of(T)));
     expect(groups.map((g) => g.tools[0].result?.text)).toEqual(['ok', 'ok']);
     // turn.completed 17.92, run.ended 30.02: codex ends slowly.
-    expect(at(T, 25).line).toBe('finishing · 7s');
+    expect(at(T, 25).line).toBe('waiting for Codex to exit · 7s');
     expect(at(T, 40).line).toBe('finished · 30.0s · $0.02');
+  });
+});
+
+describe('liveStatus, finishing names what it waits on', () => {
+  const e = (kind: string, sec: number, f: Partial<CockpitEvent> = {}) =>
+    ({ id: `${kind}-${sec}`, kind, time: new Date(Date.UTC(2026, 10, 24, 15, 0, sec)).toISOString(), session: 's', turn: 't', ...f }) as CockpitEvent;
+  const base = [
+    e('run.started', 0, { agent: 'claude' }),
+    e('turn.started', 0, { agent: 'claude', folder: '/w' }),
+    e('model.requested', 1, { exchange: 'x1' }),
+    e('model.responded', 2, { exchange: 'x1', status: 200 }),
+  ];
+  const at = (events: CockpitEvent[], sec: number) => liveStatus(events, Date.UTC(2026, 10, 24, 15, 0, sec));
+
+  it('a command left running in the background, after turn.completed', () => {
+    const events = [
+      ...base,
+      e('tool.requested', 3, { exchange: 'x1', tool_id: 'b', tool_name: 'Bash', tool_input: { command: 'cd /w && go test -race ./...', run_in_background: true } }),
+      e('tool.completed', 3, { tool_id: 'b', tool_output: 'Command running in background with ID: b1' }),
+      e('model.requested', 4, { exchange: 'x2' }),
+      e('model.responded', 5, { exchange: 'x2', status: 200 }),
+      e('turn.completed', 6, { exchange: 'x2' }),
+    ];
+    const st = at(events, 85);
+    expect(st.state).toBe('finishing');
+    expect(st.line).toBe('waiting on a background command · go test -race ./... · 1m 19s');
+  });
+
+  it('else the agent exiting, never a bare "finishing"', () => {
+    const st = at([...base, e('turn.completed', 3, { exchange: 'x1' })], 10);
+    expect(st.line).toBe('waiting for Claude Code to exit · 7s');
   });
 });
 

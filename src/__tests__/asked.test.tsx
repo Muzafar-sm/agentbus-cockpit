@@ -11,6 +11,7 @@ import { ConvoColumn } from '../components/ConvoColumn';
 import { LiveDataSource } from '../data/LiveDataSource';
 import { createEmptyUsage } from '../data/turns';
 import { SavedAgent, SessionDetail, Turn } from '../types';
+import { ApiTurn, QueueSource } from '../data/jobs';
 import { ev, liveReplay, render, rowSession, shownSession } from './helpers';
 
 const SAVED: SavedAgent[] = [
@@ -80,22 +81,56 @@ describe('asked work in the conversation', () => {
     r.unmount();
   });
 
-  it('shows one plain "Waiting on …" line only while an asked session runs, naming its agent', async () => {
-    const s = session([turn('T1', 1, { prompt: 'run codex on this' })]);
-    // Running: a plain status line, no link, the agent named from saved agents.
+  it('asked work shows at the foot of the conversation: queued, then running, then gone', async () => {
+    const s = session([turn('T1', 1, { prompt: 'run codex on this', state: 'running' })]);
+    const props = { session: s, selectedTurn: null, onSelectTurn: () => {}, agents: SAVED, live: undefined };
+    const asked = (r: { container: HTMLElement }) => r.container.querySelector('.m-asked');
+    // Queued behind the asking turn, which still runs.
+    const queued = await render(<ConvoColumn {...props} asked={[{ id: 'c', agent: 'codex', by: 'T1', state: 'queued' }]} />);
+    expect(asked(queued)!.textContent).toBe('Codex queued · starts when this turn ends');
+    // It is the last line of the conversation, not a line above it.
+    expect(queued.container.querySelector('#c-msgs .c-in')!.lastElementChild).toBe(asked(queued));
+    expect(queued.container.querySelector('#c-waiting')).toBeNull();
+    expect(asked(queued)!.querySelector('a, button')).toBeNull();
+    queued.unmount();
+    // Running, with its time.
     const running = await render(
-      <ConvoColumn session={s} selectedTurn={null} onSelectTurn={() => {}} agents={SAVED} asked={[{ id: 'c', agent: 'codex', running: true }]} />
+      <ConvoColumn {...props} asked={[{ id: 'c', agent: 'codex', by: 'T1', state: 'running', sinceMs: Date.now() - 125_000 }]} />
     );
-    const line = running.container.querySelector('#c-waiting')!;
-    expect(line.textContent).toBe('Waiting on Codex');
-    expect(line.querySelector('a, button')).toBeNull();
+    expect(asked(running)!.textContent).toMatch(/^Codex is working on it · 2m \d+s$/);
+    expect(asked(running)!.querySelector('.run-spin')).not.toBeNull();
     running.unmount();
-    // Ended: the line is gone.
-    const ended = await render(
-      <ConvoColumn session={s} selectedTurn={null} onSelectTurn={() => {}} agents={SAVED} asked={[{ id: 'c', agent: 'codex', running: false }]} />
-    );
-    expect(ended.container.querySelector('#c-waiting')).toBeNull();
+    // Ended: nothing is asked for, the line is gone.
+    const ended = await render(<ConvoColumn {...props} asked={[]} />);
+    expect(asked(ended)).toBeNull();
     ended.unmount();
+  });
+
+  it('says review only when the asking turn called review_turn', async () => {
+    const events = [
+      ev({ session: 'p', kind: 'turn.started', turn: 'T1', text: 'review it', agent: 'claude' }),
+      ev({ session: 'p', kind: 'tool.requested', turn: 'T1', tool_id: 'u1', tool_name: 'mcp__agentbus__review_turn', tool_input: { agent: 'codex' } }),
+      ev({ session: 'p', kind: 'tool.completed', turn: 'T1', tool_id: 'u1', tool_output: '{"session":"c","turn":"tc"}' }),
+      ev({ session: 'p', kind: 'tool.requested', turn: 'T1', tool_id: 'u2', tool_name: 'mcp__agentbus__ask_agent', tool_input: { agent: 'deepseek' } }),
+      ev({ session: 'p', kind: 'tool.completed', turn: 'T1', tool_id: 'u2', tool_output: '{"session":"d","turn":"td"}' }),
+    ];
+    const t1 = turn('T1', 1, { state: 'finished', detail: { events, modelCalls: [], toolCalls: [] } });
+    const r = await render(
+      <ConvoColumn
+        session={session([t1])}
+        selectedTurn={null}
+        onSelectTurn={() => {}}
+        agents={SAVED}
+        asked={[
+          { id: 'c', agent: 'codex', by: 'T1', state: 'queued' },
+          { id: 'd', agent: 'deepseek', by: 'T1', state: 'running' },
+        ]}
+      />
+    );
+    const lines = Array.from(r.container.querySelectorAll('.m-asked')).map((x) => x.textContent);
+    // The asking turn has ended, so no turn holds the queued one back.
+    expect(lines).toEqual(['Codex review queued · waiting for a runner', 'DeepSeek flash is working on it']);
+    r.unmount();
   });
 
   it('the live source reads origin from GET /api/v0/turns, and leaves out a kind it does not know', async () => {
@@ -171,7 +206,7 @@ describe('asked work across sessions', () => {
     expect(listed()).not.toContain('c');
     // No link opens the asked child; the finished child shows no waiting line.
     expect(r.container.querySelector('.m-origin .origin-link')).toBeNull();
-    expect(r.container.querySelector('#c-waiting')).toBeNull();
+    expect(r.container.querySelector('.m-asked')).toBeNull();
     r.unmount();
   });
 
@@ -187,16 +222,44 @@ describe('asked work across sessions', () => {
     const lr = liveReplay([...runningParent, ...runningChild], { listAgents: async () => SAVED });
     const r = await render(<App dataSource={lr.source} />);
     await waitFor(
-      () => shownSession(r.container) === 'p' && r.container.querySelector('#c-waiting')?.textContent === 'Waiting on Codex',
+      () => shownSession(r.container) === 'p' && r.container.querySelector('.m-asked')?.textContent === 'Codex is working on it',
       'the asking session with a waiting line'
     );
     const listed = () => Array.from(r.container.querySelectorAll('#sessions [data-session]')).map((x) => rowSession(x));
     expect(listed()).not.toContain('c'); // the asked child stays off the list
-    expect(r.container.querySelector('#c-waiting a, #c-waiting button')).toBeNull(); // no link
+    expect(r.container.querySelector('.m-asked a, .m-asked button')).toBeNull(); // no link
+    expect(r.container.querySelector('#c-waiting')).toBeNull(); // no line above the conversation
     expect(r.container.querySelectorAll('.m-origin').length).toBe(0); // no result delivered yet
     // The child's run ends: the waiting line goes.
     lr.push(ev({ session: 'c', kind: 'run.ended', hold: 'h-c' }));
-    await waitFor(() => r.container.querySelector('#c-waiting') === null, 'the waiting line gone');
+    await waitFor(() => r.container.querySelector('.m-asked') === null, 'the waiting line gone');
+    r.unmount();
+  });
+
+  it('queued asked work shows at the foot and dots its asking row, then runs, then goes', async () => {
+    const parentIdle = [...started('p', 'T1', 'review my changes', 'claude')];
+    // The child is recorded (its asked origin), but no run holds it: the turn
+    // list is what says it waits, then runs.
+    const childRow = [
+      ev({ session: 'c', kind: 'turn.started', turn: 'C1', text: 'review', agent: 'codex', agent_id: 'codex', folder: '/w', origin: { kind: 'asked', session: 'p', turn: 'T1' } }),
+    ];
+    let rows: ApiTurn[] = [{ id: 'C1', session: 'c', agent: 'codex', agent_id: 'codex', folder: '/w', state: 'queued', asked: '2026-11-24T14:50:50Z' }];
+    const queue: QueueSource = { address: 'http://cockpit.test', pollMs: 10, listTurns: async () => rows, stop: async () => {} };
+    const lr = liveReplay([...parentIdle, ...childRow], { listAgents: async () => SAVED });
+    const r = await render(<App dataSource={lr.source} queue={queue} />);
+    const line = () => r.container.querySelector('.m-asked')?.textContent ?? null;
+    const dotted = () =>
+      Array.from(r.container.querySelectorAll('#sessions [data-session]')).some((x) => rowSession(x) === 'p' && x.querySelector('.s-icons .live'));
+    await waitFor(() => shownSession(r.container) === 'p' && line() === 'Codex queued · waiting for a runner', 'the queued line');
+    expect(dotted()).toBe(true);
+    // A runner starts it.
+    rows = [{ ...rows[0], state: 'running', started: new Date(Date.now() - 3000).toISOString() }];
+    await waitFor(() => /^Codex is working on it · \d+s$/.test(line() ?? ''), 'the running line');
+    expect(dotted()).toBe(true);
+    // It ends: the line and the dot go.
+    rows = [{ ...rows[0], state: 'finished', ended: new Date().toISOString() }];
+    await waitFor(() => line() === null, 'the line gone');
+    expect(dotted()).toBe(false);
     r.unmount();
   });
 });

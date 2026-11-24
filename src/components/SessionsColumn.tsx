@@ -13,6 +13,9 @@ import { PencilIcon, TitleEdit } from './TitleEdit';
 
 interface SessionsColumnProps {
   sessions: SessionSummary[];
+  // The sessions with something under way: their own turn queued or running,
+  // or work they asked another agent for. Their row shows the running dot.
+  active?: Set<string>;
   selectedSessionId: string | null;
   onSelectSession: (sessionId: string) => void;
   // Given only when the source can start sessions.
@@ -40,6 +43,7 @@ interface SessionsColumnProps {
 
 export const SessionsColumn: React.FC<SessionsColumnProps> = ({
   sessions,
+  active,
   selectedSessionId,
   onSelectSession,
   onNewSession,
@@ -122,7 +126,7 @@ export const SessionsColumn: React.FC<SessionsColumnProps> = ({
               flows right after the last word when the name wraps to two lines. */}
           const statusIcons = (
             <SessionStatus
-              running={!!s.open}
+              running={!!s.open || !!active?.has(s.id)}
               sandbox={!!s.sandbox}
               lock={s.archived ? 'Archived' : null}
             />

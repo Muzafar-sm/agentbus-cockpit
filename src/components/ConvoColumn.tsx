@@ -8,6 +8,7 @@ import { formatCost, formatTokens, stateLabel, turnStateClass } from '../utils/f
 import { Cost } from './Cost';
 import { folderLabel, sessionFolderRef, useFolders } from '../data/folders';
 import { LiveLine } from './LiveLine';
+import { AskedWork, askedLine, askedReview } from '../data/askedWork';
 import { PencilIcon, TitleEdit } from './TitleEdit';
 import { SessionStatus } from './Icons';
 import { ShellEntry } from './ShellEntry';
@@ -79,12 +80,11 @@ interface ConvoColumnProps {
   // picker beside Send to that agent (the Review button names a reviewer).
   prefill?: { session: string; text: string; agent?: string } | null;
   onPrefillTaken?: () => void;
-  // The sessions this one asked for (ask_agent). An asked session is one-off
-  // and stays off the sessions list; the person never opens one. While one
-  // still runs, the conversation shows a plain "waiting" line naming its
-  // agent; the line goes when it ends. running is whether a run still holds
-  // it open; agent is the id its name is read from.
-  asked?: { id: string; agent?: string; running: boolean }[];
+  // The work this session asked another agent for (ask_agent, review_turn)
+  // that is queued or running. An asked session is one-off and stays off the
+  // sessions list; the person never opens one. Each shows one status line at
+  // the foot of the conversation, gone when the work ends.
+  asked?: AskedWork[];
   // Given when the source can name sessions: a new title for this one.
   // Rejects with the API's words.
   onRename?: (sessionId: string, title: string) => Promise<void>;
@@ -421,7 +421,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   const liveEventsOf = (turn: Turn) =>
     live === undefined || turn.state !== 'running' ? undefined : turn.detail?.events ?? (live?.turn === turn.id ? live.events : undefined);
   const anyRunning = live !== undefined && session.turnsList.some((t) => t.state === 'running');
-  const now = useNow(anyRunning);
+  const now = useNow(anyRunning || (asked ?? []).some((w) => w.state === 'running'));
 
   const lastTurn = session.turnsList[turnCount - 1];
   const lastState = lastTurn?.state;
@@ -642,10 +642,15 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   // Each "!" command goes after the turn that started before it.
   const placed = commandsAfter(session.turnsList, commands ?? []);
 
-  // The agents of the asked sessions still running, by name. While any are
-  // running, one plain "Waiting on …" line stands above the conversation; it
-  // goes when they end. An asked session is one-off and never opened.
-  const waitingOn = (asked ?? []).filter((a) => a.running).map((a) => agentNameOf(a.agent, agents));
+  // One line per piece of asked work, at the foot of the conversation where
+  // the agent's own status shows: queued, then running, gone when it ends.
+  // "review" only when the asking turn's tool call was review_turn.
+  const askerRunning = session.turnsList.some((t) => t.state === 'running');
+  const askedLines = (asked ?? []).map((w) => {
+    const by = w.by ? session.turnsList.find((t) => t.id === w.by) : undefined;
+    const events = by ? by.detail?.events ?? (live?.turn === by.id ? live.events : undefined) : undefined;
+    return { w, line: askedLine(w, agentNameOf(w.agent, agents), askedReview(events, w.id), askerRunning, now) };
+  });
 
   // The chat is prompts and replies, under one header line per turn. A turn's
   // calls and how it continued are in the panel, so opening a turn never
@@ -716,11 +721,6 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
           </>
         )}
       </header>
-      {waitingOn.length > 0 && (
-        <div id="c-waiting" className="c-waiting" role="status">
-          Waiting on {waitingOn.join(', ')}
-        </div>
-      )}
       <div id="c-msgs" ref={msgsRef} onScroll={onMsgsScroll}>
         <div className="c-in" ref={contentRef}>
           {placed.get(-1)?.map((r) => <ShellEntry key={r.id} run={r} />)}
@@ -870,6 +870,14 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
             );
           })}
           {pending.filter((p) => !(p.state === 'failed' && p.turnsAtSend < turnCount)).map(pendingRow)}
+          {askedLines.map(({ w, line }) => (
+            <div key={w.id} className="m-live m-asked" role="status" data-asked={w.id} data-state={w.state}>
+              <span className={`live-line ${w.state === 'running' ? 'run' : 'dim'}`}>
+                {w.state === 'running' ? <i className="spin run-spin" aria-hidden /> : null}
+                <span className="live-text">{line}</span>
+              </span>
+            </div>
+          ))}
         </div>
       </div>
 

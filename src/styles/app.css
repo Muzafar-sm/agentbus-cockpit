@@ -616,6 +616,9 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .live-line.run { color: var(--run); }
 .live-line.bad { color: var(--bad); }
 .m-live { height: 1.5rem; display: flex; align-items: center; font-size: 0.9375rem; margin: 0.125rem 0 0.25rem; overflow: hidden; }
+/* Asked work's line may wrap on a narrow screen: its reason is the point. */
+.m-asked { height: auto; min-height: 1.5rem; }
+.m-asked .live-line { white-space: normal; }
 #sessions .s-live { display: block; overflow: hidden; }
 #sessions .s-live .live-line { font-size: var(--fs-s); }
 #sessions .s-tt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -665,7 +668,6 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 
 /* A turn the person did not type: a delivered result, or a turn another
    agent asked for. The line above it says so. */
-.c-waiting { font-size: var(--fs-s); color: var(--ink3); padding: 0.35rem 1rem; border-bottom: 1px solid var(--line); }
 .tb .m-origin { font-size: var(--fs-s); color: var(--ink3); margin: 0 0 0.25rem; text-align: right; }
 .tb .m-origin b { color: var(--ink2); font-weight: 600; }
 .tb .m-user .bubble.delivered { background: #fff; border: 1.5px dashed var(--line2); font-family: var(--mono); font-size: var(--fs-m); max-width: 100%; }
