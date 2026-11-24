@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ApiTurn } from '../data/jobs';
-import { PendingMachine, RunnerInfo, SandboxInfo } from '../types';
+import { PendingMachine, RunnerInfo } from '../types';
 import { formatAgo } from '../utils/format';
 import { ColHead, PageFrame } from './PageFrame';
 import { RunnersList, RunnersState } from './RunnersList';
@@ -95,17 +95,6 @@ export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pendin
   );
 };
 
-// SandboxNote says whether a machine can build a session's wall.
-const SandboxNote: React.FC<{ s?: SandboxInfo }> = ({ s }) => {
-  if (!s) return <span className="dim">not reported</span>;
-  if (s.can) return <span className="rn-chip">can build it</span>;
-  return (
-    <span className="rn-sandbox-no">
-      cannot{s.why ? <span className="dim">: {s.why}</span> : null}
-    </span>
-  );
-};
-
 // The machines waiting for approval, as rows above the runners.
 const PendingList: React.FC<{ pending: PendingMachine[]; selected?: string; onSelect: (id: string) => void }> = ({
   pending,
@@ -179,12 +168,6 @@ const PendingDetail: React.FC<{ p: PendingMachine; actions?: RunnerActions; onDo
             <tr>
               <td>OS</td>
               <td>{p.os ? <span className="rn-chip">{[p.os, p.arch].filter(Boolean).join(' ')}</span> : <span className="dim">not reported</span>}</td>
-            </tr>
-            <tr>
-              <td>Sandbox</td>
-              <td>
-                <SandboxNote s={p.sandbox} />
-              </td>
             </tr>
             <tr>
               <td>Labels</td>
@@ -287,14 +270,6 @@ const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: (
               <td>OS</td>
               <td>{r.os ? chips([[r.os, r.arch].filter(Boolean).join(' ')], '') : <span className="dim">not reported yet</span>}</td>
             </tr>
-            {!connector && (
-              <tr>
-                <td>Sandbox</td>
-                <td>
-                  <SandboxNote s={r.sandbox} />
-                </td>
-              </tr>
-            )}
             <tr>
               <td>Labels</td>
               <td>{chips(r.labels, 'none')}</td>

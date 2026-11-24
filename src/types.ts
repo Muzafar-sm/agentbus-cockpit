@@ -293,14 +293,6 @@ export interface RunnerInfo {
   os?: string;
   arch?: string;
   harnesses: RunnerHarness[];
-  // Whether it can build a session's wall (the sandbox setting), and why
-  // not. Absent from a runner of a build before it reported it.
-  sandbox?: SandboxInfo;
-}
-
-export interface SandboxInfo {
-  can: boolean;
-  why?: string;
 }
 
 // A machine that ran agentbus login and waits for the person, from pending
@@ -313,7 +305,6 @@ export interface PendingMachine {
   arch?: string;
   labels: string[];
   capacity: number;
-  sandbox?: SandboxInfo;
   asked: string;
   expires: string;
 }

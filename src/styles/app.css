@@ -850,7 +850,6 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .signin-dot.opens { cursor: pointer; }
 .signin-dot.opens::after { content: ''; position: absolute; inset: -0.35rem; border-radius: 50%; }
 .signin-dot.opens:focus-visible { outline: 2px solid var(--ink3); outline-offset: 2px; }
-.rn-sandbox-no { color: var(--amber); }
 /* Why Settings does not offer the sandbox: the machines' own reasons. */
 .pg-why { margin: 0.6rem 0 0; font-size: var(--fs-m); line-height: 1.45; color: var(--amber); }
 .rn-pending { margin-bottom: 0.5rem; }
