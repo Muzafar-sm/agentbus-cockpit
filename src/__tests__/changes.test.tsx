@@ -5,7 +5,7 @@
 import { act } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { App, TURN_END_POLL_MS } from '../App';
-import { ApplyPanel, MERGE_REQUEST, TOO_BIG, TurnChangesTab, turnTooBig } from '../components/Changes';
+import { ApplyPanel, groupByFolder, MERGE_REQUEST, TOO_BIG, TurnChangesTab, turnTooBig } from '../components/Changes';
 import { LiveDataSource } from '../data/LiveDataSource';
 import { ApplyPreview, ApplyState, DiscardState, TurnChangesPage, TurnDiff, UpdateState } from '../types';
 // getWorkspaceChanges/applyWorkspace/discardWorkspace act on the session's
@@ -1044,5 +1044,33 @@ describe('The turn panel after the preview', () => {
     expect(tab('Events')!.className).toContain('on');
     expect(tab('Result')!.className).not.toContain('on');
     r.unmount();
+  });
+});
+
+describe('Review of several folders', () => {
+  it('groups files by the folder each path starts with; one folder is one group', () => {
+    const files = [{ path: 'cockpit/a.tsx' }, { path: 'framework/b.go' }, { path: 'framework/x/c.go' }];
+    expect(groupByFolder(files, ['framework', 'cockpit']).map((g) => [g.name, g.files.map((f) => f.path)])).toEqual([
+      ['framework', ['framework/b.go', 'framework/x/c.go']],
+      ['cockpit', ['cockpit/a.tsx']],
+    ]);
+    expect(groupByFolder(files, ['framework'])).toEqual([{ name: '', files }]);
+    expect(groupByFolder(files)).toEqual([{ name: '', files }]);
+  });
+
+  it('the apply panel lists each folder under its name', async () => {
+    const two: ApplyPreview = {
+      ...preview,
+      files: [
+        { path: 'cockpit/a.tsx', change: 'modified', added: 1, removed: 1 },
+        { path: 'framework/b.go', change: 'added', added: 1, removed: 0 },
+      ],
+    };
+    const r = await render(<ApplyPanel preview={two} apply={vi.fn()} folders={['framework', 'cockpit']} />);
+    expect(Array.from(r.container.querySelectorAll('.ch-folder')).map((e) => e.textContent)).toEqual(['framework', 'cockpit']);
+    r.unmount();
+    const one = await render(<ApplyPanel preview={two} apply={vi.fn()} />);
+    expect(one.container.querySelector('.ch-folder')).toBeNull();
+    one.unmount();
   });
 });

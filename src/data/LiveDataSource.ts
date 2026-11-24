@@ -26,6 +26,7 @@ import {
   ApplyState,
   DiscardState,
   UpdateState,
+  WorkspaceInfo,
   Turn,
   TurnDiff,
   TurnChangesPage,
@@ -667,7 +668,8 @@ export class LiveDataSource implements DataSource {
   async createWorkspace(req: RunRequest): Promise<string> {
     const key = req.idempotency_key;
     const wsBody: Record<string, unknown> = {};
-    if (req.folder_ref) wsBody.folder_ref = req.folder_ref;
+    if (req.folders && req.folders.length > 1) wsBody.folders = req.folders;
+    else if (req.folder_ref) wsBody.folder_ref = req.folder_ref;
     else if (req.folder) wsBody.folder = req.folder;
     if (req.machine) wsBody.machine = req.machine;
     // Sent explicitly, both ways, so the record carries the person's choice.
@@ -780,6 +782,13 @@ export class LiveDataSource implements DataSource {
       `${this.baseUrl}/api/v0/sessions/${encodeURIComponent(sessionId)}/context${qs ? `?${qs}` : ''}`,
       { headers: this.headers() }
     );
+    if (!res.ok) throw new Error(await apiError(res));
+    return res.json();
+  }
+
+  // GET /api/v0/workspaces/<id>: the workspace's record, its folders.
+  async getWorkspace(workspace: string): Promise<WorkspaceInfo> {
+    const res = await fetch(`${this.baseUrl}/api/v0/workspaces/${encodeURIComponent(workspace)}`, { headers: this.headers() });
     if (!res.ok) throw new Error(await apiError(res));
     return res.json();
   }

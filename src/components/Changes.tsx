@@ -82,15 +82,37 @@ export const FileChange: React.FC<{ file: ChangedFile; open: boolean; conflict?:
   );
 };
 
-const FileList: React.FC<{ files: ChangedFile[]; truncated?: boolean; diffsCut?: boolean; conflicts?: Map<string, string> }> = ({
-  files,
-  truncated,
-  diffsCut,
-  conflicts,
-}) => (
+// groupByFolder splits files by the workspace's folder each path starts
+// with: a session in several folders names every file by its folder's name
+// first. One folder (or none known) is one group with no name.
+export function groupByFolder<T extends { path: string }>(files: T[], folders?: string[]): { name: string; files: T[] }[] {
+  if (!folders || folders.length < 2) return [{ name: '', files }];
+  const groups = folders.map((name) => ({ name, files: files.filter((f) => f.path.startsWith(name + '/')) }));
+  const rest = files.filter((f) => !folders.some((name) => f.path.startsWith(name + '/')));
+  return [...groups, ...(rest.length > 0 ? [{ name: '', files: rest }] : [])].filter((g) => g.files.length > 0);
+}
+
+const FileList: React.FC<{
+  files: ChangedFile[];
+  truncated?: boolean;
+  diffsCut?: boolean;
+  conflicts?: Map<string, string>;
+  // The workspace's folder names, when it has several: the files are listed
+  // under each.
+  folders?: string[];
+}> = ({ files, truncated, diffsCut, conflicts, folders }) => (
   <div className="ch-files">
-    {files.map((f) => (
-      <FileChange key={f.path} file={f} open={files.length <= FOLD_OVER} conflict={conflicts?.get(f.path)} />
+    {groupByFolder(files, folders).map((g) => (
+      <React.Fragment key={g.name}>
+        {g.name && (
+          <div className="ch-kind ch-folder">
+            <code>{g.name}</code>
+          </div>
+        )}
+        {g.files.map((f) => (
+          <FileChange key={f.path} file={f} open={files.length <= FOLD_OVER} conflict={conflicts?.get(f.path)} />
+        ))}
+      </React.Fragment>
     ))}
     {truncated && <div className="nd-note">More files changed than are listed.</div>}
     {diffsCut && <div className="nd-note">Some diffs are left out: the changes are too big to show in full.</div>}
@@ -292,13 +314,16 @@ interface ApplyPanelProps {
   // still conflict, also when the update ended after the panel stopped
   // waiting for it.
   lastUpdate?: { result?: string; conflicts?: string[] } | null;
+  // The workspace's folder names, when it has several: the files are listed
+  // under each folder.
+  folders?: string[];
 }
 
 // The right panel's apply preview for the conversation on screen: every
 // file applying would write, its diff against the person's folder now, any
 // file the person changed since (which the apply would refuse), and one
 // "Apply to my folder" for the turn the preview names.
-export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, readApply, onApplyEnded, onRefresh, onClose, pollMs = 2000, review, discard, onDiscarded, update, lastUpdate }) => {
+export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, readApply, onApplyEnded, onRefresh, onClose, pollMs = 2000, review, discard, onDiscarded, update, lastUpdate, folders }) => {
   // The apply this panel asked for: its turn, and its state as last read.
   const [asked, setAsked] = useState<{ turn: string; state: ApplyState | null } | null>(null);
   // The reviewer the small picker shows; empty follows review.defaultAgent.
@@ -573,7 +598,7 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
                     </Notice>
                   )}
                   {has && (
-                    <FileList files={preview.files} truncated={preview.truncated} diffsCut={preview.diffs_cut} conflicts={conflictOf} />
+                    <FileList files={preview.files} truncated={preview.truncated} diffsCut={preview.diffs_cut} conflicts={conflictOf} folders={folders} />
                   )}
                   {preview.count > preview.files.length && (
                     <div className="nd-note ap-more">

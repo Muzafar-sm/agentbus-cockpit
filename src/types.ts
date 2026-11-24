@@ -350,6 +350,10 @@ export interface RunRequest {
   agent: string;
   folder?: string;
   folder_ref?: string;
+  // In place of folder and folder_ref: a session in several folders, all on
+  // machine. Its copy holds each folder side by side, and Review, Apply,
+  // Discard and Update cover them together. Copy only.
+  folders?: WorkspaceFolderReq[];
   machine?: string;
   // True (the default) for a sandbox: a copy of the folder behind a wall whose
   // changes are applied on request. False: the agent works in the folder as it
@@ -361,6 +365,17 @@ export interface RunRequest {
   prompt: string;
   model?: string;
   idempotency_key?: string;
+}
+
+// One folder of a session in several: a listed folder by its reference, or
+// a typed path.
+export type WorkspaceFolderReq = { folder_ref: string } | { folder: string };
+
+// GET /api/v0/workspaces/<id>, as the cockpit reads it: the folders, each
+// with the name its files are listed under. One folder has no name.
+export interface WorkspaceInfo {
+  workspace: string;
+  folders?: { name?: string; folder?: string; folder_ref?: string }[];
 }
 
 // GET /api/v0/turns/<id>/diff, as the cockpit reads it: what one turn
@@ -913,6 +928,9 @@ export interface DataSource {
   // GET /api/v0/workspaces/{id}/changes): the files not yet in the person's
   // folder, their diffs and conflicts. Rejects with the API's words.
   getWorkspaceChanges?(workspace: string, fresh?: boolean): Promise<ApplyPreview>;
+  // The workspace's record (GET /api/v0/workspaces/{id}): its folders, for
+  // grouping a review by folder. Rejects with the API's words.
+  getWorkspace?(workspace: string): Promise<WorkspaceInfo>;
   // A source that keeps request bodies has this: one model call's request
   // and reply by its turn and exchange. Rejects with an Error in the API's
   // own words.

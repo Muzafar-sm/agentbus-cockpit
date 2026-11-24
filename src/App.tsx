@@ -1353,6 +1353,23 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     if (previewSession) readPreview(previewSession);
   }, [previewSession, readPreview]);
   const shownPreview = preview && preview.session === previewSession ? preview : null;
+  // The folder names of the shown session's workspace, when it has several:
+  // Review lists each folder's files under its name. Read once per workspace.
+  const shownWorkspace = sessionView?.sandbox ? sessionView.workspace : undefined;
+  const [workspaceFolders, setWorkspaceFolders] = useState<{ ws: string; names: string[] } | null>(null);
+  useEffect(() => {
+    if (!shownWorkspace || !dataSource.getWorkspace) return;
+    let live = true;
+    dataSource.getWorkspace(shownWorkspace).then(
+      (w) => live && setWorkspaceFolders({ ws: shownWorkspace, names: (w.folders ?? []).map((f) => f.name ?? '').filter((n) => n !== '') }),
+      () => undefined
+    );
+    return () => {
+      live = false;
+    };
+  }, [shownWorkspace, dataSource]);
+  const reviewFolders =
+    workspaceFolders && workspaceFolders.ws === shownWorkspace && workspaceFolders.names.length > 1 ? workspaceFolders.names : undefined;
   // The copy has more files than a checkpoint holds: its changes cannot be tracked.
   const previewTooBig = refusedTooBig(shownPreview?.error);
   const openApply = () => {
@@ -1740,6 +1757,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
               : undefined
           }
           lastUpdate={sessionView?.workspace ? lastUpdates[sessionView.workspace] ?? null : null}
+          folders={reviewFolders}
         />
       ) : (
       <RightPanel

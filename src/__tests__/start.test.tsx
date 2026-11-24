@@ -2197,3 +2197,153 @@ describe('New session: the machine, then a folder on it', () => {
     r.unmount();
   });
 });
+
+describe('Several folders', () => {
+  const mode = (dialog: Element, v: string) => dialog.querySelector(`[data-mode="${v}"]`) as HTMLButtonElement;
+
+  it('+ Add folder takes a second folder, sent as folders on one machine; Direct waits for one folder', async () => {
+    const folders = [
+      { ref: 'fld_00000000000000a1', name: 'framework', machine: 'con_1', runner: 'run_1' },
+      { ref: 'fld_00000000000000b2', name: 'cockpit', machine: 'con_1', runner: 'run_1' },
+    ];
+    const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS, folders });
+    const r = await mount(svc);
+    await click(r.container.querySelector('#sessions button.new-session'));
+    await settle();
+    const dialog = r.container.querySelector('.new-dialog')!;
+    const picks = () => Array.from(dialog.querySelectorAll('.nd-recent button')) as HTMLButtonElement[];
+    await click(picks()[0]);
+    await click(dialog.querySelector('button.nd-add-folder') as HTMLButtonElement);
+    expect(dialog.querySelector('input[name="folder-2"]')).not.toBeNull();
+    expect(mode(dialog, 'direct').disabled).toBe(true);
+    // An empty second row stops Start and says so.
+    await click(dialog.querySelector('button[type="submit"]') as HTMLButtonElement);
+    expect(dialog.querySelector('.nd-missing')?.textContent).toBe('Pick a folder for each row, or remove it.');
+    // A pick fills the first empty row: the new one.
+    await click(picks()[1]);
+    expect((dialog.querySelector('input[name="folder"]') as HTMLInputElement).value).toBe('framework');
+    expect((dialog.querySelector('input[name="folder-2"]') as HTMLInputElement).value).toBe('cockpit');
+    await setValue(dialog.querySelector('textarea[name="prompt"]'), 'go');
+    await submitForm(dialog);
+    expect(workspaceBody(svc)).toEqual({
+      folders: [{ folder_ref: 'fld_00000000000000a1' }, { folder_ref: 'fld_00000000000000b2' }],
+      machine: 'con_1',
+      sandbox: true,
+    });
+    r.unmount();
+  });
+
+  it('Remove takes a folder back out, and one folder is sent as before', async () => {
+    const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS });
+    const r = await mount(svc);
+    await click(r.container.querySelector('#sessions button.new-session'));
+    await settle();
+    const dialog = r.container.querySelector('.new-dialog')!;
+    await setValue(dialog.querySelector('input[name="folder"]'), '/Users/ana/x');
+    await click(dialog.querySelector('button.nd-add-folder') as HTMLButtonElement);
+    await setValue(dialog.querySelector('input[name="folder-2"]'), '/Users/ana/y');
+    const remove = Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Remove') as HTMLButtonElement;
+    await click(remove);
+    expect(dialog.querySelector('input[name="folder-2"]')).toBeNull();
+    expect(mode(dialog, 'direct').disabled).toBe(false);
+    await setValue(dialog.querySelector('textarea[name="prompt"]'), 'go');
+    await submitForm(dialog);
+    expect(workspaceBody(svc)).toEqual({ folder: '/Users/ana/x', sandbox: true });
+    r.unmount();
+  });
+
+  it('the same folder in two rows, or folders of two machines, start nothing and say why', async () => {
+    const folders = [
+      { ref: 'fld_00000000000000a1', name: 'framework', machine: 'con_1', runner: 'run_1' },
+      { ref: 'fld_00000000000000c3', name: 'other', machine: 'con_2', runner: 'run_2' },
+    ];
+    const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS, folders });
+    const r = await mount(svc);
+    await click(r.container.querySelector('#sessions button.new-session'));
+    await settle();
+    const dialog = r.container.querySelector('.new-dialog')!;
+    const picks = () => Array.from(dialog.querySelectorAll('.nd-recent button')) as HTMLButtonElement[];
+    const posts = () => svc.reqs.filter((q) => q.method === 'POST' && q.path === '/api/v0/workspaces').length;
+    await click(picks()[0]);
+    await click(dialog.querySelector('button.nd-add-folder') as HTMLButtonElement);
+    await click(picks()[0]);
+    await click(dialog.querySelector('button[type="submit"]') as HTMLButtonElement);
+    expect(dialog.querySelector('.nd-missing')?.textContent).toBe('The same folder is in two rows.');
+    await click(picks()[1]);
+    await click(dialog.querySelector('button[type="submit"]') as HTMLButtonElement);
+    expect(dialog.querySelector('.nd-missing')?.textContent).toBe('All folders of a session are on one machine.');
+    expect(posts()).toBe(0);
+    expect(dialog.querySelector('button[aria-label="Remove folder 2"]')).not.toBeNull();
+    r.unmount();
+  });
+
+  it('two typed paths that clean the same are one folder; a listed folder in a later row names the machine', async () => {
+    const folders = [{ ref: 'fld_00000000000000c3', name: 'other', machine: 'con_2', runner: 'run_2' }];
+    const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS, folders });
+    const r = await mount(svc);
+    await click(r.container.querySelector('#sessions button.new-session'));
+    await settle();
+    const dialog = r.container.querySelector('.new-dialog')!;
+    await setValue(dialog.querySelector('input[name="folder"]'), '/work/project');
+    await click(dialog.querySelector('button.nd-add-folder') as HTMLButtonElement);
+    await setValue(dialog.querySelector('input[name="folder-2"]'), '/work/./project/');
+    await click(dialog.querySelector('button[type="submit"]') as HTMLButtonElement);
+    expect(dialog.querySelector('.nd-missing')?.textContent).toBe('The same folder is in two rows.');
+    await click(dialog.querySelector('input[name="folder-2"]') as HTMLInputElement);
+    await click(dialog.querySelector('.nd-recent button') as HTMLButtonElement);
+    await setValue(dialog.querySelector('textarea[name="prompt"]'), 'go');
+    await submitForm(dialog);
+    expect(workspaceBody(svc)).toEqual({
+      folders: [{ folder: '/work/project' }, { folder_ref: 'fld_00000000000000c3' }],
+      machine: 'con_2',
+      sandbox: true,
+    });
+    r.unmount();
+  });
+
+  it('a pick lands by rule, not by focus: the first empty row, else the last row', async () => {
+    const folders = ['one', 'two', 'three'].map((n, i) => ({ ref: `fld_000000000000000${i + 1}`, name: n, machine: 'con_1', runner: 'run_1' }));
+    const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS, folders });
+    const r = await mount(svc);
+    await click(r.container.querySelector('#sessions button.new-session'));
+    await settle();
+    const dialog = r.container.querySelector('.new-dialog')!;
+    const picks = () => Array.from(dialog.querySelectorAll('.nd-recent button')) as HTMLButtonElement[];
+    const rows = () => Array.from(dialog.querySelectorAll('input[name^="folder"]')).map((e) => (e as HTMLInputElement).value);
+    await click(picks()[0]);
+    await click(dialog.querySelector('button.nd-add-folder') as HTMLButtonElement);
+    await click(picks()[1]);
+    expect(rows()).toEqual(['one', 'two']);
+    // Tabbing through the rows to reach the picks moves focus, not the target.
+    for (const el of Array.from(dialog.querySelectorAll('input[name^="folder"]'))) {
+      await act(async () => (el as HTMLInputElement).focus());
+    }
+    await click(picks()[2]);
+    expect(rows()).toEqual(['one', 'three']);
+    r.unmount();
+  });
+
+  it('focus stays in the dialog when a row is added or removed', async () => {
+    const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS });
+    const r = await mount(svc);
+    await click(r.container.querySelector('#sessions button.new-session'));
+    await settle();
+    const dialog = r.container.querySelector('.new-dialog')!;
+    await click(dialog.querySelector('button.nd-add-folder') as HTMLButtonElement);
+    expect(document.activeElement).toBe(dialog.querySelector('input[name="folder-2"]'));
+    await click(dialog.querySelector('button[aria-label="Remove folder 2"]') as HTMLButtonElement);
+    expect(document.activeElement).toBe(dialog.querySelector('input[name="folder"]'));
+    r.unmount();
+  });
+
+  it('Direct shows no + Add folder', async () => {
+    const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS });
+    const r = await mount(svc);
+    await click(r.container.querySelector('#sessions button.new-session'));
+    await settle();
+    const dialog = r.container.querySelector('.new-dialog')!;
+    await click(mode(dialog, 'direct'));
+    expect(dialog.querySelector('button.nd-add-folder')).toBeNull();
+    r.unmount();
+  });
+});
