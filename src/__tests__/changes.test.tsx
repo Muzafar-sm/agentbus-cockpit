@@ -5,7 +5,7 @@
 import { act } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { App, TURN_END_POLL_MS } from '../App';
-import { ApplyPanel, TOO_BIG, TurnChangesTab, turnTooBig } from '../components/Changes';
+import { ApplyPanel, mergeRequest, TOO_BIG, TurnChangesTab, turnTooBig } from '../components/Changes';
 import { LiveDataSource } from '../data/LiveDataSource';
 import { ApplyPreview, ApplyState, DiscardState, TurnChangesPage, TurnDiff, UpdateState } from '../types';
 // getWorkspaceChanges/applyWorkspace/discardWorkspace act on the session's
@@ -130,6 +130,21 @@ describe('The apply bar', () => {
     await act(async () => push(ev({ seq: 8, session: 'c2', kind: 'turn.changed', turn: 'X' })));
     await flush();
     expect(getWorkspaceChanges.mock.calls.length).toBe(before);
+    r.unmount();
+  });
+
+  it('is read again when an update (or a Merge) of its workspace ends, matched by the workspace', async () => {
+    const getWorkspaceChanges = vi.fn(async () => preview);
+    const { r, push } = await open({ getWorkspaceChanges });
+    const reads = getWorkspaceChanges.mock.calls.length;
+    // An update job has no session: the event names only the workspace.
+    await act(async () => push(ev({ seq: 6, session: '', kind: 'workspace.updated', workspace: 'ws_c1' })));
+    await flush();
+    expect(getWorkspaceChanges.mock.calls.length).toBe(reads + 1);
+    // Another workspace's update does not read it.
+    await act(async () => push(ev({ seq: 7, session: '', kind: 'workspace.updated', workspace: 'ws_c2' })));
+    await flush();
+    expect(getWorkspaceChanges.mock.calls.length).toBe(reads + 1);
     r.unmount();
   });
 
@@ -701,15 +716,197 @@ describe('Update from my folder', () => {
     r.unmount();
   });
 
-  it('a conflicting update changes nothing and says to ask the agent', async () => {
+  it('a conflicting update turns Review into Merge, hides Update, and says so at the top', async () => {
     const update = vi.fn(async (): Promise<UpdateState> => ({ state: 'conflict', conflicts: ['a.txt', 'b.txt'] }));
     const onRefresh = vi.fn();
-    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} onRefresh={onRefresh} />);
+    const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge: vi.fn() };
+    const two: ApplyPreview = {
+      ...preview,
+      conflicts: [
+        { path: 'a.txt', why: 'changed in your folder since the checkpoint' },
+        { path: 'b.txt', why: 'changed in your folder since the checkpoint' },
+      ],
+    };
+    const r = await render(<ApplyPanel preview={two} apply={vi.fn()} update={update} onRefresh={onRefresh} review={review} />);
+    expect(button(r.container, 'Review')).not.toBeUndefined();
+    expect(button(r.container, 'Merge')).toBeUndefined();
     await click(button(r.container, 'Update from my folder')!);
     await flush();
     expect(onRefresh).not.toHaveBeenCalled();
-    expect(r.container.textContent).toContain('2 files still conflict; ask the agent to update and resolve them.');
+    expect(button(r.container, 'Update from my folder')).toBeUndefined();
+    expect(button(r.container, 'Review')).toBeUndefined();
+    expect(button(r.container, 'Merge')).not.toBeUndefined();
+    const top = r.container.querySelector('.ap-conflicts')!;
+    expect(top.textContent).toContain('2 files changed on both sides. Merge asks Codex to combine them, then Apply.');
+    expect(r.container.textContent).not.toContain('still conflict');
+    expect(r.container.querySelector('p.nd-note[role="status"]')).toBeNull();
     r.unmount();
+  });
+
+  it('Merge fills the message at once, then asks AgentBus to merge; the next preview decides what shows', async () => {
+    const order: string[] = [];
+    const update = vi.fn(async (mode?: 'merge'): Promise<UpdateState> => {
+      order.push(`update:${mode ?? ''}`);
+      return mode === 'merge' ? { state: 'merged', updated: true, unresolved: ['a.txt'] } : { state: 'conflict', conflicts: ['a.txt'] };
+    });
+    const onRefresh = vi.fn();
+    const onMerge = vi.fn(() => {
+      order.push('fill');
+    });
+    const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge };
+    const markers: ApplyPreview = { ...preview, conflicts: [{ path: 'a.txt', why: 'still holds conflict markers', markers: true }] };
+    const panel = (p: ApplyPreview) => <ApplyPanel preview={p} apply={vi.fn()} update={update} onRefresh={onRefresh} review={review} />;
+    const r = await render(panel(conflicted));
+    await click(button(r.container, 'Update from my folder')!);
+    await flush();
+    await click(button(r.container, 'Merge')!);
+    await flush();
+    // Filled before the merge call, so a draft typed while it runs is kept.
+    expect(order).toEqual(['update:', 'fill', 'update:merge']);
+    expect(onMerge).toHaveBeenCalledWith('ag1', ['a.txt']);
+    expect(onRefresh).toHaveBeenCalled();
+    // The new preview: a.txt still holds markers. Merge only fills again.
+    await act(async () => r.root.render(panel(markers)));
+    expect(button(r.container, 'Update from my folder')).toBeUndefined();
+    await click(button(r.container, 'Merge')!);
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(onMerge).toHaveBeenCalledTimes(2);
+    // The turn combined it: Review is back.
+    await act(async () => r.root.render(panel(preview)));
+    expect(button(r.container, 'Merge')).toBeUndefined();
+    expect(button(r.container, 'Review')).not.toBeUndefined();
+    // A later conflict in another file starts over from Update, never from the
+    // earlier merge's files (review findings, 2026-11-24).
+    const later: ApplyPreview = { ...preview, conflicts: [{ path: 'b.txt', why: 'changed in your folder since the checkpoint' }] };
+    await act(async () => r.root.render(panel(later)));
+    expect(button(r.container, 'Update from my folder')).not.toBeUndefined();
+    expect(button(r.container, 'Merge')).toBeUndefined();
+    r.unmount();
+  });
+
+  it('Merge goes when a new preview has no conflict left, even before it was clicked', async () => {
+    const update = vi.fn(async (): Promise<UpdateState> => ({ state: 'conflict', conflicts: ['a.txt'] }));
+    const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge: vi.fn() };
+    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} review={review} />);
+    await click(button(r.container, 'Update from my folder')!);
+    await flush();
+    expect(button(r.container, 'Merge')).not.toBeUndefined();
+    // The person resolved it in their folder; the next preview has no conflict.
+    await act(async () => r.root.render(<ApplyPanel preview={{ ...preview }} apply={vi.fn()} update={update} review={review} />));
+    expect(button(r.container, 'Merge')).toBeUndefined();
+    expect(button(r.container, 'Review')).not.toBeUndefined();
+    r.unmount();
+  });
+
+  it('a Merge still waiting its turn says so and is not asked for twice', async () => {
+    const update = vi.fn(async (mode?: 'merge'): Promise<UpdateState> =>
+      mode === 'merge' ? { state: 'queued' } : { state: 'conflict', conflicts: ['a.txt'] }
+    );
+    const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge: vi.fn() };
+    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} review={review} />);
+    await click(button(r.container, 'Update from my folder')!);
+    await flush();
+    await click(button(r.container, 'Merge')!);
+    await flush();
+    expect(r.container.textContent).toContain('Merging… it is waiting its turn.');
+    // Held, not asked for twice.
+    expect(button(r.container, 'Merge')!.disabled).toBe(true);
+    expect(button(r.container, 'Update from my folder')).toBeUndefined();
+    expect(update).toHaveBeenCalledTimes(2);
+    // It ends: the record streams the merge's result and the preview is read
+    // again; the files now hold the markers, so Merge only fills.
+    const markers: ApplyPreview = { ...preview, conflicts: [{ path: 'a.txt', why: 'still holds conflict markers', markers: true }] };
+    await act(async () =>
+      r.root.render(<ApplyPanel preview={markers} apply={vi.fn()} update={update} review={review} lastUpdate={{ result: 'merged' }} />)
+    );
+    expect(button(r.container, 'Merge')!.disabled).toBe(false);
+    expect(r.container.textContent).not.toContain('Merging… it is waiting its turn.');
+    r.unmount();
+  });
+
+  it('a late Merge reply clears only its own result, never a newer conflict', async () => {
+    let finish: ((s: UpdateState) => void) | null = null;
+    const update = vi.fn((mode?: 'merge'): Promise<UpdateState> =>
+      mode === 'merge'
+        ? new Promise<UpdateState>((done) => {
+            finish = done;
+          })
+        : Promise.resolve({ state: 'conflict', conflicts: ['a.txt'] })
+    );
+    const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge: vi.fn() };
+    const panel = (u?: { result?: string; conflicts?: string[] }) => (
+      <ApplyPanel preview={conflicted} apply={vi.fn()} update={update} review={review} lastUpdate={u ?? null} />
+    );
+    const r = await render(panel());
+    await click(button(r.container, 'Update from my folder')!);
+    await flush();
+    await click(button(r.container, 'Merge')!); // waits
+    // Meanwhile the record streams a newer update result: a conflict again.
+    await act(async () => r.root.render(panel({ result: 'conflict', conflicts: ['a.txt'] })));
+    await act(async () => finish!({ state: 'merged', updated: true, unresolved: ['a.txt'] }));
+    await flush();
+    // The newer conflict still offers Merge, and Merge still asks AgentBus.
+    await click(button(r.container, 'Merge')!);
+    await flush();
+    expect(update.mock.calls.filter((c) => c[0] === 'merge').length).toBe(2);
+    r.unmount();
+  });
+
+  it('a conflict result survives the preview read again after it, and a streamed one offers Merge', async () => {
+    const update = vi.fn(async (): Promise<UpdateState> => ({ state: 'conflict', conflicts: ['a.txt'] }));
+    const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge: vi.fn() };
+    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} review={review} />);
+    await click(button(r.container, 'Update from my folder')!);
+    await flush();
+    // The update's own workspace.updated reads the preview again: a new
+    // preview, still refusing a.txt. Merge stays (review finding, 2026-11-24).
+    const again: ApplyPreview = { ...conflicted, previewed_at: '2026-11-24T11:00:00Z' };
+    await act(async () => r.root.render(<ApplyPanel preview={again} apply={vi.fn()} update={update} review={review} />));
+    expect(button(r.container, 'Merge')).not.toBeUndefined();
+    expect(button(r.container, 'Update from my folder')).toBeUndefined();
+    r.unmount();
+    // An update that ended after nobody waited for it, as the record streams it.
+    const r2 = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} review={review} lastUpdate={{ result: 'conflict', conflicts: ['a.txt'] }} />);
+    expect(button(r2.container, 'Merge')).not.toBeUndefined();
+    r2.unmount();
+  });
+
+  it('a Merge that finds nothing left to combine reads as a plain update', async () => {
+    const update = vi.fn(async (mode?: 'merge'): Promise<UpdateState> =>
+      mode === 'merge' ? { state: 'updated', updated: true } : { state: 'conflict', conflicts: ['a.txt'] }
+    );
+    const onRefresh = vi.fn();
+    const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge: vi.fn() };
+    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} onRefresh={onRefresh} review={review} />);
+    await click(button(r.container, 'Update from my folder')!);
+    await flush();
+    await click(button(r.container, 'Merge')!);
+    await flush();
+    expect(onRefresh).toHaveBeenCalled();
+    expect(r.container.textContent).toContain('Updated from your folder');
+    r.unmount();
+  });
+
+  it('a merge that changed nothing (files that cannot hold markers) says why', async () => {
+    const why = 'some files cannot be merged with conflict markers (not text, a link, or removed on one side): a.bin; nothing changed';
+    const update = vi.fn(async (mode?: 'merge'): Promise<UpdateState> =>
+      mode === 'merge' ? { state: 'conflict', conflicts: ['a.bin'], unmergeable: ['a.bin'], error: why } : { state: 'conflict', conflicts: ['a.bin'] }
+    );
+    const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge: vi.fn() };
+    const bin: ApplyPreview = { ...preview, conflicts: [{ path: 'a.bin', why: 'changed in your folder since the checkpoint' }] };
+    const r = await render(<ApplyPanel preview={bin} apply={vi.fn()} update={update} onRefresh={vi.fn()} review={review} />);
+    await click(button(r.container, 'Update from my folder')!);
+    await flush();
+    await click(button(r.container, 'Merge')!);
+    await flush();
+    expect(r.container.textContent).toContain(why);
+    r.unmount();
+  });
+
+  it('the merge request is the goal, the files and what to reply', () => {
+    expect(mergeRequest(['a.txt', 'b.txt'])).toBe(
+      "Your work and the person's folder changed the same files: a.txt, b.txt. Combine them so both sides' changes hold, then say when Apply is ready."
+    );
   });
 
   it('no conflicts: the Update button is disabled', async () => {
@@ -735,6 +932,8 @@ describe('Update from my folder', () => {
       const src = new LiveDataSource({ baseUrl: 'http://cockpit.test', token: 'tok' });
       expect((await src.updateWorkspace('ws_1')).updated).toBe(true);
       expect(calls).toEqual(['POST http://cockpit.test/api/v0/workspaces/ws_1/update']);
+      await src.updateWorkspace('ws_1', 'merge');
+      expect(fetchMock.mock.calls[1][1]?.body).toBe('{"mode":"merge"}');
     } finally {
       vi.unstubAllGlobals();
     }

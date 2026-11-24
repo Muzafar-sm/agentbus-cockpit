@@ -868,10 +868,13 @@ export class LiveDataSource implements DataSource {
   // now into the copy. 200 with state updated (the folder was merged in) or
   // conflict (the files that changed on both sides; nothing changed); 202 still
   // running; 409 when an apply, discard or update is in flight.
-  async updateWorkspace(workspace: string): Promise<UpdateState> {
+  // mode merge leaves both sides in conflicting files for the agent (merged).
+  async updateWorkspace(workspace: string, mode?: 'merge'): Promise<UpdateState> {
     const res = await fetch(`${this.baseUrl}/api/v0/workspaces/${encodeURIComponent(workspace)}/update`, {
       method: 'POST',
-      headers: this.headers(),
+      ...(mode
+        ? { headers: { ...this.headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) }
+        : { headers: this.headers() }),
     });
     if (res.ok) return res.json().catch(() => ({}));
     throw new Error(await apiError(res));

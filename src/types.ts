@@ -386,7 +386,7 @@ export interface ApplyState {
   // All the files written or removed: files may list fewer (truncated).
   count?: number;
   truncated?: boolean;
-  conflicts?: { path: string; why: string }[];
+  conflicts?: { path: string; why: string; markers?: boolean }[];
   error?: string;
 }
 
@@ -414,6 +414,12 @@ export interface UpdateState {
   state?: string;
   updated?: boolean;
   conflicts?: string[];
+  // On a merge (state merged): the files now holding both sides between
+  // conflict markers, for the agent to combine.
+  unresolved?: string[];
+  // On a merge that changed nothing: the files conflict markers cannot show
+  // (not text, a link, removed on one side); error says so.
+  unmergeable?: string[];
   error?: string;
 }
 
@@ -453,7 +459,9 @@ export interface ApplyPreview {
   // one could not run (the runner is offline). why says so.
   stale?: boolean;
   // Each file the person changed in their folder since: an apply refuses it.
-  conflicts: { path: string; why: string }[];
+  // markers: the file still holds the conflict markers an update's merge
+  // left (the agent combining it clears it), rather than a folder change.
+  conflicts: { path: string; why: string; markers?: boolean }[];
   // Why there is nothing to apply (not isolated, or closed), or why it is stale.
   why?: string;
 }
@@ -897,7 +905,10 @@ export interface DataSource {
   // /api/v0/workspaces/{id}/update): the calm way forward when an apply is
   // refused because the folder changed. It resolves on 200 (updated or
   // conflict), 202 and 409; any other failure rejects with the API's words.
-  updateWorkspace?(workspace: string): Promise<UpdateState>;
+  // mode merge: a conflict leaves both sides in the files between conflict
+  // markers for the agent to combine (state merged, unresolved), instead of
+  // changing nothing.
+  updateWorkspace?(workspace: string, mode?: 'merge'): Promise<UpdateState>;
   // What applying the workspace now would do (a dry run,
   // GET /api/v0/workspaces/{id}/changes): the files not yet in the person's
   // folder, their diffs and conflicts. Rejects with the API's words.

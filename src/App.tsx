@@ -18,7 +18,7 @@ import { useTabShown } from './data/useTabShown';
 import { SubscriptionApi } from './components/ConnectStep';
 import { SignInDot, signInOf } from './components/SignInDot';
 import { NewSessionDialog } from './components/NewSessionDialog';
-import { ApplyPanel, refusedTooBig } from './components/Changes';
+import { ApplyPanel, mergeRequest, refusedTooBig } from './components/Changes';
 import { RightPanel, usePanelTabs } from './components/RightPanel';
 import { recordFileName, saveRecord } from './data/exportRecord';
 import { SessionsColumn } from './components/SessionsColumn';
@@ -585,6 +585,24 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         // an apply would write: the bar above the message box reads it again.
         if (s && event.session === s.session.id && PREVIEW_KINDS.has(event.kind)) {
           readPreviewRef.current(s.session.id);
+        } else if (
+          // An update (or a Merge) of the workspace on screen ended: its job has
+          // no session, so it is matched by the workspace it names.
+          s &&
+          event.kind === 'workspace.updated' &&
+          !!s.session.workspace &&
+          (event as { workspace?: unknown }).workspace === s.session.workspace
+        ) {
+          readPreviewRef.current(s.session.id);
+        }
+        // Every workspace's latest update result, for the apply panel's Merge.
+        if (event.kind === 'workspace.updated') {
+          const ws = (event as { workspace?: unknown }).workspace;
+          const u = (event as { updated?: { result?: unknown; conflicts?: unknown } }).updated;
+          if (typeof ws === 'string' && u) {
+            const conflicts = Array.isArray(u.conflicts) ? u.conflicts.filter((c): c is string => typeof c === 'string') : undefined;
+            setLastUpdates((m) => ({ ...m, [ws]: { result: typeof u.result === 'string' ? u.result : undefined, conflicts } }));
+          }
         }
         // The shown turn's Changes and Context tabs re-read when its data
         // changes (its end among them), so a settled turn is current.
@@ -1001,6 +1019,8 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // workspace is made up front (startRun), so the folder is already checked:
   // the draft always names a good folder, and its first message cannot be
   // refused for one.
+  // The latest workspace.updated result per workspace, as streamed.
+  const [lastUpdates, setLastUpdates] = useState<Record<string, { result?: string; conflicts?: string[] }>>({});
   const [draft, setDraft] = useState<{ id: number; req: RunRequest; title?: string; session?: string; workspace: string } | null>(null);
   const draftSeq = useRef(0);
   const startRun = async (req: RunRequest, title?: string) => {
@@ -1355,6 +1375,13 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     const what = n ? `the changes from turn ${n}` : 'these changes';
     setPrefill({ session: previewSession, text: `Please review ${what}. List any problems, most serious first.`, agent: agentId });
   };
+  // Fills the message box with a plain request to combine the files that
+  // changed on both sides (Merge put both sides in them), and switches the
+  // picker beside Send to the agent. The person presses Send.
+  const mergeTurn = (agentId: string, files: string[]) => {
+    if (!previewSession) return;
+    setPrefill({ session: previewSession, text: mergeRequest(files), agent: agentId });
+  };
 
   // Load the events of a selected turn that has none yet. Events streamed
   // while they load join them.
@@ -1679,6 +1706,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
                   options: reviewOptions.map((a) => ({ id: a.id, name: a.name })),
                   defaultAgent: defaultReviewer,
                   onReview: reviewTurn,
+                  onMerge: mergeTurn,
                 }
               : undefined
           }
@@ -1696,9 +1724,10 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
             // Update merges the person's folder into a sandbox copy; a direct
             // session has no copy to update.
             sessionView?.sandbox && sessionView?.workspace && dataSource.updateWorkspace
-              ? () => dataSource.updateWorkspace!(sessionView.workspace!)
+              ? (mode?: 'merge') => dataSource.updateWorkspace!(sessionView.workspace!, mode)
               : undefined
           }
+          lastUpdate={sessionView?.workspace ? lastUpdates[sessionView.workspace] ?? null : null}
         />
       ) : (
       <RightPanel

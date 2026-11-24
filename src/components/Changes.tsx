@@ -106,6 +106,18 @@ function lineKind(l: string): string {
   return 'ctx';
 }
 
+// What the panel says while a Merge waits; a new preview clears it.
+const MERGE_WAITING = 'Merging… it is waiting its turn.';
+
+// The message Merge puts in the box: the goal, the files, what to say back.
+// It is true whatever the merge did, since it is filled before the merge runs.
+export function mergeRequest(paths: string[]): string {
+  return (
+    `Your work and the person's folder changed the same files: ${paths.join(', ')}. ` +
+    `Combine them so both sides' changes hold, then say when Apply is ready.`
+  );
+}
+
 const files = (n: number) => `${n} ${n === 1 ? 'file' : 'files'}`;
 
 // The turn panel's Changes tab: what this one turn changed, read-only. The
@@ -257,6 +269,11 @@ interface ApplyPanelProps {
     options: { id: string; name: string }[];
     defaultAgent: string;
     onReview: (agentId: string) => void;
+    // After an Update reports files changed on both sides, the Review button
+    // becomes Merge: AgentBus puts both sides in those files between conflict
+    // markers (update with mode merge), then this fills the message box with a
+    // plain request that the agent combine them. The person presses Send.
+    onMerge?: (agentId: string, files: string[]) => void;
   };
   // On a sandbox session, drops the workspace's unapplied changes
   // (POST /api/v0/workspaces/{id}/discard). The button sits beside Apply and
@@ -270,14 +287,21 @@ interface ApplyPanelProps {
   // three-way merge (POST /api/v0/workspaces/{id}/update), so the next apply
   // writes only the session's work. The button sits beside Apply when there are
   // conflicts. Absent: no update (a direct session, or a source without it).
-  update?: () => Promise<UpdateState>;
+  // With mode merge (the Merge button), a conflict leaves both sides in the
+  // files for the agent to combine instead of changing nothing.
+  update?: (mode?: 'merge') => Promise<UpdateState>;
+  // The workspace's latest update result as the record streamed it
+  // (workspace.updated): a conflict there offers Merge for the files that
+  // still conflict, also when the update ended after the panel stopped
+  // waiting for it.
+  lastUpdate?: { result?: string; conflicts?: string[] } | null;
 }
 
 // The right panel's apply preview for the conversation on screen: every
 // file applying would write, its diff against the person's folder now, any
 // file the person changed since (which the apply would refuse), and one
 // "Apply to my folder" for the turn the preview names.
-export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, readApply, onApplyEnded, onRefresh, onClose, pollMs = 2000, review, discard, onDiscarded, update }) => {
+export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, readApply, onApplyEnded, onRefresh, onClose, pollMs = 2000, review, discard, onDiscarded, update, lastUpdate }) => {
   // The apply this panel asked for: its turn, and its state as last read.
   const [asked, setAsked] = useState<{ turn: string; state: ApplyState | null } | null>(null);
   // The reviewer the small picker shows; empty follows review.defaultAgent.
@@ -293,6 +317,29 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
+  // The files the workspace's latest update found changed on both sides: from
+  // this panel's own Update reply or the record's workspace.updated, whichever
+  // came last. Merge offers those that the preview still refuses, so a new
+  // preview never drops them while they conflict, and a later conflict in
+  // other files gets Update, not this one's Merge. gen counts each new result,
+  // so a Merge reply clears only the result it was asked against.
+  const [conflictFiles, setConflictFiles] = useState<string[] | null>(null);
+  const gen = useRef(0);
+  // A Merge the API answered as queued: the result it waits on (gen), so the
+  // button stays held until the record's next update result arrives.
+  const [waitingOn, setWaitingOn] = useState<number | null>(null);
+  const takeUpdate = (files: string[] | null) => {
+    gen.current++;
+    setConflictFiles(files);
+  };
+  useEffect(() => {
+    if (lastUpdate) takeUpdate(lastUpdate.result === 'conflict' ? lastUpdate.conflicts ?? [] : null);
+  }, [lastUpdate]);
+  const previewKey: unknown = preview?.previewed_at ?? preview;
+  useEffect(() => {
+    setUpdateMsg((m) => (m === MERGE_WAITING ? null : m));
+  }, [previewKey]);
+  const [merging, setMerging] = useState(false);
   const endedRef = useRef(onApplyEnded);
   endedRef.current = onApplyEnded;
   const refreshRef = useRef(onRefresh);
@@ -345,8 +392,8 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
         setUpdateMsg(`Updated from your folder. Apply now writes only this ${SESSION}'s work.`);
         (refreshRef.current ?? endedRef.current)?.();
       } else if (s.state === 'conflict') {
-        const n = s.conflicts?.length ?? 0;
-        setUpdateMsg(`${files(n)} still ${n === 1 ? 'conflicts' : 'conflict'}; ask the agent to update and resolve ${n === 1 ? 'it' : 'them'}.`);
+        // Said in the warning at the top; the way forward is Merge.
+        takeUpdate(s.conflicts ?? []);
       } else if (s.state === 'queued' || s.state === 'running') {
         setUpdateMsg('Updating… it is waiting behind a running turn.');
       } else if (s.error) {
@@ -356,6 +403,43 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
       setUpdateError((err as Error).message);
     } finally {
       setUpdating(false);
+    }
+  };
+
+  // Merge fills the message box at once, as Review does, so nothing the
+  // person types after is overwritten. When the files do not hold the merge's
+  // markers yet, it then asks AgentBus to put both sides in them (update, mode
+  // merge); the next preview shows what that did.
+  const doMerge = async (agentId: string, paths: string[], call: boolean) => {
+    review?.onMerge?.(agentId, paths);
+    if (!call || !update) return;
+    // The result this click was on: a reply clears only it, never a newer one
+    // that came meanwhile.
+    const asked = gen.current;
+    const markCalled = () => {
+      if (gen.current === asked) takeUpdate(null);
+    };
+    setMerging(true);
+    setUpdateError(null);
+    setUpdateMsg(null);
+    try {
+      const s = await update('merge');
+      if (s.state === 'merged' || s.state === 'updated' || s.updated) {
+        markCalled();
+        if (s.state !== 'merged') setUpdateMsg(`Updated from your folder. Apply now writes only this ${SESSION}'s work.`);
+        (refreshRef.current ?? endedRef.current)?.();
+      } else if (s.state === 'queued' || s.state === 'running') {
+        // It ends later: its workspace.updated brings the next result and reads
+        // the preview again. Until then Merge is held, not asked for twice.
+        if (gen.current === asked) setWaitingOn(asked);
+        setUpdateMsg(MERGE_WAITING);
+      } else if (s.error) {
+        setUpdateError(s.error);
+      }
+    } catch (err) {
+      setUpdateError((err as Error).message);
+    } finally {
+      setMerging(false);
     }
   };
 
@@ -412,7 +496,20 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
   const canDiscard = !!discard && has && !pending && !discarding && !tooBig;
   // Update is offered when an apply would be refused because the folder changed
   // since the copy was made: it brings the folder in so the apply can go.
-  const canUpdate = !!update && conflicted && !pending && !updating && !discarding && !tooBig;
+  // Merge stands in for Review while files still hold the merge's markers
+  // (from the preview), or once an Update against this very preview found
+  // files changed on both sides. Neither outlives the preview it came from.
+  const markerFiles = conflicts.filter((c) => c.markers).map((c) => c.path);
+  const refusedNow = new Set(conflicts.filter((c) => !c.markers).map((c) => c.path));
+  const bothSides = (conflictFiles ?? []).filter((p) => refusedNow.has(p));
+  const mergeFiles = markerFiles.length > 0 ? markerFiles : bothSides.length > 0 ? bothSides : null;
+  const mergeCall = markerFiles.length === 0 && bothSides.length > 0;
+  const canMerge = !!mergeFiles && !!review?.onMerge;
+  // Update helps only with a file the folder changed; a file holding markers
+  // needs the agent.
+  const canUpdate =
+    !!update && conflicts.some((c) => !c.markers) && !pending && !updating && !discarding && !tooBig;
+  const reviewerName = reviewers.find((o) => o.id === reviewerId)?.name ?? 'the agent';
 
   return (
     <section id="right" className="apply-panel">
@@ -470,6 +567,12 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
                           </li>
                         ))}
                       </ul>
+                      {mergeFiles && (
+                        <p className="ap-merge">
+                          {files(mergeFiles.length)} changed on both sides.{' '}
+                          {canMerge ? `Merge asks ${reviewerName} to combine them, then Apply.` : 'Ask the agent to combine them, then Apply.'}
+                        </p>
+                      )}
                     </Notice>
                   )}
                   {has && (
@@ -519,9 +622,20 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
                       onChange={setReviewer}
                       align="right"
                     />
-                    <Button kind="secondary" onClick={() => review?.onReview(reviewerId)}>
-                      Review
-                    </Button>
+                    {canMerge ? (
+                      <Button
+                        kind="secondary"
+                        className="ap-merge-go"
+                        disabled={merging || pending || waitingOn === gen.current}
+                        onClick={() => doMerge(reviewerId, mergeFiles!, mergeCall)}
+                      >
+                        {merging ? 'Merging…' : 'Merge'}
+                      </Button>
+                    ) : (
+                      <Button kind="secondary" onClick={() => review?.onReview(reviewerId)}>
+                        Review
+                      </Button>
+                    )}
                   </span>
                 )}
                 {confirming ? (
@@ -537,7 +651,7 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
                   </span>
                 ) : (
                   <span className="ap-right">
-                    {update && (
+                    {update && !mergeFiles && (
                       <Button
                         kind="secondary"
                         className="ap-update"
