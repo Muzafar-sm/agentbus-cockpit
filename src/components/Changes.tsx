@@ -109,14 +109,11 @@ function lineKind(l: string): string {
 // What the panel says while a Merge waits; a new preview clears it.
 const MERGE_WAITING = 'Merging… it is waiting its turn.';
 
-// The message Merge puts in the box: the goal, the files, what to say back.
-// It is true whatever the merge did, since it is filled before the merge runs.
-export function mergeRequest(paths: string[]): string {
-  return (
-    `Your work and the person's folder changed the same files: ${paths.join(', ')}. ` +
-    `Combine them so both sides' changes hold, then say when Apply is ready.`
-  );
-}
+// The message Merge puts in the box: the goal only. No file list and no
+// steps: the agent finds what changed on both sides itself (SOUL v5, goals not
+// procedures). It is true whatever the merge did, since it is filled before
+// the merge runs.
+export const MERGE_REQUEST = "My folder changed while you worked. Bring it into your work and tell me when it's ready to apply.";
 
 const files = (n: number) => `${n} ${n === 1 ? 'file' : 'files'}`;
 

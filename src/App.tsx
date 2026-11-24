@@ -18,7 +18,7 @@ import { useTabShown } from './data/useTabShown';
 import { SubscriptionApi } from './components/ConnectStep';
 import { SignInDot, signInOf } from './components/SignInDot';
 import { NewSessionDialog } from './components/NewSessionDialog';
-import { ApplyPanel, mergeRequest, refusedTooBig } from './components/Changes';
+import { ApplyPanel, MERGE_REQUEST, refusedTooBig } from './components/Changes';
 import { RightPanel, usePanelTabs } from './components/RightPanel';
 import { recordFileName, saveRecord } from './data/exportRecord';
 import { SessionsColumn } from './components/SessionsColumn';
@@ -1375,12 +1375,12 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     const what = n ? `the changes from turn ${n}` : 'these changes';
     setPrefill({ session: previewSession, text: `Please review ${what}. List any problems, most serious first.`, agent: agentId });
   };
-  // Fills the message box with a plain request to combine the files that
-  // changed on both sides (Merge put both sides in them), and switches the
-  // picker beside Send to the agent. The person presses Send.
-  const mergeTurn = (agentId: string, files: string[]) => {
+  // Fills the message box with the goal-only merge request (Merge put both
+  // sides in the files; the agent finds them), and switches the picker beside
+  // Send to the agent. The person presses Send.
+  const mergeTurn = (agentId: string, _files: string[]) => {
     if (!previewSession) return;
-    setPrefill({ session: previewSession, text: mergeRequest(files), agent: agentId });
+    setPrefill({ session: previewSession, text: MERGE_REQUEST, agent: agentId });
   };
 
   // Load the events of a selected turn that has none yet. Events streamed

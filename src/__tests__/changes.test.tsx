@@ -5,7 +5,7 @@
 import { act } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { App, TURN_END_POLL_MS } from '../App';
-import { ApplyPanel, mergeRequest, TOO_BIG, TurnChangesTab, turnTooBig } from '../components/Changes';
+import { ApplyPanel, MERGE_REQUEST, TOO_BIG, TurnChangesTab, turnTooBig } from '../components/Changes';
 import { LiveDataSource } from '../data/LiveDataSource';
 import { ApplyPreview, ApplyState, DiscardState, TurnChangesPage, TurnDiff, UpdateState } from '../types';
 // getWorkspaceChanges/applyWorkspace/discardWorkspace act on the session's
@@ -903,10 +903,9 @@ describe('Update from my folder', () => {
     r.unmount();
   });
 
-  it('the merge request is the goal, the files and what to reply', () => {
-    expect(mergeRequest(['a.txt', 'b.txt'])).toBe(
-      "Your work and the person's folder changed the same files: a.txt, b.txt. Combine them so both sides' changes hold, then say when Apply is ready."
-    );
+  it('the merge request is the goal only: no file list, no steps', () => {
+    expect(MERGE_REQUEST).toBe("My folder changed while you worked. Bring it into your work and tell me when it's ready to apply.");
+    expect(MERGE_REQUEST).not.toMatch(/\.txt|\.go|files:/);
   });
 
   it('no conflicts: the Update button is disabled', async () => {
