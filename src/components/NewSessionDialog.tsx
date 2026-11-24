@@ -4,6 +4,7 @@ import { Harness, RunRequest, RunnerInfo, SavedAgent } from '../types';
 import { agentLine } from './AgentsDialog';
 import { Button, Seg, Select } from './Controls';
 import { Dialog, DialogActions } from './Dialog';
+import { CloseIcon, PlusIcon } from './Icons';
 import { Notice, WithCode } from './Notice';
 import { LOADING, PRODUCT, SESSION } from '../words';
 
@@ -108,24 +109,20 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
   // so Start waits for a listed folder, a recent one or a typed path. A
   // listed folder that leaves the list is dropped.
   // A session at Copy may work in several folders on one machine, side by
-  // side in one copy: one row each, + Add folder for the next. A folder pick
-  // below fills the first empty row, or the last row when none is empty, so
-  // where it lands never depends on which field had focus (keyboard users tab
-  // through the rows to reach the picks).
+  // side in one copy: one row each, + Add folder for the next. The picks sit
+  // under the row last focused (the active row) and fill that row. Tab goes
+  // from a row's field to its picks, then on to the next row, which takes
+  // the picks with it.
   const [wheres, setWheres] = useState<(Where | null)[]>([null]);
+  const [active, setActive] = useState(0);
   const folderKey = folders.map((f) => f.ref).join(',');
   useEffect(() => {
     setWheres((ws) => ws.map((cur) => (cur && 'ref' in cur && !folders.some((f) => f.ref === cur.ref) ? null : cur)));
     // folders is derived from allFolders and machine each render.
   }, [folderKey]);
   const setRow = (i: number, w: Where | null) => setWheres((ws) => ws.map((x, j) => (j === i ? w : x)));
-  const pick = (w: Where) =>
-    setWheres((ws) => {
-      const empty = ws.findIndex((x) => !x || ('path' in x && x.path.trim() === ''));
-      const at = empty < 0 ? ws.length - 1 : empty;
-      return ws.map((x, j) => (j === at ? w : x));
-    });
-  // Adding or removing a row takes the button that did it away (Remove goes
+  const pick = (w: Where) => setRow(Math.min(active, wheres.length - 1), w);
+  // Adding or removing a row takes the button that did it away (remove goes
   // with its row; + Add folder at the last row), so focus moves to a row's
   // field, never to the page behind the dialog.
   const rowRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -138,21 +135,38 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
   }, [wheres.length]);
   const addFolder = () => {
     focusRow.current = wheres.length;
+    setActive(wheres.length);
     setWheres((ws) => [...ws, null]);
   };
   const removeFolder = (i: number) => {
-    focusRow.current = i - 1;
+    const next = Math.max(0, i - 1);
+    focusRow.current = next;
+    setActive(next);
     setWheres((ws) => ws.filter((_, j) => j !== i));
   };
   // Another machine holds other folders: the folders are picked again.
   const pickMachine = (m: string) => {
     setMachineTouched(true);
-    if (m !== machine) setWheres([null]);
+    if (m !== machine) {
+      setWheres([null]);
+      setActive(0);
+    }
     setMachine(m);
   };
   const several = wheres.length > 1;
-  const rowText = (w: Where | null) =>
-    !w ? '' : 'path' in w ? w.path : several ? (folders.find((f) => f.ref === w.ref)?.name ?? w.ref) : '';
+  // A row shows its folder as the picks show it: a listed folder by its name,
+  // a path as typed. One row or several, the same way.
+  const rowText = (w: Where | null) => (!w ? '' : 'path' in w ? w.path : (folders.find((f) => f.ref === w.ref)?.name ?? w.ref));
+  // The picks show each folder once: a recent path twice in two spellings is
+  // one, and a recent path whose last part names a listed folder is that
+  // folder, shown by its name. The path stays on its machine, so the name is
+  // all the list has to match on.
+  const listedNames = new Set(folders.map((f) => f.name));
+  const recentPicks = recent.filter((f, i) => {
+    const c = cleanPath(f);
+    if (listedNames.has(c.split('/').pop() ?? '')) return false;
+    return recent.findIndex((g) => cleanPath(g) === c) === i;
+  });
   const [prompt, setPrompt] = useState('');
   const [name, setName] = useState('');
   // The session's mode, remembered per viewer. On (the default): a sandbox,
@@ -191,7 +205,9 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
   // Several folders are one per row, on one machine: the service refuses the
   // same folder twice, and folders of two machines.
   const keyOf = (w: Where | null) => (!w ? '' : 'ref' in w ? `ref:${w.ref}` : `path:${cleanPath(w.path)}`);
-  const twice = several && new Set(wheres.map(keyOf)).size < wheres.length;
+  // A row whose folder an earlier row already has is refused in place.
+  const isDup = (i: number) => filled(wheres[i]) && wheres.slice(0, i).some((x) => keyOf(x) === keyOf(wheres[i]));
+  const twice = several && wheres.some((_, i) => isDup(i));
   const rowMachines = new Set(wheres.flatMap((w) => (w && 'ref' in w && w.machine ? [w.machine] : [])));
   const mixed = several && rowMachines.size > 1;
   const rowsOk = !twice && !mixed;
@@ -279,53 +295,75 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
             No machine is online. Run <code>agentbus runner</code> on one.
           </div>
         )}
-        {wheres.map((w, i) => (
-          <label key={i}>
-            <span>{several ? `Folder ${i + 1}` : 'Folder'}</span>
-            <input
-              name={i === 0 ? 'folder' : `folder-${i + 1}`}
-              ref={(el) => {
-                rowRefs.current[i] = el;
-              }}
-              type="text"
-              aria-invalid={tried && !filled(w) ? true : undefined}
-              className={tried && !filled(w) ? 'invalid' : undefined}
-              value={rowText(w)}
-              onChange={(e) => setRow(i, { path: e.target.value })}
-              placeholder={folders.length > 0 || recent.length > 0 ? 'Pick one below, or type a path' : 'Path to a folder'}
-              spellCheck={false}
-              autoComplete="off"
-            />
-            {i > 0 && (
-              <Button kind="link" className="nd-link" aria-label={`Remove folder ${i + 1}`} onClick={() => removeFolder(i)}>
-                Remove
-              </Button>
-            )}
-          </label>
-        ))}
-        {(folders.length > 0 || recent.length > 0) && (
-          <div className="nd-recent">
-            {folders.map((f) => (
-              <button
-                type="button"
-                key={f.ref}
-                className={`pick${wheres.some((w) => w && 'ref' in w && w.ref === f.ref) ? ' on' : ''}`}
-                title={f.ref}
-                onClick={() => pick({ ref: f.ref, machine: f.machine })}
-              >
-                <code>{f.name || f.ref}</code>
-              </button>
-            ))}
-            {recent.map((f) => (
-              <button type="button" key={f} className={`pick${wheres.some((w) => w && 'path' in w && w.path === f) ? ' on' : ''}`} onClick={() => pick({ path: f })}>
-                <code>{f}</code>
-              </button>
-            ))}
-          </div>
-        )}
-        {hasWhere && !rowsOk && tried && (
+        <div className="nd-folders" role="group" aria-labelledby="nd-folders-label">
+          <span id="nd-folders-label">{several ? 'Folders' : 'Folder'}</span>
+          {wheres.map((w, i) => {
+            const dup = isDup(i);
+            const bad = dup || (tried && !filled(w));
+            const atRow = i === Math.min(active, wheres.length - 1);
+            return (
+              <React.Fragment key={i}>
+                <div className="nd-frow">
+                  <input
+                    name={i === 0 ? 'folder' : `folder-${i + 1}`}
+                    ref={(el) => {
+                      rowRefs.current[i] = el;
+                    }}
+                    type="text"
+                    aria-label={several ? `Folder ${i + 1}` : 'Folder'}
+                    aria-invalid={bad ? true : undefined}
+                    className={bad ? 'invalid' : undefined}
+                    value={rowText(w)}
+                    onFocus={() => setActive(i)}
+                    onChange={(e) => setRow(i, { path: e.target.value })}
+                    placeholder={folders.length > 0 || recentPicks.length > 0 ? 'Pick one below, or type a path' : 'Path to a folder'}
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                  {several && (
+                    <button
+                      type="button"
+                      className="icon-btn nd-remove"
+                      aria-label={`Remove folder ${i + 1}`}
+                      title="Remove folder"
+                      onClick={() => removeFolder(i)}
+                    >
+                      <CloseIcon />
+                    </button>
+                  )}
+                </div>
+                {dup && (
+                  <Notice kind="error" className="nd-dup">
+                    This folder is already in the list.
+                  </Notice>
+                )}
+                {atRow && (folders.length > 0 || recentPicks.length > 0) && (
+                  <div className="nd-recent">
+                    {folders.map((f) => (
+                      <button
+                        type="button"
+                        key={f.ref}
+                        className={`pick${w && 'ref' in w && w.ref === f.ref ? ' on' : ''}`}
+                        title={f.ref}
+                        onClick={() => pick({ ref: f.ref, machine: f.machine })}
+                      >
+                        <code>{f.name || f.ref}</code>
+                      </button>
+                    ))}
+                    {recentPicks.map((f) => (
+                      <button type="button" key={f} className={`pick${w && 'path' in w && w.path === f ? ' on' : ''}`} onClick={() => pick({ path: f })}>
+                        <code>{f}</code>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+        {hasWhere && !twice && mixed && tried && (
           <Notice kind="error" className="nd-missing">
-            {twice ? 'The same folder is in two rows.' : 'All folders of a session are on one machine.'}
+            All folders of a session are on one machine.
           </Notice>
         )}
         {!hasWhere && tried && (
@@ -334,11 +372,12 @@ export const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
           </Notice>
         )}
         {sandbox && wheres.length < MAX_FOLDERS && (
-          <div className="nd-note">
-            <Button kind="link" className="nd-link nd-add-folder" onClick={addFolder}>
-              + Add folder
-            </Button>{' '}
-            {several ? 'The agent sees each folder side by side.' : 'Work in several folders together, in one copy.'}
+          <div className="nd-add">
+            <Button kind="quiet" small className="nd-add-folder" onClick={addFolder}>
+              <PlusIcon />
+              Add folder
+            </Button>
+            {!several && <span className="nd-note">Work in several folders in one copy.</span>}
           </div>
         )}
         <div className="nd-note">

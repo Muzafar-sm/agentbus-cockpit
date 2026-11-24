@@ -2219,7 +2219,7 @@ describe('Several folders', () => {
     // An empty second row stops Start and says so.
     await click(dialog.querySelector('button[type="submit"]') as HTMLButtonElement);
     expect(dialog.querySelector('.nd-missing')?.textContent).toBe('Pick a folder for each row, or remove it.');
-    // A pick fills the first empty row: the new one.
+    // The new row has focus and the picks: a pick fills it.
     await click(picks()[1]);
     expect((dialog.querySelector('input[name="folder"]') as HTMLInputElement).value).toBe('framework');
     expect((dialog.querySelector('input[name="folder-2"]') as HTMLInputElement).value).toBe('cockpit');
@@ -2242,8 +2242,7 @@ describe('Several folders', () => {
     await setValue(dialog.querySelector('input[name="folder"]'), '/Users/ana/x');
     await click(dialog.querySelector('button.nd-add-folder') as HTMLButtonElement);
     await setValue(dialog.querySelector('input[name="folder-2"]'), '/Users/ana/y');
-    const remove = Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Remove') as HTMLButtonElement;
-    await click(remove);
+    await click(dialog.querySelector('button[aria-label="Remove folder 2"]') as HTMLButtonElement);
     expect(dialog.querySelector('input[name="folder-2"]')).toBeNull();
     expect(mode(dialog, 'direct').disabled).toBe(false);
     await setValue(dialog.querySelector('textarea[name="prompt"]'), 'go');
@@ -2267,9 +2266,14 @@ describe('Several folders', () => {
     await click(picks()[0]);
     await click(dialog.querySelector('button.nd-add-folder') as HTMLButtonElement);
     await click(picks()[0]);
+    // Refused in place, before Start: the second row says so and is marked.
+    expect(dialog.querySelector('.nd-dup')?.textContent).toBe('This folder is already in the list.');
+    expect((dialog.querySelector('input[name="folder-2"]') as HTMLInputElement).getAttribute('aria-invalid')).toBe('true');
+    expect((dialog.querySelector('input[name="folder"]') as HTMLInputElement).getAttribute('aria-invalid')).toBeNull();
     await click(dialog.querySelector('button[type="submit"]') as HTMLButtonElement);
-    expect(dialog.querySelector('.nd-missing')?.textContent).toBe('The same folder is in two rows.');
+    expect(posts()).toBe(0);
     await click(picks()[1]);
+    expect(dialog.querySelector('.nd-dup')).toBeNull();
     await click(dialog.querySelector('button[type="submit"]') as HTMLButtonElement);
     expect(dialog.querySelector('.nd-missing')?.textContent).toBe('All folders of a session are on one machine.');
     expect(posts()).toBe(0);
@@ -2287,9 +2291,8 @@ describe('Several folders', () => {
     await setValue(dialog.querySelector('input[name="folder"]'), '/work/project');
     await click(dialog.querySelector('button.nd-add-folder') as HTMLButtonElement);
     await setValue(dialog.querySelector('input[name="folder-2"]'), '/work/./project/');
-    await click(dialog.querySelector('button[type="submit"]') as HTMLButtonElement);
-    expect(dialog.querySelector('.nd-missing')?.textContent).toBe('The same folder is in two rows.');
-    await click(dialog.querySelector('input[name="folder-2"]') as HTMLInputElement);
+    expect(dialog.querySelector('.nd-dup')?.textContent).toBe('This folder is already in the list.');
+    await act(async () => (dialog.querySelector('input[name="folder-2"]') as HTMLInputElement).focus());
     await click(dialog.querySelector('.nd-recent button') as HTMLButtonElement);
     await setValue(dialog.querySelector('textarea[name="prompt"]'), 'go');
     await submitForm(dialog);
@@ -2301,7 +2304,7 @@ describe('Several folders', () => {
     r.unmount();
   });
 
-  it('a pick lands by rule, not by focus: the first empty row, else the last row', async () => {
+  it('one Folders label; the picks sit under the focused row only and fill it', async () => {
     const folders = ['one', 'two', 'three'].map((n, i) => ({ ref: `fld_000000000000000${i + 1}`, name: n, machine: 'con_1', runner: 'run_1' }));
     const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS, folders });
     const r = await mount(svc);
@@ -2310,16 +2313,59 @@ describe('Several folders', () => {
     const dialog = r.container.querySelector('.new-dialog')!;
     const picks = () => Array.from(dialog.querySelectorAll('.nd-recent button')) as HTMLButtonElement[];
     const rows = () => Array.from(dialog.querySelectorAll('input[name^="folder"]')).map((e) => (e as HTMLInputElement).value);
+    // The list follows the row with focus: it is the next sibling of that row.
+    const listAfter = (name: string) => dialog.querySelector(`input[name="${name}"]`)!.closest('.nd-frow')!.nextElementSibling?.classList.contains('nd-recent');
+    // One folder: the one label, and a listed folder shows by its name.
+    expect(dialog.querySelector('#nd-folders-label')?.textContent).toBe('Folder');
     await click(picks()[0]);
+    expect(rows()).toEqual(['one']);
     await click(dialog.querySelector('button.nd-add-folder') as HTMLButtonElement);
-    await click(picks()[1]);
-    expect(rows()).toEqual(['one', 'two']);
-    // Tabbing through the rows to reach the picks moves focus, not the target.
-    for (const el of Array.from(dialog.querySelectorAll('input[name^="folder"]'))) {
-      await act(async () => (el as HTMLInputElement).focus());
-    }
+    await click(dialog.querySelector('button.nd-add-folder') as HTMLButtonElement);
+    expect(dialog.querySelector('#nd-folders-label')?.textContent).toBe('Folders');
+    expect(dialog.textContent).not.toMatch(/Folder \d/);
+    // One list, under the row added last (it has focus).
+    expect(dialog.querySelectorAll('.nd-recent').length).toBe(1);
+    expect(listAfter('folder-3')).toBe(true);
     await click(picks()[2]);
-    expect(rows()).toEqual(['one', 'three']);
+    expect(rows()).toEqual(['one', '', 'three']);
+    // Focus on row 2 moves the list there, and a pick fills row 2.
+    await act(async () => (dialog.querySelector('input[name="folder-2"]') as HTMLInputElement).focus());
+    expect(dialog.querySelectorAll('.nd-recent').length).toBe(1);
+    expect(listAfter('folder-2')).toBe(true);
+    expect(picks().filter((b) => b.classList.contains('on'))).toEqual([]);
+    await click(picks()[1]);
+    expect(rows()).toEqual(['one', 'two', 'three']);
+    r.unmount();
+  });
+
+  it('a remove icon on every row only when there are two or more', async () => {
+    const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS });
+    const r = await mount(svc);
+    await click(r.container.querySelector('#sessions button.new-session'));
+    await settle();
+    const dialog = r.container.querySelector('.new-dialog')!;
+    const removes = () => Array.from(dialog.querySelectorAll('button.nd-remove')).map((b) => b.getAttribute('aria-label'));
+    expect(removes()).toEqual([]);
+    await click(dialog.querySelector('button.nd-add-folder') as HTMLButtonElement);
+    expect(removes()).toEqual(['Remove folder 1', 'Remove folder 2']);
+    await setValue(dialog.querySelector('input[name="folder-2"]'), '/Users/ana/y');
+    // The first row can go too; the other row is left, with no icon.
+    await click(dialog.querySelector('button[aria-label="Remove folder 1"]') as HTMLButtonElement);
+    expect(removes()).toEqual([]);
+    expect((dialog.querySelector('input[name="folder"]') as HTMLInputElement).value).toBe('/Users/ana/y');
+    expect(document.activeElement).toBe(dialog.querySelector('input[name="folder"]'));
+    r.unmount();
+  });
+
+  it('the picks show each folder once: one recent path in two spellings, and a recent path of a listed folder', async () => {
+    localStorage.setItem('agentbus.folders', JSON.stringify(['/Users/ana/Sites/app', '/Users/ana/x', '/Users/ana/x/', '/Users/ana/y']));
+    const folders = [{ ref: 'fld_00000000000000a1', name: 'app' }];
+    const svc = fakeService({ sessions: [row('s1')], events: { s1: oneTurn('s1', 'hi') }, agents: AGENTS, folders });
+    const r = await mount(svc);
+    await click(r.container.querySelector('#sessions button.new-session'));
+    await settle();
+    const dialog = r.container.querySelector('.new-dialog')!;
+    expect(Array.from(dialog.querySelectorAll('.nd-recent button')).map((b) => b.textContent)).toEqual(['app', '/Users/ana/x', '/Users/ana/y']);
     r.unmount();
   });
 
