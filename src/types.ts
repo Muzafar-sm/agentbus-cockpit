@@ -413,6 +413,19 @@ export interface DiscardState {
   error?: string;
 }
 
+// POST /api/v0/workspaces/<id>/update: merging the person's folder as it is
+// now into the sandbox copy, so the session's unapplied work sits on top of the
+// folder and the next apply writes only that work. updated is true on a clean
+// merge; on a conflict, conflicts names the files that changed on both sides and
+// nothing changed.
+export interface UpdateState {
+  // queued, running, updated (the folder was merged in), conflict, or failed.
+  state?: string;
+  updated?: boolean;
+  conflicts?: string[];
+  error?: string;
+}
+
 // GET /api/v0/sessions/<id>/changes: what applying the conversation now
 // would do, computed by the runner with the same code as Apply, writing
 // nothing. files lists every file the apply would write or remove and each
@@ -888,6 +901,12 @@ export interface DataSource {
   // words.
   applyWorkspace?(workspace: string, turn?: string): Promise<ApplyState>;
   discardWorkspace?(workspace: string): Promise<DiscardState>;
+  // updateWorkspace merges the person's folder as it is now into the copy, so a
+  // later apply writes only the session's work (POST
+  // /api/v0/workspaces/{id}/update): the calm way forward when an apply is
+  // refused because the folder changed. It resolves on 200 (updated or
+  // conflict), 202 and 409; any other failure rejects with the API's words.
+  updateWorkspace?(workspace: string): Promise<UpdateState>;
   // What applying the workspace now would do (a dry run,
   // GET /api/v0/workspaces/{id}/changes): the files not yet in the person's
   // folder, their diffs and conflicts. Rejects with the API's words.

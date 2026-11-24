@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { App, TURN_END_POLL_MS } from '../App';
 import { ApplyPanel, TOO_BIG, TurnChangesTab, turnTooBig } from '../components/Changes';
 import { LiveDataSource } from '../data/LiveDataSource';
-import { ApplyPreview, ApplyState, DiscardState, TurnChangesPage, TurnDiff } from '../types';
+import { ApplyPreview, ApplyState, DiscardState, TurnChangesPage, TurnDiff, UpdateState } from '../types';
 // getWorkspaceChanges/applyWorkspace/discardWorkspace act on the session's
 // workspace; these tests build sessions without a workspace field, so the
 // cockpit falls back to the session id ('c1') as the workspace.
@@ -677,6 +677,64 @@ describe('Discard', () => {
       const src = new LiveDataSource({ baseUrl: 'http://cockpit.test', token: 'tok' });
       expect((await src.discardWorkspace('ws_1')).dropped_turns).toEqual(['T1', 'T2']);
       expect(calls).toEqual(['POST http://cockpit.test/api/v0/workspaces/ws_1/discard']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('Update from my folder', () => {
+  const conflicted: ApplyPreview = { ...preview, conflicts: [{ path: 'a.txt', why: 'changed in your folder since the checkpoint' }] };
+
+  it('offers Update when the folder changed, merges it, and refreshes the preview', async () => {
+    const update = vi.fn(async (): Promise<UpdateState> => ({ state: 'updated', updated: true }));
+    const onRefresh = vi.fn();
+    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} onRefresh={onRefresh} />);
+    const btn = button(r.container, 'Update from my folder')!;
+    expect(btn).not.toBeUndefined();
+    expect(btn.disabled).toBe(false);
+    await click(btn);
+    await flush();
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(onRefresh).toHaveBeenCalled();
+    expect(r.container.textContent).toContain('Updated from your folder');
+    r.unmount();
+  });
+
+  it('a conflicting update changes nothing and says to ask the agent', async () => {
+    const update = vi.fn(async (): Promise<UpdateState> => ({ state: 'conflict', conflicts: ['a.txt', 'b.txt'] }));
+    const onRefresh = vi.fn();
+    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} onRefresh={onRefresh} />);
+    await click(button(r.container, 'Update from my folder')!);
+    await flush();
+    expect(onRefresh).not.toHaveBeenCalled();
+    expect(r.container.textContent).toContain('2 files still conflict; ask the agent to update and resolve them.');
+    r.unmount();
+  });
+
+  it('no conflicts: the Update button is disabled', async () => {
+    const r = await render(<ApplyPanel preview={preview} apply={vi.fn()} update={vi.fn()} />);
+    expect(button(r.container, 'Update from my folder')!.disabled).toBe(true);
+    r.unmount();
+  });
+
+  it('no Update for a session the panel was given no update for (a direct session)', async () => {
+    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} />);
+    expect(button(r.container, 'Update from my folder')).toBeUndefined();
+    r.unmount();
+  });
+
+  it('the live source posts to the workspace update route', async () => {
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? 'GET'} ${url}`);
+      return new Response(JSON.stringify({ state: 'updated', updated: true }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const src = new LiveDataSource({ baseUrl: 'http://cockpit.test', token: 'tok' });
+      expect((await src.updateWorkspace('ws_1')).updated).toBe(true);
+      expect(calls).toEqual(['POST http://cockpit.test/api/v0/workspaces/ws_1/update']);
     } finally {
       vi.unstubAllGlobals();
     }

@@ -1692,6 +1692,13 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
             markDiscarded(dropped);
             readPreview(previewSession, true);
           }}
+          update={
+            // Update merges the person's folder into a sandbox copy; a direct
+            // session has no copy to update.
+            sessionView?.sandbox && sessionView?.workspace && dataSource.updateWorkspace
+              ? () => dataSource.updateWorkspace!(sessionView.workspace!)
+              : undefined
+          }
         />
       ) : (
       <RightPanel

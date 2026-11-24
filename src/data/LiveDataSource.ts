@@ -25,6 +25,7 @@ import {
   ApplyPreview,
   ApplyState,
   DiscardState,
+  UpdateState,
   Turn,
   TurnDiff,
   TurnChangesPage,
@@ -856,6 +857,19 @@ export class LiveDataSource implements DataSource {
   // stays; dropped_turns names the turns whose file changes went.
   async discardWorkspace(workspace: string): Promise<DiscardState> {
     const res = await fetch(`${this.baseUrl}/api/v0/workspaces/${encodeURIComponent(workspace)}/discard`, {
+      method: 'POST',
+      headers: this.headers(),
+    });
+    if (res.ok) return res.json().catch(() => ({}));
+    throw new Error(await apiError(res));
+  }
+
+  // POST /api/v0/workspaces/<id>/update: merges the person's folder as it is
+  // now into the copy. 200 with state updated (the folder was merged in) or
+  // conflict (the files that changed on both sides; nothing changed); 202 still
+  // running; 409 when an apply, discard or update is in flight.
+  async updateWorkspace(workspace: string): Promise<UpdateState> {
+    const res = await fetch(`${this.baseUrl}/api/v0/workspaces/${encodeURIComponent(workspace)}/update`, {
       method: 'POST',
       headers: this.headers(),
     });

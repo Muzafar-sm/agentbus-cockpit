@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ApplyPreview, ApplyState, DiscardState, TurnChangesPage, TurnDiff, TurnDiffFile } from '../types';
+import { ApplyPreview, ApplyState, DiscardState, TurnChangesPage, TurnDiff, TurnDiffFile, UpdateState } from '../types';
 import { PanelHead } from './PanelHead';
 import { Button, Select } from './Controls';
 import { Loading, Notice } from './Notice';
@@ -265,13 +265,19 @@ interface ApplyPanelProps {
   // Discard (a direct session, or a source that cannot discard).
   discard?: () => Promise<DiscardState>;
   onDiscarded?: (droppedTurns: string[]) => void;
+  // On a sandbox session whose copy fell behind the folder (an apply was
+  // refused because the folder changed), brings the folder into the copy by a
+  // three-way merge (POST /api/v0/workspaces/{id}/update), so the next apply
+  // writes only the session's work. The button sits beside Apply when there are
+  // conflicts. Absent: no update (a direct session, or a source without it).
+  update?: () => Promise<UpdateState>;
 }
 
 // The right panel's apply preview for the conversation on screen: every
 // file applying would write, its diff against the person's folder now, any
 // file the person changed since (which the apply would refuse), and one
 // "Apply to my folder" for the turn the preview names.
-export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, readApply, onApplyEnded, onRefresh, onClose, pollMs = 2000, review, discard, onDiscarded }) => {
+export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, readApply, onApplyEnded, onRefresh, onClose, pollMs = 2000, review, discard, onDiscarded, update }) => {
   // The apply this panel asked for: its turn, and its state as last read.
   const [asked, setAsked] = useState<{ turn: string; state: ApplyState | null } | null>(null);
   // The reviewer the small picker shows; empty follows review.defaultAgent.
@@ -282,8 +288,15 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
   const [confirming, setConfirming] = useState(false);
   const [discarding, setDiscarding] = useState(false);
   const [discardError, setDiscardError] = useState<string | null>(null);
+  // Update from the folder: updating while the merge runs, a plain result line
+  // (updated, or N files still conflict), and an error.
+  const [updating, setUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateMsg, setUpdateMsg] = useState<string | null>(null);
   const endedRef = useRef(onApplyEnded);
   endedRef.current = onApplyEnded;
+  const refreshRef = useRef(onRefresh);
+  refreshRef.current = onRefresh;
 
   const state = asked?.state;
   const pending = !!asked && (!state || state.state === 'queued' || state.state === 'running');
@@ -316,6 +329,33 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
       setDiscardError((err as Error).message);
     } finally {
       setDiscarding(false);
+    }
+  };
+
+  const doUpdate = async () => {
+    if (!update) return;
+    setUpdating(true);
+    setUpdateError(null);
+    setUpdateMsg(null);
+    try {
+      const s = await update();
+      if (s.updated || s.state === 'updated') {
+        // The folder is merged in: take a fresh preview, which now shows the
+        // session's work against the folder as it is, with no conflicts.
+        setUpdateMsg(`Updated from your folder. Apply now writes only this ${SESSION}'s work.`);
+        (refreshRef.current ?? endedRef.current)?.();
+      } else if (s.state === 'conflict') {
+        const n = s.conflicts?.length ?? 0;
+        setUpdateMsg(`${files(n)} still ${n === 1 ? 'conflicts' : 'conflict'}; ask the agent to update and resolve ${n === 1 ? 'it' : 'them'}.`);
+      } else if (s.state === 'queued' || s.state === 'running') {
+        setUpdateMsg('Updating… it is waiting behind a running turn.');
+      } else if (s.error) {
+        setUpdateError(s.error);
+      }
+    } catch (err) {
+      setUpdateError((err as Error).message);
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -370,6 +410,9 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
   // conflict does not block it.
   const changedCount = preview ? preview.count || preview.files.length : 0;
   const canDiscard = !!discard && has && !pending && !discarding && !tooBig;
+  // Update is offered when an apply would be refused because the folder changed
+  // since the copy was made: it brings the folder in so the apply can go.
+  const canUpdate = !!update && conflicted && !pending && !updating && !discarding && !tooBig;
 
   return (
     <section id="right" className="apply-panel">
@@ -456,7 +499,13 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
             )}
             {applyError && <Notice kind="error">{applyError}</Notice>}
             {discardError && <Notice kind="error">{discardError}</Notice>}
-            {!applied && has && (apply || canReview || discard) && (
+            {updateError && <Notice kind="error">{updateError}</Notice>}
+            {updateMsg && (
+              <p className="nd-note" role="status">
+                {updateMsg}
+              </p>
+            )}
+            {!applied && has && (apply || canReview || discard || update) && (
               <div className="ap-actions">
                 {canReview && !confirming && (
                   <span className="ap-review">
@@ -488,6 +537,17 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
                   </span>
                 ) : (
                   <span className="ap-right">
+                    {update && (
+                      <Button
+                        kind="secondary"
+                        className="ap-update"
+                        disabled={!canUpdate}
+                        title="Bring your folder's current changes into this copy, then apply only this conversation's work"
+                        onClick={doUpdate}
+                      >
+                        {updating ? 'Updating…' : 'Update from my folder'}
+                      </Button>
+                    )}
                     {discard && (
                       <Button
                         kind="secondary"
