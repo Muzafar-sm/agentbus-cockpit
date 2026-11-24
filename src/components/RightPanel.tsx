@@ -86,6 +86,10 @@ interface RightPanelProps {
 
 type TabKey = 'result' | 'changes' | 'events' | 'model' | 'context' | 'tools' | 'prompt';
 
+// The Changes tab of a Direct session's turn: its changes went into the folder
+// as they were made, and AgentBus keeps no record of them.
+export const DIRECT_CHANGES = 'Direct: this turn changed your folder itself. AgentBus keeps no record of its changes.';
+
 // Follows the selected level: the session, one turn, or one model call. The
 // turn and call tabs are kept here, so stepping down and back keeps them.
 export function usePanelTabs() {
@@ -572,7 +576,15 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
       <div id="d-body">
         {tab !== 'changes' && tab !== 'context' && <TabSum tab={tab} turn={turn} detail={detail} />}
 
-        {tab === 'changes' && loadDiff && (
+        {/* A Direct session works in the folder itself, and AgentBus keeps no
+            record of what its turns change (0.6.5), so the tab says so plainly
+            in place of a file list. */}
+        {tab === 'changes' && loadDiff && session?.sandbox === false && (
+          <div className="turn-changes">
+            <div className="tab-sum">{DIRECT_CHANGES}</div>
+          </div>
+        )}
+        {tab === 'changes' && loadDiff && session?.sandbox !== false && (
           <TurnChangesTab
             turnId={turn.id}
             rev={rev}

@@ -2,7 +2,7 @@
 import { act, useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { ConvoColumn } from '../components/ConvoColumn';
-import { RightPanel } from '../components/RightPanel';
+import { DIRECT_CHANGES, RightPanel } from '../components/RightPanel';
 import { SessionsColumn } from '../components/SessionsColumn';
 import { formatAgo } from '../utils/format';
 import { ReplayDataSource } from '../data/ReplayDataSource';
@@ -108,6 +108,30 @@ describe('RightPanel ledger rows', () => {
     await click(r.container.querySelector('#d-body .tcard.sel .tcard-h'));
     expect(r.container.querySelectorAll('#d-body .tcard-open')).toHaveLength(0);
     r.unmount();
+  });
+});
+
+describe('Changes tab', () => {
+  // 0.6.5: a Direct session keeps no record of its turns' changes, so the tab
+  // says so plainly and reads no diff; a sandbox session still reads it.
+  it('a Direct session says its changes went into the folder, with no file list', async () => {
+    const session = await sessionFrom(toolSession(), 'c1');
+    for (const sandbox of [false, true]) {
+      const loadDiff = vi.fn(async () => ({ files: null }) as never);
+      const r = await render(
+        <RightPanel turn={session.turnsList[0]} totalTurns={1} session={{ ...session, sandbox }} loadDiff={loadDiff} />
+      );
+      await click(Array.from(r.container.querySelectorAll('#d-tabs .tab')).find((b) => b.textContent === 'Changes'));
+      const text = r.container.querySelector('#d-body')!.textContent;
+      if (sandbox) {
+        expect(loadDiff).toHaveBeenCalled();
+        expect(text).not.toContain(DIRECT_CHANGES);
+      } else {
+        expect(loadDiff).not.toHaveBeenCalled();
+        expect(text).toContain(DIRECT_CHANGES);
+      }
+      r.unmount();
+    }
   });
 });
 
