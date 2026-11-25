@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { ApiTurn } from '../data/jobs';
-import { PendingMachine, RunnerInfo } from '../types';
+import { CloseState, PendingMachine, RunnerInfo, WorkspaceRow } from '../types';
 import { formatAgo } from '../utils/format';
 import { ColHead, PageFrame } from './PageFrame';
 import { RunnersList, RunnersState } from './RunnersList';
 import { Button } from './Controls';
 import { ConfirmDialog } from './Dialog';
 import { Notice } from './Notice';
-import { useWorkspaces, WorkspaceRows, WorkspacesApi } from './Workspaces';
+import { useWorkspaces, WorkspacesApi, WorkspacesTable } from './Workspaces';
 import { FolderInfo } from '../data/folders';
 import { harnessName, LOADING, PRODUCT, STATE } from '../words';
 
@@ -39,7 +39,7 @@ interface RunnersPageProps extends RunnersState {
   queue?: { turns: ApiTurn[]; error: string | null; titleOf?: (session: string) => string | undefined };
   // Undefined: a source that cannot decide, and the page shows no buttons.
   actions?: RunnerActions;
-  // The workspaces, listed under the machine that holds each, with Close.
+  // The workspaces, on the page of the machine that holds each, with Close.
   // Undefined: a source without them, and none are shown.
   workspaces?: WorkspacesApi;
   // The folders the service lists, to name a workspace's folder by its ref.
@@ -55,14 +55,6 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pending, reload, onBack, onApps, onRunners, onSettings, runnersOnline, version, sourceLabel, streamUp, onDisconnect, disconnectLabel, queue, actions, workspaces, folders }) => {
   const [picked, setPicked] = useState<string | null>(null);
   const ws = useWorkspaces(workspaces);
-  // Each machine's open workspaces under its row; those of a machine with no
-  // runner listed (the service's own has no machine id) go in a group below.
-  const listed = new Set((runners ?? []).flatMap((r) => (r.machine ? [r.machine] : [])));
-  const rowsOf = (machine: string | undefined) => (ws.rows ?? []).filter((w) => w.machine === machine);
-  const others = [...new Set((ws.rows ?? []).map((w) => w.machine).filter((m) => !m || !listed.has(m)))];
-  const wsRows = (machine: string | undefined, label: string) => (
-    <WorkspaceRows rows={rowsOf(machine)} label={label} folders={folders} close={workspaces?.close} onClosed={ws.hide} />
-  );
   const waiting = pending ?? [];
   // The picked one while it is listed; else the first runner, or with no
   // runner the first machine waiting. A pick that left the list on a later
@@ -71,6 +63,12 @@ export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pendin
   const pickedRunner = pickedPending ? undefined : runners?.find((r) => r.id === picked);
   const shownPending = pickedPending ?? (!pickedRunner && !runners?.length ? waiting[0] : undefined);
   const shown = shownPending ? undefined : (pickedRunner ?? runners?.[0]);
+  // The shown runner's open workspaces. A workspace with no machine id is on
+  // the service's own machine. The API does not say which runner that is, so
+  // the first runner listed takes them: the only one, in agentbus up.
+  const home = runners?.find((r) => r.role !== 'connector' && r.machine);
+  const wsOf = (r: RunnerInfo): WorkspaceRow[] =>
+    (ws.rows ?? []).filter((w) => (w.machine ? w.machine === r.machine : r.id === home?.id));
   const after = () => {
     setPicked(null);
     reload?.();
@@ -94,27 +92,22 @@ export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pendin
           {waiting.length > 0 && <PendingList pending={waiting} selected={shownPending?.id} onSelect={setPicked} />}
           {runners === undefined && !error && <p className="empty runners-none">{LOADING}</p>}
           {runners === null && <p className="empty runners-none">This service keeps no runners.</p>}
-          <RunnersList
-            runners={runners}
-            error={error}
-            selected={shown?.id}
-            onSelect={setPicked}
-            below={(r) => (r.machine ? wsRows(r.machine, `Workspaces on ${r.name}`) : null)}
-          />
-          {ws.error && <p className="empty bad ws-err">{ws.error}</p>}
-          {others.map((m) => (
-            <div key={m ?? ''} className="ws-other">
-              <div className="sub-h">{m ? <code>{m}</code> : 'This service\'s machine'}</div>
-              {wsRows(m, m ? `Workspaces on ${m}` : 'Workspaces on this service\'s machine')}
-            </div>
-          ))}
+          <RunnersList runners={runners} error={error} selected={shown?.id} onSelect={setPicked} />
         </>
       }
       main={
         shownPending ? (
           <PendingDetail key={shownPending.id} p={shownPending} actions={actions} onDone={after} />
         ) : shown ? (
-          <RunnerDetail key={shown.id} r={shown} actions={actions} onDone={after} />
+          <RunnerDetail
+            key={shown.id}
+            r={shown}
+            actions={actions}
+            onDone={after}
+            workspaces={
+              workspaces && { rows: wsOf(shown), error: ws.error, folders, close: workspaces.close, onClosed: ws.hide }
+            }
+          />
         ) : (
           <ColHead title="No runners yet" />
         )
@@ -244,7 +237,21 @@ const PendingDetail: React.FC<{ p: PendingMachine; actions?: RunnerActions; onDo
   );
 };
 
-const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: () => void }> = ({ r, actions, onDone }) => {
+// What RunnerDetail shows of the runner's workspaces, from the page's one read.
+interface RunnerWorkspaces {
+  rows: WorkspaceRow[];
+  error: string | null;
+  folders?: FolderInfo[];
+  close: (workspace: string) => Promise<CloseState>;
+  onClosed: (workspace: string) => void;
+}
+
+const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: () => void; workspaces?: RunnerWorkspaces }> = ({
+  r,
+  actions,
+  onDone,
+  workspaces,
+}) => {
   const connector = r.role === 'connector';
   // Remove asks first: its sessions take no more turns after it.
   const [asking, setAsking] = useState(false);
@@ -346,6 +353,12 @@ const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: (
                 ))}
               </tbody>
             </table>
+          </>
+        )}
+        {workspaces && (
+          <>
+            {workspaces.error && <Notice kind="error">{workspaces.error}</Notice>}
+            <WorkspacesTable rows={workspaces.rows} folders={workspaces.folders} close={workspaces.close} onClosed={workspaces.onClosed} />
           </>
         )}
         {actions && !r.online && (

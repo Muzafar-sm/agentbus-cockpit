@@ -74,17 +74,16 @@ function folderNames(w: WorkspaceRow, known: FolderInfo[]): { names: string; pat
   };
 }
 
-// One machine's open workspaces, under its row on the Runners page: the
-// folder names, how long ago it was made, a mark for changes not applied, and
-// Close. A closed row goes at once; a refusal stays under the row in the
-// API's words.
-export const WorkspaceRows: React.FC<{
+// One machine's open workspaces, on its page below Harnesses, in the same
+// table: the folder names in full (the paths on hover), when it was made, a
+// mark for changes not applied, and Close. A closed row goes at once; a
+// refusal shows under the row in the API's words.
+export const WorkspacesTable: React.FC<{
   rows: WorkspaceRow[];
-  label: string;
   folders?: FolderInfo[];
   close?: (workspace: string) => Promise<CloseState>;
   onClosed: (workspace: string) => void;
-}> = ({ rows, label, folders = [], close, onClosed }) => {
+}> = ({ rows, folders = [], close, onClosed }) => {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<{ id: string; text: string } | null>(null);
   if (rows.length === 0) return null;
@@ -104,32 +103,58 @@ export const WorkspaceRows: React.FC<{
       }
     );
   };
+  const cols = close ? 4 : 3;
   return (
-    <div className="ws-list" aria-label={label}>
-      {rows.map((w) => {
-        const { names, paths } = folderNames(w, folders);
-        return (
-          <React.Fragment key={w.workspace}>
-            <div className="ws-row" data-workspace={w.workspace}>
-              <span className="ws-n" title={paths || undefined}>
-                {names}
-              </span>
-              {hasUnapplied(w) && (
-                <span className="s-ic ws-unapplied" title={UNAPPLIED} aria-label={UNAPPLIED}>
-                  <UnappliedIcon />
-                </span>
-              )}
-              <span className="pr-m2 ws-age">{formatAgo(w.created) || '—'}</span>
-              {close && (
-                <Button kind="secondary" small className="ws-close" disabled={busy === w.workspace} onClick={() => doClose(w.workspace)}>
-                  {busy === w.workspace ? 'Closing…' : 'Close'}
-                </Button>
-              )}
-            </div>
-            {err?.id === w.workspace && <p className="empty bad ws-err">{err.text}</p>}
-          </React.Fragment>
-        );
-      })}
-    </div>
+    <>
+      <div className="sub-h">Workspaces</div>
+      <table className="grid rn-workspaces" aria-label="Workspaces">
+        <thead>
+          <tr>
+            <th>Folder</th>
+            <th>Made</th>
+            <th title={UNAPPLIED}>Not applied</th>
+            {close && <th aria-label="Close" />}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((w) => {
+            const { names, paths } = folderNames(w, folders);
+            return (
+              <React.Fragment key={w.workspace}>
+                <tr data-workspace={w.workspace}>
+                  <td className="ws-n" title={paths || undefined}>
+                    {names}
+                  </td>
+                  <td className="t ws-age" title={new Date(w.created).toLocaleString()}>
+                    {formatAgo(w.created) || '—'}
+                  </td>
+                  <td>
+                    {hasUnapplied(w) && (
+                      <span className="s-ic ws-unapplied" title={UNAPPLIED} aria-label={UNAPPLIED}>
+                        <UnappliedIcon />
+                      </span>
+                    )}
+                  </td>
+                  {close && (
+                    <td className="ws-act">
+                      <Button kind="link" className="ws-close" disabled={busy === w.workspace} onClick={() => doClose(w.workspace)}>
+                        {busy === w.workspace ? 'Closing…' : 'Close'}
+                      </Button>
+                    </td>
+                  )}
+                </tr>
+                {err?.id === w.workspace && (
+                  <tr className="ws-err-row">
+                    <td colSpan={cols} className="bad ws-err">
+                      {err.text}
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </>
   );
 };

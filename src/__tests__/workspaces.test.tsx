@@ -46,41 +46,54 @@ const page = async (a: WorkspacesApi) => {
   return r;
 };
 
-const listOf = (c: HTMLElement, label: string) => c.querySelector(`.ws-list[aria-label="${label}"]`);
-const ids = (el: Element | null) => [...(el?.querySelectorAll('.ws-row') ?? [])].map((x) => x.getAttribute('data-workspace'));
+// The shown runner's Workspaces table, and the ids of its rows in order.
+const table = (c: HTMLElement) => c.querySelector('table.rn-workspaces');
+const ids = (c: HTMLElement) => [...(table(c)?.querySelectorAll('tr[data-workspace]') ?? [])].map((x) => x.getAttribute('data-workspace'));
+const row = (c: HTMLElement, id: string) => c.querySelector(`tr[data-workspace="${id}"]`)!;
+const pick = (c: HTMLElement, runner: string) => click(c.querySelector(`[data-runner="${runner}"]`));
 
 afterEach(() => {
   unmountAll();
   vi.restoreAllMocks();
 });
 
-describe('workspaces on the Runners page', () => {
-  it('lists each machine’s open sandbox workspaces under its row, newest first', async () => {
+describe('workspaces on a runner’s page', () => {
+  it('shows the picked runner’s open sandbox workspaces on its page, newest first', async () => {
     const r = await page(api());
-    const mac = listOf(r.container, 'Workspaces on mac');
-    // Closed ones, and those in the real folder (nothing to close), are left out.
-    expect(ids(mac)).toEqual(['ws_new', 'ws_old']);
-    // Right under the machine's own row.
-    expect(mac!.previousElementSibling!.getAttribute('data-runner')).toBe('run_a');
-    expect(ids(listOf(r.container, 'Workspaces on box'))).toEqual(['ws_two']);
-    // The folder name and the age, nothing else.
-    const row = (id: string) => r.container.querySelector(`.ws-row[data-workspace="${id}"]`)!;
-    expect(row('ws_old').querySelector('.ws-n')!.textContent).toBe('old-app');
-    expect(row('ws_old').querySelector('.ws-n')!.getAttribute('title')).toBe('/Users/p/Sites/old-app');
-    expect(row('ws_old').querySelector('.ws-age')!.textContent).toBe('3 days ago');
-    expect(row('ws_two').querySelector('.ws-n')!.textContent).toBe('api, web');
-    expect(row('ws_two').querySelector('.ws-age')!.textContent).toBe('1 hour ago');
-    // The service's own machine (no machine id) gets a group of its own.
-    expect(ids(listOf(r.container, 'Workspaces on this service\'s machine'))).toEqual(['ws_local']);
+    // The list on the left is runners only.
+    expect(r.container.querySelector('.runners [data-workspace]')).toBeNull();
+    // Closed ones, and those in the real folder (nothing to close), are left
+    // out. The one with no machine id is the service's own machine's: the
+    // first runner listed.
+    expect(ids(r.container)).toEqual(['ws_new', 'ws_local', 'ws_old']);
+    // Below Harnesses' place, under its own heading.
+    expect(table(r.container)!.previousElementSibling!.textContent).toBe('Workspaces');
+    // The folder name in full, its path on hover, and when it was made.
+    expect(row(r.container, 'ws_old').querySelector('.ws-n')!.textContent).toBe('old-app');
+    expect(row(r.container, 'ws_old').querySelector('.ws-n')!.getAttribute('title')).toBe('/Users/p/Sites/old-app');
+    expect(row(r.container, 'ws_old').querySelector('.ws-age')!.textContent).toBe('3 days ago');
+    // Another runner's page shows its own.
+    await pick(r.container, 'run_b');
+    expect(ids(r.container)).toEqual(['ws_two']);
+    expect(row(r.container, 'ws_two').querySelector('.ws-n')!.textContent).toBe('api, web');
+    expect(row(r.container, 'ws_two').querySelector('.ws-n')!.getAttribute('title')).toBe('/srv/api\n/srv/web');
+    expect(row(r.container, 'ws_two').querySelector('.ws-age')!.textContent).toBe('1 hour ago');
+  });
+
+  it('gives a runner with no open workspaces no table', async () => {
+    const a: WorkspacesApi = { list: async () => rows.filter((w) => w.machine === 'con_bbbbbbbbbbbbbbbb'), close: async () => ({}) };
+    const r = await page(a);
+    expect(table(r.container)).toBeNull();
   });
 
   it('marks a workspace with changes not applied, with a tooltip that says so', async () => {
     const r = await page(api());
-    const mark = (id: string) => r.container.querySelector(`.ws-row[data-workspace="${id}"] .ws-unapplied`);
+    const mark = (id: string) => row(r.container, id).querySelector('.ws-unapplied');
     expect(mark('ws_new')!.getAttribute('title')).toBe(UNAPPLIED);
     expect(mark('ws_new')!.querySelector('svg')).not.toBeNull();
     expect(mark('ws_old')).toBeNull();
     // Everything applied up to its latest turn: no mark.
+    await pick(r.container, 'run_b');
     expect(mark('ws_two')).toBeNull();
     expect(hasUnapplied(ws({ workspace: 'x' }))).toBe(false);
   });
@@ -88,11 +101,14 @@ describe('workspaces on the Runners page', () => {
   it('closes a workspace with no confirm, and the row goes', async () => {
     const close = vi.fn(async (): Promise<CloseState> => ({ state: 'closed' }));
     const r = await page(api(close));
-    await click(r.container.querySelector('.ws-row[data-workspace="ws_old"] .ws-close'));
+    const btn = row(r.container, 'ws_old').querySelector('.ws-close')!;
+    // Quiet: a text action, not a bordered button.
+    expect(btn.className).toContain('link-btn');
+    await click(btn);
     await flush();
     expect(close).toHaveBeenCalledWith('ws_old');
     expect(r.container.querySelector('[role="dialog"]')).toBeNull();
-    expect(ids(listOf(r.container, 'Workspaces on mac'))).toEqual(['ws_new']);
+    expect(ids(r.container)).toEqual(['ws_new', 'ws_local']);
   });
 
   it('keeps a row whose close is still waiting out of the list on the next read', async () => {
@@ -100,14 +116,14 @@ describe('workspaces on the Runners page', () => {
     vi.useFakeTimers({ toFake: ['setInterval'] });
     try {
       const r = await page(a);
-      await click(r.container.querySelector('.ws-row[data-workspace="ws_new"] .ws-close'));
+      await click(row(r.container, 'ws_new').querySelector('.ws-close'));
       await flush();
-      expect(ids(listOf(r.container, 'Workspaces on mac'))).toEqual(['ws_old']);
+      expect(ids(r.container)).toEqual(['ws_local', 'ws_old']);
       // The service still lists it open until the turn ahead ends.
       vi.advanceTimersByTime(30_000);
       await flush();
       expect(a.list).toHaveBeenCalledTimes(2);
-      expect(ids(listOf(r.container, 'Workspaces on mac'))).toEqual(['ws_old']);
+      expect(ids(r.container)).toEqual(['ws_local', 'ws_old']);
     } finally {
       vi.useRealTimers();
     }
@@ -115,15 +131,15 @@ describe('workspaces on the Runners page', () => {
 
   it('keeps the row and shows the API’s words when Close is refused', async () => {
     const r = await page(api(async () => Promise.reject(new Error('an apply of this workspace is still running'))));
-    await click(r.container.querySelector('.ws-row[data-workspace="ws_old"] .ws-close'));
+    await click(row(r.container, 'ws_old').querySelector('.ws-close'));
     await flush();
-    expect(ids(listOf(r.container, 'Workspaces on mac'))).toEqual(['ws_new', 'ws_old']);
+    expect(ids(r.container)).toEqual(['ws_new', 'ws_local', 'ws_old']);
     expect(r.container.querySelector('.ws-err')!.textContent).toBe('an apply of this workspace is still running');
   });
 
   it('shows no workspaces for a source without them', async () => {
     const r = await render(<RunnersPage runners={runners} error={null} onBack={() => {}} />);
-    expect(r.container.querySelector('.ws-list')).toBeNull();
+    expect(table(r.container)).toBeNull();
   });
 });
 
