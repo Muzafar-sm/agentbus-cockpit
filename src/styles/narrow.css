@@ -65,7 +65,7 @@
   /* The conversation and the panel use the full width. */
   .c-in { padding: 0 0.75rem; }
   #c-reply { padding: 0.5rem 0.75rem 0.75rem; }
-  #right #d-head, #right #d-body { padding-left: 0.75rem; padding-right: 0.75rem; }
+  #right #d-head, #right #d-body, #right .ap-actions { padding-left: 0.75rem; padding-right: 0.75rem; }
   #right #d-tabs { padding: 0 0.5rem; overflow-x: auto; }
   #right #d-tabs .tab { flex: none; white-space: nowrap; }
 }

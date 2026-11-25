@@ -212,6 +212,20 @@ describe('The apply preview', () => {
     r.unmount();
   });
 
+  it('the bar is the panel foot: the file list scrolls in its own area above it, never under it', async () => {
+    const r = await render(<ApplyPanel preview={preview} apply={vi.fn()} discard={vi.fn()} />);
+    const panel = r.container.querySelector('#right.apply-panel')!;
+    const bar = panel.querySelector('.ap-actions')!;
+    expect(bar).not.toBeNull();
+    // Out of the scrolling body, after it, as the panel's last child.
+    expect(bar.closest('#d-body')).toBeNull();
+    expect(bar.parentElement).toBe(panel);
+    expect(panel.lastElementChild).toBe(bar);
+    expect(panel.querySelector('#d-body .ch-files')).not.toBeNull();
+    // Its CSS (no sticky bar inside the scroll) is checked in look.test.ts.
+    r.unmount();
+  });
+
   it('a file changed in the folder since is marked plainly, and Apply is off', async () => {
     const conflicted: ApplyPreview = { ...preview, conflicts: [{ path: 'a.txt', why: 'changed in your folder since the checkpoint' }] };
     const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} />);

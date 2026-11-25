@@ -184,6 +184,8 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // The turn list, read again every few seconds while the service keeps a queue.
   const queueView = useQueue(queue);
   const refreshQueue = queueView?.refresh;
+  const refreshQueueRef = useRef(refreshQueue);
+  refreshQueueRef.current = refreshQueue;
 
   // Every session from one snapshot, newest activity first. The Sessions
   // column lists all of them, whatever agent is selected: a session can use
@@ -568,6 +570,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   useEffect(() => {
     if (!dataSource.subscribe || !streamOn) return;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let streamDropped = false;
     const unsubscribe = dataSource.subscribe(
       (event) => {
         noteEventTime(event.time);
@@ -670,7 +673,20 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         loadOpenTurns.current(snapshot);
         setReloadKey((k) => k + 1);
       },
-      setStreamUp
+      (up) => {
+        setStreamUp(up);
+        // Back after a drop (the service restarted, the network went away):
+        // the stream resumes from its cursor, and the list, the shown session
+        // and the turn list are read again, so nothing the gap changed is left
+        // stale.
+        if (!up) streamDropped = true;
+        else if (streamDropped) {
+          streamDropped = false;
+          setListKey((k) => k + 1);
+          setReloadKey((k) => k + 1);
+          refreshQueueRef.current?.();
+        }
+      }
     );
     return () => {
       if (refreshTimer) clearTimeout(refreshTimer);

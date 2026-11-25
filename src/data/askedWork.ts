@@ -7,7 +7,7 @@
 import { CockpitEvent, SessionSummary } from '../types';
 import { ApiTurn } from './jobs';
 import { pairToolCalls } from './turns';
-import { formatElapsed } from './liveStatus';
+import { formatElapsed, RUNNER_WAIT_MS, steadyNow } from './liveStatus';
 
 export interface AskedWork {
   // The asked session.
@@ -54,12 +54,38 @@ export function askedReview(events: CockpitEvent[] | undefined, asked: string): 
   return false;
 }
 
+// When the cockpit first saw each piece of asked work queued, on the steady
+// local clock. Kept for the page's life, so a switch away and back does not
+// start the wait over.
+const firstQueued = new Map<string, number>();
+
+// Forgets every wait counted so far (tests).
+export function resetQueuedWaits(): void {
+  firstQueued.clear();
+}
+
+// How long the cockpit has seen asked work `id` queued (ms). The first call
+// starts the count.
+export function queuedWaitMs(id: string, at = steadyNow()): number {
+  let since = firstQueued.get(id);
+  if (since === undefined) {
+    since = at;
+    firstQueued.set(id, since);
+  }
+  return at - since;
+}
+
 // The status line for one piece of asked work, in plain words:
 // "Codex review queued · starts when this turn ends",
 // "Codex is reviewing · 2m 5s", "Codex is working on it · 40s".
-export function askedLine(w: AskedWork, name: string, review: boolean, askerRunning: boolean, now: number): string {
+// Queued behind nothing, it waits like a sent message: "Waiting for Codex"
+// until it has been queued RUNNER_WAIT_MS (waitedMs), then "Codex queued ·
+// waiting for a runner". With no waitedMs it names the runner at once.
+export function askedLine(w: AskedWork, name: string, review: boolean, askerRunning: boolean, now: number, waitedMs?: number): string {
   if (w.state === 'queued') {
-    return `${name}${review ? ' review' : ''} queued · ${askerRunning ? 'starts when this turn ends' : 'waiting for a runner'}`;
+    if (askerRunning) return `${name}${review ? ' review' : ''} queued · starts when this turn ends`;
+    if (waitedMs !== undefined && waitedMs < RUNNER_WAIT_MS) return review ? `Waiting for the ${name} review` : `Waiting for ${name}`;
+    return `${name}${review ? ' review' : ''} queued · waiting for a runner`;
   }
   const what = `${name} ${review ? 'is reviewing' : 'is working on it'}`;
   return w.sinceMs !== undefined ? `${what} · ${formatElapsed(now - w.sinceMs)}` : what;

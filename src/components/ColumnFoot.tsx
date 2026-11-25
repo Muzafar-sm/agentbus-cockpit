@@ -71,7 +71,15 @@ export const ColumnFoot: React.FC<ColumnFootProps> = ({
             aria-label={streamUp ? 'Live' : 'Reconnecting'}
           />
         )}
-        <span className="bc-addr">{sourceLabel}</span>
+        {streamUp === false ? (
+          // The stream is down: say so in words, not by the dot alone. The
+          // address stays on hover.
+          <span className="bc-addr bc-down" role="status" title={sourceLabel}>
+            Disconnected · reconnecting…
+          </span>
+        ) : (
+          <span className="bc-addr">{sourceLabel}</span>
+        )}
         {onDisconnect && (
           <Button kind="link" className="disconnect" onClick={onDisconnect}>
             {disconnectLabel}

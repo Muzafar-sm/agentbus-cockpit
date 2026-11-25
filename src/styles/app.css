@@ -593,6 +593,7 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 /* The stream's dot: green while the live stream is up, grey while it
    reconnects. Recorded data has no stream and no dot. */
 .bus-card .bc-a .live.down { background: var(--line2); box-shadow: none; }
+.bus-card .bc-a .bc-down { color: var(--amber); }
 .brand-foot { padding: 0.6rem 0.75rem 0.8rem; border-top: 1px solid var(--line); }
 #agents { min-height: 0; overflow: hidden; }
 .bus-card .bc-t { min-width: 0; flex: 1; }
@@ -629,6 +630,9 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 /* Asked work's line may wrap on a narrow screen: its reason is the point. */
 .m-asked { height: auto; min-height: 1.5rem; }
 .m-asked .live-line { white-space: normal; }
+/* What a turn whose reply is in still waits on, in full: it wraps, never cut. */
+.tb-foot .tb-live { font-size: var(--fs-s); white-space: normal; min-width: 0; }
+.tb-foot .tb-live .live-text { overflow: visible; }
 #sessions .s-live { display: block; overflow: hidden; }
 #sessions .s-live .live-line { font-size: var(--fs-s); }
 #sessions .s-tt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -732,7 +736,8 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .apply-bar.too-big .ab-text { white-space: normal; }
 /* The apply preview in the right panel, and a turn's Changes tab. */
 .apply-panel .ap-conflicts { margin: 0 0 0.625rem; }
-.apply-panel .ap-actions { position: sticky; bottom: 0; margin-top: 0.75rem; padding: 0.625rem 0; background: var(--panel); border-top: 1px solid var(--line); display: flex; align-items: center; gap: 0.5rem; }
+/* The bar is the panel's foot, outside #d-body, so the file list scrolls above it and never under it. */
+.apply-panel .ap-actions { flex: none; padding: 0.625rem 1.5rem; background: var(--panel); border-top: 1px solid var(--line); display: flex; align-items: center; gap: 0.5rem; }
 /* Review controls, Discard and Apply on one line; the picker shrinks last. */
 .apply-panel .ap-review { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
 .apply-panel .ap-review .ctl-select { max-width: 8.5rem; min-width: 0; }

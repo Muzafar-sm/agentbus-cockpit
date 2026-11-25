@@ -50,6 +50,9 @@ export interface LiveDataSourceConfig {
   token?: string;
   retryBaseMs?: number; // first reconnect wait, doubled each failure; default 1000
   retryMaxMs?: number; // longest reconnect wait; default 30000
+  // How long an open stream may stay silent before it counts as gone and is
+  // opened again. The service sends a ping every 15 seconds; default 45000.
+  idleMs?: number;
 }
 
 interface Snapshot {
@@ -126,12 +129,14 @@ export class LiveDataSource implements DataSource {
   private token?: string;
   private retryBaseMs: number;
   private retryMaxMs: number;
+  private idleMs: number;
 
   constructor(config: LiveDataSourceConfig = {}) {
     this.baseUrl = config.baseUrl || 'http://127.0.0.1:8787';
     this.token = config.token;
     this.retryBaseMs = config.retryBaseMs ?? 1000;
     this.retryMaxMs = config.retryMaxMs ?? 30000;
+    this.idleMs = config.idleMs ?? 45000;
   }
 
   private headers(accept = 'application/json'): Record<string, string> {
@@ -1052,26 +1057,65 @@ export class LiveDataSource implements DataSource {
             onSnapshot?.(snap.sessions, { store: snap.store, seq: snap.seq });
           }
           const params = new URLSearchParams({ store: cursor.store, after: String(cursor.after) });
-          const res = await fetch(`${this.baseUrl}/api/v0/events?${params}`, {
-            headers: this.headers('text/event-stream'),
-            signal,
-          });
+          // Each connection has its own abort, so a silent one is closed and
+          // opened again without ending the subscription.
+          const conn = new AbortController();
+          const stopConn = () => conn.abort();
+          signal.addEventListener('abort', stopConn);
+          let res: Response;
+          try {
+            res = await fetch(`${this.baseUrl}/api/v0/events?${params}`, {
+              headers: this.headers('text/event-stream'),
+              signal: conn.signal,
+            });
+          } catch (err) {
+            signal.removeEventListener('abort', stopConn);
+            throw err;
+          }
           if (res.status === 409) {
+            signal.removeEventListener('abort', stopConn);
             cursor = null; // the next snapshot is handed over with onSnapshot
             // Start over at once; a second 409 in a row waits like a failure.
             resets++;
             if (resets === 1) continue;
             throw new Error('store changed again');
           }
-          if (!res.ok || !res.body) throw new Error(`Event stream failed: ${res.status}`);
+          if (!res.ok || !res.body) {
+            signal.removeEventListener('abort', stopConn);
+            throw new Error(`Event stream failed: ${res.status}`);
+          }
           onState?.(true);
           const c: { store: string; after: number } = cursor;
-          await readStream(res.body, (e) => {
-            if (typeof e.seq === 'number') c.after = e.seq;
-            delay = this.retryBaseMs;
-            resets = 0;
-            onEvent(e);
-          });
+          // A stream that sends nothing, not even its ping, for idleMs is a
+          // connection that is gone without closing (the service restarted
+          // behind a proxy, the laptop slept): close it and reconnect.
+          let idle: ReturnType<typeof setTimeout> | null = null;
+          let silent = false;
+          const heard = () => {
+            if (idle) clearTimeout(idle);
+            idle = setTimeout(() => {
+              silent = true;
+              conn.abort();
+            }, this.idleMs);
+          };
+          heard();
+          try {
+            await readStream(
+              res.body,
+              (e) => {
+                if (typeof e.seq === 'number') c.after = e.seq;
+                delay = this.retryBaseMs;
+                resets = 0;
+                onEvent(e);
+              },
+              heard,
+              conn.signal
+            );
+          } finally {
+            if (idle) clearTimeout(idle);
+            signal.removeEventListener('abort', stopConn);
+          }
+          if (silent) throw new Error(`no data for ${this.idleMs} ms`);
         } catch (err) {
           if (signal.aborted) return;
           console.warn('Event stream interrupted, reconnecting:', err);
@@ -1103,14 +1147,23 @@ async function apiError(res: Response): Promise<string> {
 }
 
 // Reads a text/event-stream body and calls onEvent for each `data:` message.
-async function readStream(body: ReadableStream<Uint8Array>, onEvent: (e: CockpitEvent) => void) {
+// onData, when given, is called for every chunk read, a ping included. An
+// abort of `stop` cancels the read, whatever the fetch does with its body.
+async function readStream(
+  body: ReadableStream<Uint8Array>,
+  onEvent: (e: CockpitEvent) => void,
+  onData?: () => void,
+  stop?: AbortSignal
+) {
   const reader = body.getReader();
+  stop?.addEventListener('abort', () => reader.cancel().catch(() => {}));
   const decoder = new TextDecoder();
   let buffer = '';
   let data: string[] = [];
   for (;;) {
     const { done, value } = await reader.read();
     if (done) return;
+    onData?.();
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
     buffer = lines.pop() || '';

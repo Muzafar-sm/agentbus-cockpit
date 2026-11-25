@@ -630,86 +630,87 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
                 {updateMsg}
               </p>
             )}
-            {!applied && has && (apply || canReview || discard || update) && (
-              <div className="ap-actions">
-                {canReview && !confirming && (
-                  <span className="ap-review">
-                    <Select
-                      name="reviewer"
-                      variant="quiet"
-                      label="Agent to review these changes"
-                      title="Agent to review these changes"
-                      value={reviewerId}
-                      options={reviewers.map((o) => ({ value: o.id, label: o.name }))}
-                      onChange={setReviewer}
-                      align="right"
-                    />
-                    {canMerge ? (
-                      <Button
-                        kind="secondary"
-                        className="ap-merge-go"
-                        disabled={merging || pending || waitingOn === gen.current}
-                        onClick={() => doMerge(reviewerId, mergeFiles!, mergeCall)}
-                      >
-                        {merging ? 'Merging…' : 'Merge'}
-                      </Button>
-                    ) : (
-                      <Button kind="secondary" onClick={() => review?.onReview(reviewerId)}>
-                        Review
-                      </Button>
-                    )}
-                  </span>
-                )}
-                {confirming ? (
-                  // The question in place, no pop-up window: Discard N files?
-                  <span className="ap-confirm" role="group" aria-label="Discard changes">
-                    <span className="ap-confirm-q">Discard {files(changedCount)}?</span>
-                    <Button kind="quiet" className="ap-discard-no" onClick={() => setConfirming(false)} disabled={discarding}>
-                      Cancel
-                    </Button>
-                    <Button kind="secondary" className="ap-discard-go" onClick={doDiscard} disabled={discarding}>
-                      {discarding ? 'Discarding…' : 'Discard'}
-                    </Button>
-                  </span>
-                ) : (
-                  <span className="ap-right">
-                    {update && !mergeFiles && (
-                      <Button
-                        kind="secondary"
-                        className="ap-update"
-                        disabled={!canUpdate}
-                        title="Bring your folder's current changes into this copy, then apply only this conversation's work"
-                        onClick={doUpdate}
-                      >
-                        {updating ? 'Updating…' : 'Update from my folder'}
-                      </Button>
-                    )}
-                    {discard && (
-                      <Button
-                        kind="secondary"
-                        className="ap-discard"
-                        disabled={!canDiscard}
-                        title="Drop these changes and reset the copy"
-                        onClick={() => {
-                          setDiscardError(null);
-                          setConfirming(true);
-                        }}
-                      >
-                        Discard
-                      </Button>
-                    )}
-                    {apply && (
-                      <Button kind="primary" className="ap-apply" disabled={!canApply} onClick={doApply} title="Apply these changes to your folder">
-                        {pending ? 'Applying…' : 'Apply'}
-                      </Button>
-                    )}
-                  </span>
-                )}
-              </div>
-            )}
           </>
         )}
       </div>
+      {/* The bar stays at the panel's foot; the list above it scrolls in #d-body. */}
+      {!tooBig && !applied && has && (apply || canReview || discard || update) && (
+        <div className="ap-actions">
+          {canReview && !confirming && (
+            <span className="ap-review">
+              <Select
+                name="reviewer"
+                variant="quiet"
+                label="Agent to review these changes"
+                title="Agent to review these changes"
+                value={reviewerId}
+                options={reviewers.map((o) => ({ value: o.id, label: o.name }))}
+                onChange={setReviewer}
+                align="right"
+              />
+              {canMerge ? (
+                <Button
+                  kind="secondary"
+                  className="ap-merge-go"
+                  disabled={merging || pending || waitingOn === gen.current}
+                  onClick={() => doMerge(reviewerId, mergeFiles!, mergeCall)}
+                >
+                  {merging ? 'Merging…' : 'Merge'}
+                </Button>
+              ) : (
+                <Button kind="secondary" onClick={() => review?.onReview(reviewerId)}>
+                  Review
+                </Button>
+              )}
+            </span>
+          )}
+          {confirming ? (
+            // The question in place, no pop-up window: Discard N files?
+            <span className="ap-confirm" role="group" aria-label="Discard changes">
+              <span className="ap-confirm-q">Discard {files(changedCount)}?</span>
+              <Button kind="quiet" className="ap-discard-no" onClick={() => setConfirming(false)} disabled={discarding}>
+                Cancel
+              </Button>
+              <Button kind="secondary" className="ap-discard-go" onClick={doDiscard} disabled={discarding}>
+                {discarding ? 'Discarding…' : 'Discard'}
+              </Button>
+            </span>
+          ) : (
+            <span className="ap-right">
+              {update && !mergeFiles && (
+                <Button
+                  kind="secondary"
+                  className="ap-update"
+                  disabled={!canUpdate}
+                  title="Bring your folder's current changes into this copy, then apply only this conversation's work"
+                  onClick={doUpdate}
+                >
+                  {updating ? 'Updating…' : 'Update from my folder'}
+                </Button>
+              )}
+              {discard && (
+                <Button
+                  kind="secondary"
+                  className="ap-discard"
+                  disabled={!canDiscard}
+                  title="Drop these changes and reset the copy"
+                  onClick={() => {
+                    setDiscardError(null);
+                    setConfirming(true);
+                  }}
+                >
+                  Discard
+                </Button>
+              )}
+              {apply && (
+                <Button kind="primary" className="ap-apply" disabled={!canApply} onClick={doApply} title="Apply these changes to your folder">
+                  {pending ? 'Applying…' : 'Apply'}
+                </Button>
+              )}
+            </span>
+          )}
+        </div>
+      )}
     </section>
   );
 };

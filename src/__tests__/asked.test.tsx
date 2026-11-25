@@ -14,6 +14,8 @@ import { createEmptyUsage } from '../data/turns';
 import { SavedAgent, SessionDetail, Turn } from '../types';
 import { ApiTurn, QueueSource } from '../data/jobs';
 import { ev, liveReplay, render, rowSession, shownSession } from './helpers';
+import { askedLine, resetQueuedWaits } from '../data/askedWork';
+import { RUNNER_WAIT_MS } from '../data/liveStatus';
 
 const SAVED: SavedAgent[] = [
   { id: 'claude', name: 'Claude Code', harness: 'claude', access: 'subscription' },
@@ -49,7 +51,11 @@ function session(turns: Turn[]): SessionDetail {
 }
 
 describe('asked work in the conversation', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    resetQueuedWaits();
+  });
 
   it('a delivered result says who did the work; with no way to open a session, no link', async () => {
     const s = session([
@@ -181,6 +187,7 @@ describe('asked work in the conversation', () => {
       ev({ session: 'p', kind: 'tool.completed', turn: 'T1', tool_id: 'u2', tool_output: '{"session":"d","turn":"td"}' }),
     ];
     const t1 = turn('T1', 1, { state: 'finished', detail: { events, modelCalls: [], toolCalls: [] } });
+    vi.useFakeTimers();
     const r = await render(
       <ConvoColumn
         session={session([t1])}
@@ -193,10 +200,29 @@ describe('asked work in the conversation', () => {
         ]}
       />
     );
-    const lines = Array.from(r.container.querySelectorAll('.m-asked')).map((x) => x.textContent);
-    // The asking turn has ended, so no turn holds the queued one back.
-    expect(lines).toEqual(['Codex review queued · waiting for a runner', 'DeepSeek flash is working on it']);
+    const lines = () => Array.from(r.container.querySelectorAll('.m-asked')).map((x) => x.textContent);
+    // Just queued, behind nothing: it waits like a sent message.
+    expect(lines()).toEqual(['Waiting for the Codex review', 'DeepSeek flash is working on it']);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RUNNER_WAIT_MS - 1500);
+    });
+    expect(lines()[0]).toBe('Waiting for the Codex review');
+    // The asking turn has ended, so no turn holds the queued one back: still
+    // queued a few seconds on, it names the runner.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(lines()).toEqual(['Codex review queued · waiting for a runner', 'DeepSeek flash is working on it']);
     r.unmount();
+  });
+
+  it('the asked wait is timed on a steady clock, not the events clock', () => {
+    const w = { id: 'c', agent: 'codex', state: 'queued' as const };
+    // The events' clock (now) jumps by hours: the line follows the wait alone.
+    expect(askedLine(w, 'Codex', false, false, 9e12, 1000)).toBe('Waiting for Codex');
+    expect(askedLine(w, 'Codex', false, false, 0, RUNNER_WAIT_MS)).toBe('Codex queued · waiting for a runner');
+    // A running asking turn holds it back, whatever the wait.
+    expect(askedLine(w, 'Codex', true, true, 0, 0)).toBe('Codex review queued · starts when this turn ends');
   });
 
   it('the live source reads origin from GET /api/v0/turns, and leaves out a kind it does not know', async () => {
@@ -242,6 +268,10 @@ describe('asked work in the conversation', () => {
 });
 
 describe('asked work across sessions', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    resetQueuedWaits();
+  });
   const started = (session: string, turn: string, text: string, agent: string, origin?: unknown) => [
     ev({ session, kind: 'turn.started', turn, text, agent, agent_id: agent, folder: '/w', ...(origin ? { origin } : {}) }),
     ev({ session, kind: 'model.requested', turn, exchange: `x-${turn}`, model: 'm' }),
@@ -338,6 +368,7 @@ describe('asked work across sessions', () => {
     const childRow = [
       ev({ session: 'c', kind: 'turn.started', turn: 'C1', text: 'review', agent: 'codex', agent_id: 'codex', folder: '/w', origin: { kind: 'asked', session: 'p', turn: 'T1' } }),
     ];
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     let rows: ApiTurn[] = [{ id: 'C1', session: 'c', agent: 'codex', agent_id: 'codex', folder: '/w', state: 'queued', asked: '2026-11-24T14:50:50Z' }];
     const queue: QueueSource = { address: 'http://cockpit.test', pollMs: 10, listTurns: async () => rows, stop: async () => {} };
     const lr = liveReplay([...parentIdle, ...childRow], { listAgents: async () => SAVED });
@@ -345,7 +376,13 @@ describe('asked work across sessions', () => {
     const line = () => r.container.querySelector('.m-asked')?.textContent ?? null;
     const dotted = () =>
       Array.from(r.container.querySelectorAll('#sessions [data-session]')).some((x) => rowSession(x) === 'p' && x.querySelector('.s-icons .live'));
-    await waitFor(() => shownSession(r.container) === 'p' && line() === 'Codex queued · waiting for a runner', 'the queued line');
+    // Just queued: it waits like a sent message, then names the runner.
+    await waitFor(() => shownSession(r.container) === 'p' && line() === 'Waiting for Codex', 'the waiting line');
+    expect(dotted()).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RUNNER_WAIT_MS + 500);
+    });
+    await waitFor(() => line() === 'Codex queued · waiting for a runner', 'the queued line');
     expect(dotted()).toBe(true);
     // A runner starts it.
     rows = [{ ...rows[0], state: 'running', started: new Date(Date.now() - 3000).toISOString() }];

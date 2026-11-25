@@ -478,6 +478,19 @@ export function resetClock(): void {
   clockSkew = null;
 }
 
+// A steady local clock (ms), for timing an interval on this page: how long a
+// message has stayed queued, say. It never moves when the events' clock
+// learns the service's offset, nor when the system clock is set.
+export function steadyNow(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+}
+
+// The service answers queued at once, even when a runner takes the turn a
+// moment later. Work queued behind nothing looks like any work waiting for its
+// agent, and says it waits for a runner only once it has stayed queued this
+// long, timed on steadyNow.
+export const RUNNER_WAIT_MS = 5000;
+
 // The latest turn of each session, with its events, as the stream brings
 // them. The session cards read their status from it. A new turn's
 // run.started or turn.started starts its entry over; an event of an older
