@@ -221,10 +221,6 @@ export function selectsText(el: Element): boolean {
   return (!!sel.anchorNode && el.contains(sel.anchorNode)) || (!!sel.focusNode && el.contains(sel.focusNode));
 }
 
-// How long a click on a turn waits for a second click before it opens the
-// turn. A second click inside it makes a double click, which selects text.
-export const PICK_WAIT_MS = 300;
-
 // The saved agent a session's next message goes to by default: the one that
 // ran its latest turn. A turn started by harness name alone names the
 // harness, which is also the id of that harness's default agent.
@@ -381,17 +377,6 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   // Each turn's block, by turn id, so a turn that just ended can be brought to
   // the top of the view.
   const turnEls = useRef(new Map<string, HTMLDivElement>());
-  // A pointer click on a turn waits PICK_WAIT_MS before it opens the turn, so
-  // a double or triple click (selecting a word or a line) never opens it.
-  const pickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelPick = () => {
-    if (pickTimer.current) clearTimeout(pickTimer.current);
-    pickTimer.current = null;
-  };
-  // A switch to another session drops a pick still waiting.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => cancelPick, [session.id]);
-
   const scrollToEnd = () => {
     const el = msgsRef.current;
     if (!el) return;
@@ -866,29 +851,12 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                     if (el) turnEls.current.set(turn.id, el);
                     else turnEls.current.delete(turn.id);
                   }}
-                  onMouseDown={(e) => {
-                    // The second press of a double or triple click: the first
-                    // click was the start of a selection, not a pick.
-                    if (e.detail > 1) cancelPick();
-                  }}
                   onClick={(e) => {
                     // A click that ends a text selection in this turn is the
-                    // person copying, not opening the turn. So is any click of
-                    // a double or triple click, the first one included: a
-                    // pointer click opens the turn only once no second click
-                    // followed it. A click with no count (a key, a script)
-                    // opens it at once.
-                    const el = e.currentTarget;
-                    cancelPick();
-                    if (e.detail > 1 || selectsText(el)) return;
-                    if (e.detail === 0) {
-                      onSelectTurn(turn);
-                      return;
-                    }
-                    pickTimer.current = setTimeout(() => {
-                      pickTimer.current = null;
-                      if (!selectsText(el)) onSelectTurn(turn);
-                    }, PICK_WAIT_MS);
+                    // person copying, not opening the turn. So is the second
+                    // or third click of a double or triple click.
+                    if (e.detail > 1 || selectsText(e.currentTarget)) return;
+                    onSelectTurn(turn);
                   }}
                 >
                   <div className="tb-h">
