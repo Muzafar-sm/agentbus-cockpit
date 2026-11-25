@@ -727,7 +727,7 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 #c-reply .apply-bar { box-sizing: border-box; max-width: 45.6rem; margin: 0 0 0.375rem; display: flex; align-items: center; gap: 0.5rem; padding: 0 0.25rem; font-size: var(--fs-s); color: var(--ink2); }
 .apply-bar .ab-dot { color: var(--amber); font-size: var(--fs-xs); }
 .apply-bar .ab-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.apply-bar .ab-review { margin-left: auto; flex: none; border: 0; background: none; padding: 0.125rem 0.25rem; font: inherit; font-weight: 600; color: var(--ink); cursor: pointer; border-radius: 0.375rem; }
+.apply-bar .ab-review { margin-left: auto; flex: none; border: 0; background: none; padding: 0.125rem 0.25rem; font: inherit; font-weight: 600; cursor: pointer; border-radius: 0.375rem; }
 .apply-bar .ab-review:hover { background: var(--row-hover); }
 .apply-bar.too-big .ab-text { white-space: normal; }
 /* The apply preview in the right panel, and a turn's Changes tab. */
@@ -991,9 +991,12 @@ tr.ev-open > td { background: #FBFBFA; border-bottom: 1px solid var(--line); pad
 .btn-quiet { background: transparent; border-color: var(--line); color: var(--ink2); font-weight: 500; }
 .btn-quiet:hover:not(:disabled) { background: #fff; color: var(--ink); border-color: var(--line2); }
 .btn-sm, .colhead .btn { height: 1.625rem; padding: 0 0.5rem; font-size: var(--fs-s); }
-/* Text links that act: grey and underlined, darker on hover. */
-.lnk, .nd-link, .open-call, .tb-changes, .ctx-more, .sh-fold, .link-btn, .brand-foot .disconnect { color: var(--ink2); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
-.lnk:hover, .nd-link:hover, .open-call:hover, .tb-changes:hover, .ctx-more:hover, .sh-fold:hover, .link-btn:hover, .brand-foot .disconnect:hover { color: var(--ink); }
+/* Text links that act: the running blue of a session's live line, no
+   underline. Hover underlines, as the crumbs and file links do; keyboard
+   focus gets the focus ring. */
+.lnk, .nd-link, .open-call, .tb-changes, .ctx-more, .sh-fold, .link-btn, .brand-foot .disconnect { color: var(--run); text-decoration: none; text-underline-offset: 2px; cursor: pointer; }
+.lnk:hover, .nd-link:hover, .open-call:hover, .tb-changes:hover, .ctx-more:hover, .sh-fold:hover, .link-btn:hover, .brand-foot .disconnect:hover { text-decoration: underline; }
+.lnk:focus-visible, .nd-link:focus-visible, .open-call:focus-visible, .tb-changes:focus-visible, .ctx-more:focus-visible, .sh-fold:focus-visible, .link-btn:focus-visible, .brand-foot .disconnect:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; border-radius: 2px; }
 /* An empty list or column: one quiet line. */
 .empty { margin: 0; padding: 0.5rem 0.75rem; font-size: var(--fs-m); line-height: 1.4; color: var(--ink3); }
 #d-body .empty, .pg-body .empty { padding: 0; }
