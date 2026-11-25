@@ -1305,6 +1305,61 @@ describe('The prompt box', () => {
     r.unmount();
   });
 
+  it('a message queued behind nothing waits like any message, and names the runner only after a few seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const svc = fakeService({
+      sessions: [row('s1', { resumable: true })],
+      events: { s1: oneTurn('s1', 'first') },
+      messages: (id) => json({ session: id, turn: 't_q', state: 'queued' }, 202),
+    });
+    const r = await mount(svc);
+    await setValue(box(r), 'go');
+    await submitForm(r.container.querySelector('#c-reply form'));
+    await settle();
+    const state = () => r.container.querySelector('.tb.pending .tb-state')?.textContent;
+    // The same line as a message the service took at once.
+    expect(state()).toBe('waiting for the agent');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(state()).toBe('waiting for the agent');
+    // Still queued a few seconds on: no runner has taken it.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3500);
+    });
+    expect(state()).toBe('queued · waiting for a runner');
+    r.unmount();
+  });
+
+  it('what was typed stays in its own session’s box across a switch and back', async () => {
+    const svc = fakeService({
+      sessions: [row('s1', { resumable: true }), row('s2', { resumable: true })],
+      events: { s1: oneTurn('s1', 'first'), s2: oneTurn('s2', 'other') },
+      messages: (id) => json({ session: id, turn: 't_n', state: 'running' }, 202),
+    });
+    const r = await mount(svc);
+    await setValue(box(r), 'half a thought');
+    await click(r.container.querySelector('#sessions [data-session="s2"]'));
+    await settle();
+    expect(box(r).value).toBe('');
+    await setValue(box(r), 'for two');
+    await click(r.container.querySelector('#sessions [data-session="s1"]'));
+    await settle();
+    expect(box(r).value).toBe('half a thought');
+    await click(r.container.querySelector('#sessions [data-session="s2"]'));
+    await settle();
+    expect(box(r).value).toBe('for two');
+    // A sent message leaves the box, and does not come back to it.
+    await submitForm(r.container.querySelector('#c-reply form'));
+    await settle();
+    await click(r.container.querySelector('#sessions [data-session="s1"]'));
+    await settle();
+    await click(r.container.querySelector('#sessions [data-session="s2"]'));
+    await settle();
+    expect(box(r).value).toBe('');
+    r.unmount();
+  });
+
   it('after a switch whose answer was lost, the next message still names its agent', async () => {
     const running = oneTurn('s1', 'first')
       .slice(0, 2)

@@ -74,7 +74,7 @@ describe('asked work in the conversation', () => {
     r.unmount();
   });
 
-  it('a delivered result links to the session the work ran in; the link opens it, not the turn', async () => {
+  it('a delivered result is itself the link to the session the work ran in; it opens that, not the turn', async () => {
     const s = session([
       turn('T1', 1, { prompt: 'run all two on this' }),
       turn('T2', 2, {
@@ -94,8 +94,10 @@ describe('asked work in the conversation', () => {
       />
     );
     const line = r.container.querySelector('.m-origin')!;
-    expect(line.textContent).toBe('Result from DeepSeek flash, sent by AgentBus · open its session');
+    // No extra words: the label is the link.
+    expect(line.textContent).toBe('Result from DeepSeek flash, sent by AgentBus');
     const link = line.querySelector<HTMLButtonElement>('button.origin-link')!;
+    expect(link.textContent).toBe(line.textContent);
     expect(link.classList.contains('link-btn')).toBe(true);
     await act(async () => link.click());
     expect(opened).toEqual(['child1']);
@@ -103,11 +105,28 @@ describe('asked work in the conversation', () => {
     r.unmount();
   });
 
-  it('an asked turn says so, with no link', async () => {
+  it('an asked turn says so; with no way to open a session, no link', async () => {
     const s = session([turn('C1', 1, { origin: { kind: 'asked', session: 'p0', turn: 'T1' } })]);
     const r = await render(<ConvoColumn session={s} selectedTurn={null} onSelectTurn={() => {}} agents={SAVED} />);
     expect(r.container.querySelector('.m-origin')!.textContent).toBe('Asked by another agent');
     expect(r.container.querySelector('.origin-link')).toBeNull();
+    r.unmount();
+  });
+
+  it('an asked turn is itself the link back to the session that asked', async () => {
+    const s = session([turn('C1', 1, { origin: { kind: 'asked', session: 'p0', turn: 'T1' } })]);
+    const opened: string[] = [];
+    const picked: string[] = [];
+    const r = await render(
+      <ConvoColumn session={s} selectedTurn={null} onSelectTurn={(t) => picked.push(t.id)} agents={SAVED} onOpenSession={(id) => opened.push(id)} />
+    );
+    const line = r.container.querySelector('.m-origin')!;
+    expect(line.textContent).toBe('Asked by another agent');
+    const link = line.querySelector<HTMLButtonElement>('button.origin-link[data-session-link="p0"]')!;
+    expect(link.textContent).toBe('Asked by another agent');
+    await act(async () => link.click());
+    expect(opened).toEqual(['p0']);
+    expect(picked).toEqual([]);
     r.unmount();
   });
 
@@ -136,7 +155,9 @@ describe('asked work in the conversation', () => {
     const linked = await render(
       <ConvoColumn {...props} onOpenSession={(id) => opened.push(id)} asked={[{ id: 'c', agent: 'codex', by: 'T1', state: 'running' }]} />
     );
-    expect(asked(linked)!.textContent).toBe('Codex is working on it · open its session');
+    // No extra words: the running line is the link.
+    expect(asked(linked)!.textContent).toBe('Codex is working on it');
+    expect(asked(linked)!.querySelector('button.origin-link')!.textContent).toBe('Codex is working on it');
     await act(async () => asked(linked)!.querySelector<HTMLButtonElement>('button.origin-link')!.click());
     expect(opened).toEqual(['c']);
     linked.unmount();
@@ -262,6 +283,9 @@ describe('asked work across sessions', () => {
       await new Promise((res) => setTimeout(res, 50));
     });
     expect(shownSession(r.container)).toBe('c');
+    // Its "Asked by another agent" leads back to the session that asked.
+    await act(async () => r.container.querySelector<HTMLButtonElement>('.m-origin .origin-link[data-session-link="p"]')!.click());
+    await waitFor(() => shownSession(r.container) === 'p', 'back in the asking session');
     r.unmount();
   });
 
@@ -277,7 +301,7 @@ describe('asked work across sessions', () => {
     const lr = liveReplay([...runningParent, ...runningChild], { listAgents: async () => SAVED });
     const r = await render(<App dataSource={lr.source} />);
     await waitFor(
-      () => shownSession(r.container) === 'p' && r.container.querySelector('.m-asked')?.textContent === 'Codex is working on it · open its session',
+      () => shownSession(r.container) === 'p' && r.container.querySelector('.m-asked .origin-link')?.textContent === 'Codex is working on it',
       'the asking session with a waiting line'
     );
     const listed = () => Array.from(r.container.querySelectorAll('#sessions [data-session]')).map((x) => rowSession(x));
@@ -325,7 +349,7 @@ describe('asked work across sessions', () => {
     expect(dotted()).toBe(true);
     // A runner starts it.
     rows = [{ ...rows[0], state: 'running', started: new Date(Date.now() - 3000).toISOString() }];
-    await waitFor(() => /^Codex is working on it · \d+s · open its session$/.test(line() ?? ''), 'the running line');
+    await waitFor(() => /^Codex is working on it · \d+s$/.test(line() ?? ''), 'the running line');
     expect(dotted()).toBe(true);
     // It ends: the line and the dot go.
     rows = [{ ...rows[0], state: 'finished', ended: new Date().toISOString() }];

@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { liveStatus, LiveTurn } from '../data/liveStatus';
+import { eventsNow, liveStatus, LiveTurn } from '../data/liveStatus';
 import { harnessName, turnNotes } from '../data/turns';
 import { Level, QueuedTurn, SavedAgent, SessionDetail, ShellRun, Started, Turn } from '../types';
 import { useNow } from '../utils/useNow';
@@ -80,6 +80,11 @@ interface ConvoColumnProps {
   // picker beside Send to that agent (the Review button names a reviewer).
   prefill?: { session: string; text: string; agent?: string } | null;
   onPrefillTaken?: () => void;
+  // What the person had typed in this session's box when they last left it,
+  // kept by the caller so it outlives a switch to another session and back.
+  // onDraftChange hands back each change. Absent: kept here only.
+  savedDraft?: string;
+  onDraftChange?: (sessionId: string, text: string) => void;
   // The work this session asked another agent for (ask_agent, review_turn)
   // that is queued or running. An asked session is one-off and stays off the
   // sessions list. Each shows one status line at the foot of the
@@ -154,9 +159,14 @@ export function agentNameOf(id: string | undefined, agents?: SavedAgent[]): stri
   return agents?.find((a) => a.id === id)?.name ?? harnessName(id);
 }
 
-// The link to the session asked work ran in. Its click opens that session
+// A link to another session: the one asked work ran in, or the one that
+// asked. Its text is the line it stands in for. Its click opens that session
 // only, not the turn it sits in.
-const OpenSessionLink: React.FC<{ session: string; onOpen: (id: string) => void }> = ({ session, onOpen }) => (
+const OpenSessionLink: React.FC<{ session: string; onOpen: (id: string) => void; children: React.ReactNode }> = ({
+  session,
+  onOpen,
+  children,
+}) => (
   <Button
     kind="link"
     className="origin-link"
@@ -166,13 +176,14 @@ const OpenSessionLink: React.FC<{ session: string; onOpen: (id: string) => void 
       onOpen(session);
     }}
   >
-    open its {SESSION}
+    {children}
   </Button>
 );
 
 // The line above a turn's message when the person did not type it: a
-// delivered result names the agent that did the work and links to the session
-// it ran in, which is off the sessions list; an asked turn says so.
+// delivered result names the agent that did the work, and is a link to the
+// session it ran in, which is off the sessions list; an asked turn says so,
+// and is a link back to the session that asked.
 const OriginLine: React.FC<{ turn: Turn; agents?: SavedAgent[]; onOpenSession?: (id: string) => void }> = ({
   turn,
   agents,
@@ -180,21 +191,26 @@ const OriginLine: React.FC<{ turn: Turn; agents?: SavedAgent[]; onOpenSession?: 
 }) => {
   const o = turn.origin;
   if (!o) return null;
-  if (o.kind === 'result') {
-    return (
-      <div className="m-origin">
+  const label =
+    o.kind === 'result' ? (
+      <>
         {'Result from '}
         <b>{agentNameOf(o.agent, agents)}</b>, sent by {PRODUCT}
-        {o.session && onOpenSession ? (
-          <>
-            {' · '}
-            <OpenSessionLink session={o.session} onOpen={onOpenSession} />
-          </>
-        ) : null}
-      </div>
+      </>
+    ) : (
+      'Asked by another agent'
     );
-  }
-  return <div className="m-origin">Asked by another agent</div>;
+  return (
+    <div className="m-origin">
+      {o.session && onOpenSession ? (
+        <OpenSessionLink session={o.session} onOpen={onOpenSession}>
+          {label}
+        </OpenSessionLink>
+      ) : (
+        label
+      )}
+    </div>
+  );
 };
 
 // True when the page has text selected inside el: the click that ended a drag
@@ -225,6 +241,8 @@ export interface Pending {
   turnsAtSend: number;
   state: 'sending' | 'queued' | 'accepted' | 'failed';
   ahead?: number;
+  // When the service answered queued, on the events' clock.
+  queuedAt?: number;
   // The turn's id, once the service answered.
   turn?: string;
   // Why it failed, in the API's words.
@@ -238,6 +256,12 @@ export type PendingUpdate = (list: Pending[]) => Pending[];
 
 // How often a queued message's turn is read.
 export const QUEUED_POLL_MS = 3000;
+
+// The service answers queued at once, even when a runner takes the turn a
+// moment later. A message queued behind nothing looks like any message
+// waiting for its agent, and says it waits for a runner only once it has
+// stayed queued this long.
+export const RUNNER_WAIT_MS = 5000;
 
 // A key for one message: its turn carries it, so the message is matched to
 // the turn that runs it.
@@ -277,6 +301,8 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   live,
   prefill,
   onPrefillTaken,
+  savedDraft,
+  onDraftChange,
   agents,
   onAddAgent,
   agentDot,
@@ -301,7 +327,11 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   const folders = useFolders();
   const sessionFolder = folderLabel(session.folder, sessionFolderRef(session), folders);
   const turnFolder = (t: Turn) => folderLabel(t.folder, t.folderRef, folders);
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(savedDraft ?? '');
+  useEffect(() => {
+    onDraftChange?.(session.id, draft);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
   // The header's name is being edited.
   const [renaming, setRenaming] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -459,7 +489,9 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   const liveEventsOf = (turn: Turn) =>
     live === undefined || turn.state !== 'running' ? undefined : turn.detail?.events ?? (live?.turn === turn.id ? live.events : undefined);
   const anyRunning = live !== undefined && session.turnsList.some((t) => t.state === 'running');
-  const now = useNow(anyRunning || (asked ?? []).some((w) => w.state === 'running'));
+  const now = useNow(
+    anyRunning || (asked ?? []).some((w) => w.state === 'running') || pending.some((p) => p.state === 'queued' && !p.ahead)
+  );
 
   const lastTurn = session.turnsList[turnCount - 1];
   const lastState = lastTurn?.state;
@@ -597,7 +629,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
     const set = (patch: Partial<Pending>) => setPending((list) => list.map((x) => (x.key === p.key ? { ...x, ...patch } : x)));
     try {
       const started = await onSend!(p.prompt, p.agent, p.key);
-      if (started && started.state === 'queued') set({ state: 'queued', ahead: started.ahead, turn: started.turn });
+      if (started && started.state === 'queued') set({ state: 'queued', ahead: started.ahead, turn: started.turn, queuedAt: eventsNow() });
       else set({ state: 'accepted', turn: started ? started.turn : undefined });
     } catch (err) {
       set({ state: 'failed', error: refusalText((err as Error).message, p.agent, nextName) });
@@ -666,7 +698,9 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
               : p.state === 'queued'
                 ? p.ahead
                   ? `${STATE.queued} · runs after ${p.ahead === 1 ? 'the running turn' : `${p.ahead} turns`}`
-                  : `${STATE.queued} · waiting for a runner`
+                  : p.queuedAt !== undefined && now - p.queuedAt < RUNNER_WAIT_MS
+                    ? `${STATE.waiting} for the agent`
+                    : `${STATE.queued} · waiting for a runner`
                 : `${STATE.waiting} for the agent`}
           </span>
         </div>
@@ -919,13 +953,13 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
               <span className={`live-line ${w.state === 'running' ? 'run' : 'dim'}`}>
                 {w.state === 'running' ? <i className="spin run-spin" aria-hidden /> : null}
                 <span className="live-text">
-                  {line}
                   {w.state === 'running' && onOpenSession ? (
-                    <>
-                      {' · '}
-                      <OpenSessionLink session={w.id} onOpen={onOpenSession} />
-                    </>
-                  ) : null}
+                    <OpenSessionLink session={w.id} onOpen={onOpenSession}>
+                      {line}
+                    </OpenSessionLink>
+                  ) : (
+                    line
+                  )}
                 </span>
               </span>
             </div>

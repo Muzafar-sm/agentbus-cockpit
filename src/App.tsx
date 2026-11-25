@@ -1162,6 +1162,13 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // The messages sent from each session that are not turns yet, kept here so
   // they outlive a switch to another session and back.
   const [pendingBySession, setPendingBySession] = useState<Record<string, Pending[]>>({});
+  // What the person had typed in each session's box, so a switch to another
+  // session and back shows it again. Read once, when the session is shown.
+  const draftsRef = useRef(new Map<string, string>());
+  const onDraftChange = useCallback((id: string, text: string) => {
+    if (text === '') draftsRef.current.delete(id);
+    else draftsRef.current.set(id, text);
+  }, []);
   const shownSessionId = shownId;
   const onPending = useCallback(
     (update: PendingUpdate) => {
@@ -1669,6 +1676,8 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           onSend={sendMessage}
           prefill={prefill}
           onPrefillTaken={() => setPrefill(null)}
+          savedDraft={draftsRef.current.get(sessionView.id)}
+          onDraftChange={onDraftChange}
           queuedTurn={queuedTurn}
           keyed={!!dataSource.queuedTurn}
           pending={pendingBySession[sessionView.id] ?? NO_PENDING}
