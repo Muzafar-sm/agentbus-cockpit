@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, ChevronDown, ChevronRight, Copy, Lock, Plus, ShieldCheck, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, FileDiff, Lock, Plus, ShieldCheck, X } from 'lucide-react';
 
 // The cockpit's icons, from Lucide (thin-stroke, ISC), re-exported under the
 // cockpit's own names so callers do not change. Sizes match the hand-drawn
@@ -20,6 +20,9 @@ export const CloseIcon: React.FC = () => <X size={16} strokeWidth={2.2} aria-hid
 // LockIcon marks a closed or archived conversation: it takes no more messages,
 // or is hidden from the list.
 export const LockIcon: React.FC = () => <Lock size={13} strokeWidth={1.8} aria-hidden="true" />;
+
+// UnappliedIcon marks a workspace with changes not applied to the folder yet.
+export const UnappliedIcon: React.FC = () => <FileDiff size={13} strokeWidth={1.8} aria-hidden="true" />;
 
 export const CopyButton: React.FC<{ text: string }> = ({ text }) => {
   const [copied, setCopied] = React.useState(false);

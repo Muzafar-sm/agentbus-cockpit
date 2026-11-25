@@ -992,6 +992,12 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
       remove: (id: string) => d.removeRunner!(id),
     };
   }, [dataSource]);
+  // The workspaces under each machine on the Runners page, with Close.
+  const workspacesApi = useMemo(() => {
+    const d = dataSource;
+    if (!d.listWorkspaces || !d.closeWorkspace) return undefined;
+    return { list: () => d.listWorkspaces!(), close: (id: string) => d.closeWorkspace!(id) };
+  }, [dataSource]);
   const runnersOnline = runners.runners ? runners.runners.filter((r) => r.online).length : undefined;
   // Which build the service is, read once: it is fixed for the life of the
   // process. A source without the route, or a read that fails, shows none.
@@ -1526,6 +1532,8 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         pending={runners.pending}
         reload={runners.reload}
         actions={runnerActions}
+        workspaces={workspacesApi}
+        folders={folders}
         queue={queueView ? { turns: queueView.turns, error: queueView.error, titleOf } : undefined}
         onBack={() => goPage('cockpit')}
         onApps={openApps}

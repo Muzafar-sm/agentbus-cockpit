@@ -378,6 +378,31 @@ export interface WorkspaceInfo {
   folders?: { name?: string; folder?: string; folder_ref?: string }[];
 }
 
+// One row of GET /api/v0/workspaces, as the Runners page reads it. machine is
+// the con_ id of the machine that owns the folder, absent for the service's
+// own; closed is when Close removed the copy; head_turn is the latest turn
+// with changes and applied_turn the latest one applied.
+export interface WorkspaceRow {
+  workspace: string;
+  sandbox: boolean;
+  created: string;
+  machine?: string;
+  folder?: string;
+  folder_ref?: string;
+  folders?: { name?: string; folder?: string; folder_ref?: string }[];
+  closed?: string;
+  head_turn?: string;
+  applied_turn?: string;
+}
+
+// POST /api/v0/workspaces/<id>/close: queued, running, closed or failed
+// (error says why); already when it was closed before.
+export interface CloseState {
+  state?: string;
+  already?: boolean;
+  error?: string;
+}
+
 // GET /api/v0/turns/<id>/diff, as the cockpit reads it: what one turn
 // changed, ran and called.
 export interface TurnDiffFile {
@@ -931,6 +956,12 @@ export interface DataSource {
   // The workspace's record (GET /api/v0/workspaces/{id}): its folders, for
   // grouping a review by folder. Rejects with the API's words.
   getWorkspace?(workspace: string): Promise<WorkspaceInfo>;
+  // Every workspace (GET /api/v0/workspaces), for the Runners page; null on a
+  // service without the route. closeWorkspace removes a sandbox workspace's
+  // copy (POST /api/v0/workspaces/{id}/close); sessions and the record stay.
+  // It resolves on 200 and 202; any other answer rejects with the API's words.
+  listWorkspaces?(): Promise<WorkspaceRow[] | null>;
+  closeWorkspace?(workspace: string): Promise<CloseState>;
   // A source that keeps request bodies has this: one model call's request
   // and reply by its turn and exchange. Rejects with an Error in the API's
   // own words.

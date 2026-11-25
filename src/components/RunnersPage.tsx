@@ -7,6 +7,8 @@ import { RunnersList, RunnersState } from './RunnersList';
 import { Button } from './Controls';
 import { ConfirmDialog } from './Dialog';
 import { Notice } from './Notice';
+import { useWorkspaces, WorkspaceRows, WorkspacesApi } from './Workspaces';
+import { FolderInfo } from '../data/folders';
 import { harnessName, LOADING, PRODUCT, STATE } from '../words';
 
 // What the person decides on the page: approve a waiting machine with the
@@ -37,6 +39,11 @@ interface RunnersPageProps extends RunnersState {
   queue?: { turns: ApiTurn[]; error: string | null; titleOf?: (session: string) => string | undefined };
   // Undefined: a source that cannot decide, and the page shows no buttons.
   actions?: RunnerActions;
+  // The workspaces, listed under the machine that holds each, with Close.
+  // Undefined: a source without them, and none are shown.
+  workspaces?: WorkspacesApi;
+  // The folders the service lists, to name a workspace's folder by its ref.
+  folders?: FolderInfo[];
 }
 
 const Sep = () => <span className="sep">·</span>;
@@ -45,8 +52,17 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 // The runners page (/runners), in the mockup's three columns: every machine,
 // one runner each, with the machines waiting for approval on top; the picked
 // one, with what it reported; and the queue.
-export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pending, reload, onBack, onApps, onRunners, onSettings, runnersOnline, version, sourceLabel, streamUp, onDisconnect, disconnectLabel, queue, actions }) => {
+export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pending, reload, onBack, onApps, onRunners, onSettings, runnersOnline, version, sourceLabel, streamUp, onDisconnect, disconnectLabel, queue, actions, workspaces, folders }) => {
   const [picked, setPicked] = useState<string | null>(null);
+  const ws = useWorkspaces(workspaces);
+  // Each machine's open workspaces under its row; those of a machine with no
+  // runner listed (the service's own has no machine id) go in a group below.
+  const listed = new Set((runners ?? []).flatMap((r) => (r.machine ? [r.machine] : [])));
+  const rowsOf = (machine: string | undefined) => (ws.rows ?? []).filter((w) => w.machine === machine);
+  const others = [...new Set((ws.rows ?? []).map((w) => w.machine).filter((m) => !m || !listed.has(m)))];
+  const wsRows = (machine: string | undefined, label: string) => (
+    <WorkspaceRows rows={rowsOf(machine)} label={label} folders={folders} close={workspaces?.close} onClosed={ws.hide} />
+  );
   const waiting = pending ?? [];
   // The picked one while it is listed; else the first runner, or with no
   // runner the first machine waiting. A pick that left the list on a later
@@ -78,7 +94,20 @@ export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pendin
           {waiting.length > 0 && <PendingList pending={waiting} selected={shownPending?.id} onSelect={setPicked} />}
           {runners === undefined && !error && <p className="empty runners-none">{LOADING}</p>}
           {runners === null && <p className="empty runners-none">This service keeps no runners.</p>}
-          <RunnersList runners={runners} error={error} selected={shown?.id} onSelect={setPicked} />
+          <RunnersList
+            runners={runners}
+            error={error}
+            selected={shown?.id}
+            onSelect={setPicked}
+            below={(r) => (r.machine ? wsRows(r.machine, `Workspaces on ${r.name}`) : null)}
+          />
+          {ws.error && <p className="empty bad ws-err">{ws.error}</p>}
+          {others.map((m) => (
+            <div key={m ?? ''} className="ws-other">
+              <div className="sub-h">{m ? <code>{m}</code> : 'This service\'s machine'}</div>
+              {wsRows(m, m ? `Workspaces on ${m}` : 'Workspaces on this service\'s machine')}
+            </div>
+          ))}
         </>
       }
       main={

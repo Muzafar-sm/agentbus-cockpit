@@ -27,6 +27,8 @@ import {
   DiscardState,
   UpdateState,
   WorkspaceInfo,
+  WorkspaceRow,
+  CloseState,
   Turn,
   TurnDiff,
   TurnChangesPage,
@@ -791,6 +793,29 @@ export class LiveDataSource implements DataSource {
     const res = await fetch(`${this.baseUrl}/api/v0/workspaces/${encodeURIComponent(workspace)}`, { headers: this.headers() });
     if (!res.ok) throw new Error(await apiError(res));
     return res.json();
+  }
+
+  // GET /api/v0/workspaces: every workspace, newest first. null on a service
+  // without the route (404).
+  async listWorkspaces(): Promise<WorkspaceRow[] | null> {
+    const res = await fetch(`${this.baseUrl}/api/v0/workspaces`, { headers: this.headers() });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(await apiError(res));
+    const body = await res.json();
+    return Array.isArray(body?.workspaces) ? body.workspaces : [];
+  }
+
+  // POST /api/v0/workspaces/<id>/close: removes the workspace's copy. 200
+  // closed, 202 still waiting behind a turn. A 409 (another apply, discard,
+  // update or close in flight) and every other refusal reject with the API's
+  // words.
+  async closeWorkspace(workspace: string): Promise<CloseState> {
+    const res = await fetch(`${this.baseUrl}/api/v0/workspaces/${encodeURIComponent(workspace)}/close`, {
+      method: 'POST',
+      headers: this.headers(),
+    });
+    if (res.ok) return res.json().catch(() => ({}));
+    throw new Error(await apiError(res));
   }
 
   // GET /api/v0/workspaces/<id>/changes: the apply preview, on the session's
