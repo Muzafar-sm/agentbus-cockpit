@@ -744,6 +744,19 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     if (from === undefined) setAwaitedSession(started.session);
     setAwaitedTurn(started.turn ? { session: started.session, turn: started.turn } : null);
   };
+  // Opens a session from a link in the conversation: the session asked work
+  // ran in, which is off the sessions list. One not read yet opens once its
+  // row arrives.
+  const openSession = (id: string) => {
+    nextSend();
+    setAwaitedTurn(null);
+    if (!allSessions?.some((x) => x.id === id)) {
+      setAwaitedSession(id);
+      return;
+    }
+    setAwaitedSession(null);
+    chooseSession(id);
+  };
   useEffect(() => {
     if (awaitedSession === null) return;
     const s = allSessions?.find((x) => x.id === awaitedSession);
@@ -1673,6 +1686,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           onAddAgent={canKeepAgents ? () => setAgentsDialog({}) : undefined}
           agentDot={agentDot}
           asked={askedOf(sessionView.id)}
+          onOpenSession={openSession}
           onRename={renameSession}
           applyBar={
             previewTooBig

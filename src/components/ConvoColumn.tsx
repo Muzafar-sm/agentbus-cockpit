@@ -82,9 +82,12 @@ interface ConvoColumnProps {
   onPrefillTaken?: () => void;
   // The work this session asked another agent for (ask_agent, review_turn)
   // that is queued or running. An asked session is one-off and stays off the
-  // sessions list; the person never opens one. Each shows one status line at
-  // the foot of the conversation, gone when the work ends.
+  // sessions list. Each shows one status line at the foot of the
+  // conversation, gone when the work ends.
   asked?: AskedWork[];
+  // Opens another session: the one asked work runs in, from its running line
+  // and from the turn that delivered its result. Without it, no link shows.
+  onOpenSession?: (sessionId: string) => void;
   // Given when the source can name sessions: a new title for this one.
   // Rejects with the API's words.
   onRename?: (sessionId: string, title: string) => Promise<void>;
@@ -151,10 +154,30 @@ export function agentNameOf(id: string | undefined, agents?: SavedAgent[]): stri
   return agents?.find((a) => a.id === id)?.name ?? harnessName(id);
 }
 
+// The link to the session asked work ran in. Its click opens that session
+// only, not the turn it sits in.
+const OpenSessionLink: React.FC<{ session: string; onOpen: (id: string) => void }> = ({ session, onOpen }) => (
+  <Button
+    kind="link"
+    className="origin-link"
+    data-session-link={session}
+    onClick={(e) => {
+      e.stopPropagation();
+      onOpen(session);
+    }}
+  >
+    open its {SESSION}
+  </Button>
+);
+
 // The line above a turn's message when the person did not type it: a
-// delivered result names the agent that did the work; an asked turn says so.
-// Neither links out: an asked session is one-off and the person never opens it.
-const OriginLine: React.FC<{ turn: Turn; agents?: SavedAgent[] }> = ({ turn, agents }) => {
+// delivered result names the agent that did the work and links to the session
+// it ran in, which is off the sessions list; an asked turn says so.
+const OriginLine: React.FC<{ turn: Turn; agents?: SavedAgent[]; onOpenSession?: (id: string) => void }> = ({
+  turn,
+  agents,
+  onOpenSession,
+}) => {
   const o = turn.origin;
   if (!o) return null;
   if (o.kind === 'result') {
@@ -162,11 +185,25 @@ const OriginLine: React.FC<{ turn: Turn; agents?: SavedAgent[] }> = ({ turn, age
       <div className="m-origin">
         {'Result from '}
         <b>{agentNameOf(o.agent, agents)}</b>, sent by {PRODUCT}
+        {o.session && onOpenSession ? (
+          <>
+            {' · '}
+            <OpenSessionLink session={o.session} onOpen={onOpenSession} />
+          </>
+        ) : null}
       </div>
     );
   }
   return <div className="m-origin">Asked by another agent</div>;
 };
+
+// True when the page has text selected inside el: the click that ended a drag
+// across a reply, say.
+export function selectsText(el: Element): boolean {
+  const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+  if (!sel || sel.isCollapsed || sel.toString().trim() === '') return false;
+  return (!!sel.anchorNode && el.contains(sel.anchorNode)) || (!!sel.focusNode && el.contains(sel.focusNode));
+}
 
 // The saved agent a session's next message goes to by default: the one that
 // ran its latest turn. A turn started by harness name alone names the
@@ -245,6 +282,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   agentDot,
   defaultAgent,
   asked,
+  onOpenSession,
   queuedTurn,
   keyed,
   pending: keptPending,
@@ -781,7 +819,13 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                     if (el) turnEls.current.set(turn.id, el);
                     else turnEls.current.delete(turn.id);
                   }}
-                  onClick={() => onSelectTurn(turn)}
+                  onClick={(e) => {
+                    // A click that ends a text selection in this turn is the
+                    // person copying, not opening the turn. So is the second
+                    // or third click of a double or triple click.
+                    if (e.detail > 1 || selectsText(e.currentTarget)) return;
+                    onSelectTurn(turn);
+                  }}
                 >
                   <div className="tb-h">
                     <b>Turn {turn.turnNumber}</b>
@@ -799,7 +843,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                       </>
                     )}
                   </div>
-                  <OriginLine turn={turn} agents={agents} />
+                  <OriginLine turn={turn} agents={agents} onOpenSession={onOpenSession} />
                   <div className={`m-user${turn.origin ? ' from-agent' : ''}`}>
                     <div className={`bubble${turn.origin?.kind === 'result' ? ' delivered' : ''}`}>
                       {turn.prompt}
@@ -874,7 +918,15 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
             <div key={w.id} className="m-live m-asked" role="status" data-asked={w.id} data-state={w.state}>
               <span className={`live-line ${w.state === 'running' ? 'run' : 'dim'}`}>
                 {w.state === 'running' ? <i className="spin run-spin" aria-hidden /> : null}
-                <span className="live-text">{line}</span>
+                <span className="live-text">
+                  {line}
+                  {w.state === 'running' && onOpenSession ? (
+                    <>
+                      {' · '}
+                      <OpenSessionLink session={w.id} onOpen={onOpenSession} />
+                    </>
+                  ) : null}
+                </span>
               </span>
             </div>
           ))}

@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 // Agents ask agents. A delivered result shows as such and names the agent that
-// did the work; a turn another agent asked for says so. Neither links out: an
-// asked session is one-off and the person never opens it. While an asked
-// session still runs, the asking conversation shows one plain "Waiting on …"
-// line, gone when it ends. The live source reads origin from the turn list.
+// did the work and links to the session it ran in; a turn another agent asked
+// for says so. An asked session stays off the sessions list, so the asking
+// conversation is where the person opens it: from the delivered result, and
+// from the line asked work shows while it runs. The live source reads origin
+// from the turn list.
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
@@ -50,7 +51,7 @@ function session(turns: Turn[]): SessionDetail {
 describe('asked work in the conversation', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('a delivered result says who did the work, as plain text with no link', async () => {
+  it('a delivered result says who did the work; with no way to open a session, no link', async () => {
     const s = session([
       turn('T1', 1, { prompt: 'run all two on this' }),
       turn('T2', 2, {
@@ -70,6 +71,35 @@ describe('asked work in the conversation', () => {
     const bubbles = r.container.querySelectorAll('.tb .bubble');
     expect(bubbles[0].classList.contains('delivered')).toBe(false);
     expect(bubbles[1].classList.contains('delivered')).toBe(true);
+    r.unmount();
+  });
+
+  it('a delivered result links to the session the work ran in; the link opens it, not the turn', async () => {
+    const s = session([
+      turn('T1', 1, { prompt: 'run all two on this' }),
+      turn('T2', 2, {
+        prompt: '[AgentBus] This message is from AgentBus, not from the person',
+        origin: { kind: 'result', session: 'child1', turn: 'tc', turnKind: 'turn', agent: 'deepseek' },
+      }),
+    ]);
+    const opened: string[] = [];
+    const picked: string[] = [];
+    const r = await render(
+      <ConvoColumn
+        session={s}
+        selectedTurn={null}
+        onSelectTurn={(t) => picked.push(t.id)}
+        agents={SAVED}
+        onOpenSession={(id) => opened.push(id)}
+      />
+    );
+    const line = r.container.querySelector('.m-origin')!;
+    expect(line.textContent).toBe('Result from DeepSeek flash, sent by AgentBus · open its session');
+    const link = line.querySelector<HTMLButtonElement>('button.origin-link')!;
+    expect(link.classList.contains('link-btn')).toBe(true);
+    await act(async () => link.click());
+    expect(opened).toEqual(['child1']);
+    expect(picked).toEqual([]);
     r.unmount();
   });
 
@@ -100,6 +130,21 @@ describe('asked work in the conversation', () => {
     expect(asked(running)!.textContent).toMatch(/^Codex is working on it · 2m \d+s$/);
     expect(asked(running)!.querySelector('.run-spin')).not.toBeNull();
     running.unmount();
+    // Running, with a way to open sessions: the line links to the asked
+    // session. A queued one has nothing to show yet, so no link.
+    const opened: string[] = [];
+    const linked = await render(
+      <ConvoColumn {...props} onOpenSession={(id) => opened.push(id)} asked={[{ id: 'c', agent: 'codex', by: 'T1', state: 'running' }]} />
+    );
+    expect(asked(linked)!.textContent).toBe('Codex is working on it · open its session');
+    await act(async () => asked(linked)!.querySelector<HTMLButtonElement>('button.origin-link')!.click());
+    expect(opened).toEqual(['c']);
+    linked.unmount();
+    const queuedLinked = await render(
+      <ConvoColumn {...props} onOpenSession={() => {}} asked={[{ id: 'c', agent: 'codex', by: 'T1', state: 'queued' }]} />
+    );
+    expect(asked(queuedLinked)!.querySelector('button')).toBeNull();
+    queuedLinked.unmount();
     // Ended: nothing is asked for, the line is gone.
     const ended = await render(<ConvoColumn {...props} asked={[]} />);
     expect(asked(ended)).toBeNull();
@@ -196,7 +241,7 @@ describe('asked work across sessions', () => {
     expect((await lr.source.getTurns('c')).turns[0].origin).toEqual({ kind: 'asked', session: 'p', turn: 'T1', turnKind: undefined, agent: undefined });
   });
 
-  it('the list shows only the person session; an asked child stays off it, with no result link', async () => {
+  it('the list shows only the person session; a finished asked child opens from its result', async () => {
     const lr = liveReplay([...parent, ...child('c', 'C1')], { listAgents: async () => SAVED });
     const r = await render(<App dataSource={lr.source} />);
     // The person's session is shown, with its two delivered results as text.
@@ -204,13 +249,23 @@ describe('asked work across sessions', () => {
     const listed = () => Array.from(r.container.querySelectorAll('#sessions [data-session]')).map((x) => rowSession(x));
     expect(listed()).toContain('p');
     expect(listed()).not.toContain('c');
-    // No link opens the asked child; the finished child shows no waiting line.
-    expect(r.container.querySelector('.m-origin .origin-link')).toBeNull();
+    // The finished child shows no waiting line; its result links to it.
     expect(r.container.querySelector('.m-asked')).toBeNull();
+    const link = r.container.querySelector<HTMLButtonElement>('.m-origin .origin-link[data-session-link="c"]')!;
+    expect(link).not.toBeNull();
+    await act(async () => link.click());
+    await waitFor(() => shownSession(r.container) === 'c', 'the asked child open');
+    // It opens and stays open, and it is still off the list.
+    expect(r.container.querySelector('.m-origin')!.textContent).toBe('Asked by another agent');
+    expect(listed()).not.toContain('c');
+    await act(async () => {
+      await new Promise((res) => setTimeout(res, 50));
+    });
+    expect(shownSession(r.container)).toBe('c');
     r.unmount();
   });
 
-  it('a running asked session shows a plain waiting line in the asking session, gone when it ends', async () => {
+  it('a running asked session shows a waiting line that opens it, gone when it ends', async () => {
     // The parent's own turn is idle; a child it asked is still running: its
     // run holds it open (run.started, no run.ended yet).
     const runningParent = [...started('p', 'T1', 'run codex on this', 'claude')];
@@ -222,17 +277,33 @@ describe('asked work across sessions', () => {
     const lr = liveReplay([...runningParent, ...runningChild], { listAgents: async () => SAVED });
     const r = await render(<App dataSource={lr.source} />);
     await waitFor(
-      () => shownSession(r.container) === 'p' && r.container.querySelector('.m-asked')?.textContent === 'Codex is working on it',
+      () => shownSession(r.container) === 'p' && r.container.querySelector('.m-asked')?.textContent === 'Codex is working on it · open its session',
       'the asking session with a waiting line'
     );
     const listed = () => Array.from(r.container.querySelectorAll('#sessions [data-session]')).map((x) => rowSession(x));
     expect(listed()).not.toContain('c'); // the asked child stays off the list
-    expect(r.container.querySelector('.m-asked a, .m-asked button')).toBeNull(); // no link
     expect(r.container.querySelector('#c-waiting')).toBeNull(); // no line above the conversation
     expect(r.container.querySelectorAll('.m-origin').length).toBe(0); // no result delivered yet
     // The child's run ends: the waiting line goes.
     lr.push(ev({ session: 'c', kind: 'run.ended', hold: 'h-c' }));
     await waitFor(() => r.container.querySelector('.m-asked') === null, 'the waiting line gone');
+    r.unmount();
+  });
+
+  it('the running line of asked work opens the asked session', async () => {
+    const runningParent = [...started('p', 'T1', 'run codex on this', 'claude')];
+    const runningChild = [
+      ev({ session: 'c', kind: 'run.started', hold: 'h-c', agent: 'codex', agent_id: 'codex', folder: '/w' }),
+      ev({ session: 'c', kind: 'turn.started', turn: 'C1', text: 'do it', agent: 'codex', agent_id: 'codex', folder: '/w', origin: { kind: 'asked', session: 'p', turn: 'T1' } }),
+      ev({ session: 'c', kind: 'model.requested', turn: 'C1', exchange: 'x-C1', model: 'm' }),
+    ];
+    const lr = liveReplay([...runningParent, ...runningChild], { listAgents: async () => SAVED });
+    const r = await render(<App dataSource={lr.source} />);
+    await waitFor(() => shownSession(r.container) === 'p' && !!r.container.querySelector('.m-asked .origin-link'), 'the running line');
+    await act(async () => r.container.querySelector<HTMLButtonElement>('.m-asked .origin-link')!.click());
+    await waitFor(() => shownSession(r.container) === 'c', 'the asked session open');
+    const listed = Array.from(r.container.querySelectorAll('#sessions [data-session]')).map((x) => rowSession(x));
+    expect(listed).not.toContain('c');
     r.unmount();
   });
 
@@ -254,7 +325,7 @@ describe('asked work across sessions', () => {
     expect(dotted()).toBe(true);
     // A runner starts it.
     rows = [{ ...rows[0], state: 'running', started: new Date(Date.now() - 3000).toISOString() }];
-    await waitFor(() => /^Codex is working on it · \d+s$/.test(line() ?? ''), 'the running line');
+    await waitFor(() => /^Codex is working on it · \d+s · open its session$/.test(line() ?? ''), 'the running line');
     expect(dotted()).toBe(true);
     // It ends: the line and the dot go.
     rows = [{ ...rows[0], state: 'finished', ended: new Date().toISOString() }];
