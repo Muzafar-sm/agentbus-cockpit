@@ -54,7 +54,14 @@ export const ColumnFoot: React.FC<ColumnFootProps> = ({
     <div className="bus-card">
       <span className="bc-row">
         <b className="brand">
-          {PRODUCT}
+          {PRODUCT.endsWith('Bus') ? (
+            <>
+              {PRODUCT.slice(0, -3)}
+              <span className="bm-bus">Bus</span>
+            </>
+          ) : (
+            PRODUCT
+          )}
           {version && " "}
           {version && (
             <span className="bc-v" title="its build">

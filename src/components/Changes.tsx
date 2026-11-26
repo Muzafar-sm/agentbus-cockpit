@@ -668,7 +668,7 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
             // The question in place, no pop-up window: Discard N files?
             <span className="ap-confirm" role="group" aria-label="Discard changes">
               <span className="ap-confirm-q">Discard {files(changedCount)}?</span>
-              <Button kind="quiet" className="ap-discard-no" onClick={() => setConfirming(false)} disabled={discarding}>
+              <Button kind="secondary" className="ap-discard-no" onClick={() => setConfirming(false)} disabled={discarding}>
                 Cancel
               </Button>
               <Button kind="secondary" className="ap-discard-go" onClick={doDiscard} disabled={discarding}>
@@ -703,7 +703,7 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
                 </Button>
               )}
               {apply && (
-                <Button kind="primary" className="ap-apply" disabled={!canApply} onClick={doApply} title="Apply these changes to your folder">
+                <Button kind="primary" accent className="ap-apply" disabled={!canApply} onClick={doApply} title="Apply these changes to your folder">
                   {pending ? 'Applying…' : 'Apply'}
                 </Button>
               )}

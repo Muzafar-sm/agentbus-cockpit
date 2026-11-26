@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Button } from './Controls';
-import { Session, SESSION, Sessions, SESSIONS } from '../words';
+import { Button, FoldButton } from './Controls';
+import { SESSION, Sessions, SESSIONS } from '../words';
 import { liveStatus, LiveTurns } from '../data/liveStatus';
 import { sessionAgents } from '../data/turns';
 import { SavedAgent, SessionSummary } from '../types';
@@ -58,6 +58,8 @@ export const SessionsColumn: React.FC<SessionsColumnProps> = ({
 }) => {
   // The session whose name is being edited, if any.
   const [editing, setEditing] = useState<string | null>(null);
+  // Folded to a thin strip by the button at the head of the column.
+  const [folded, setFolded] = useState(false);
   // "3 min ago" moves on with the clock, not only when an event arrives.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -78,8 +80,9 @@ export const SessionsColumn: React.FC<SessionsColumnProps> = ({
     }
   }
   return (
-    <section id="sessions">
+    <section id="sessions" className={folded ? 'folded' : undefined}>
       <header className="colhead">
+        <FoldButton folded={folded} name="sessions" onToggle={() => setFolded((f) => !f)} />
         {onAgents && (
           <Button kind="quiet" className="agents-menu" onClick={onAgents} aria-label="Agents" title="Agents">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
@@ -92,7 +95,7 @@ export const SessionsColumn: React.FC<SessionsColumnProps> = ({
         {onNewSession && (
           <Button kind="quiet" className="new-session" onClick={onNewSession} aria-label={`New ${SESSION}`} title={`New ${SESSION}`}>
             <PlusIcon />
-            {Session}
+            New
           </Button>
         )}
       </header>

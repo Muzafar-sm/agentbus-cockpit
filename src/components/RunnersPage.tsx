@@ -223,11 +223,11 @@ const PendingDetail: React.FC<{ p: PendingMachine; actions?: RunnerActions; onDo
                 maxLength={16}
               />
             </label>{' '}
-            <Button kind="primary" type="submit" className="rn-approve-go" disabled={busy || !code.trim()}>
-              {busy ? 'Approving…' : 'Approve'}
-            </Button>{' '}
             <Button kind="secondary" className="rn-refuse" disabled={busy} onClick={() => act(() => actions.refuse(p.id))}>
               Refuse
+            </Button>{' '}
+            <Button kind="primary" type="submit" className="rn-approve-go" disabled={busy || !code.trim()}>
+              {busy ? 'Approving…' : 'Approve'}
             </Button>
           </form>
         )}

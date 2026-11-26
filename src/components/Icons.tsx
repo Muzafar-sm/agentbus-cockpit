@@ -67,3 +67,16 @@ export const SessionStatus: React.FC<{ running?: boolean; sandbox?: boolean; loc
     </span>
   );
 };
+
+// BusMark is the AgentBus logo: an orange bus with three navy windows and two
+// white wheels, as on the site. It sits before the name in the left column.
+export const BusMark: React.FC = () => (
+  <svg className="bus-mark" width="22" height="17" viewBox="0 0 26 20" fill="none" aria-hidden="true">
+    <rect x="1" y="2" width="24" height="13" rx="4" fill="#FE8919" />
+    <rect x="4" y="5" width="5" height="4" rx="1" fill="#0B1F4D" />
+    <rect x="10.5" y="5" width="5" height="4" rx="1" fill="#0B1F4D" />
+    <rect x="17" y="5" width="5" height="4" rx="1" fill="#0B1F4D" />
+    <circle cx="7" cy="16" r="2.6" fill="#FFFFFF" />
+    <circle cx="19" cy="16" r="2.6" fill="#FFFFFF" />
+  </svg>
+);
