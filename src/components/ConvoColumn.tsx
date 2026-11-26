@@ -16,7 +16,7 @@ import { ShellEntry } from './ShellEntry';
 import { Button, Select } from './Controls';
 import { Notice } from './Notice';
 import { PRODUCT, SESSION, STATE } from '../words';
-import { formatDuration } from '../utils/format';
+import { formatDuration, formatWhen } from '../utils/format';
 import { commandsAfter } from '../data/shell';
 import { BackButton } from './BackButton';
 import { TOO_BIG } from './Changes';
@@ -953,6 +953,14 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                       {turnFolder(turn) && turnFolder(turn) !== sessionFolder ? (
                         <>
                           <code className="tb-folder">{turnFolder(turn)}</code> ·{' '}
+                        </>
+                      ) : null}
+                      {formatWhen(turn.endedAt) ? (
+                        <>
+                          <time dateTime={turn.endedAt} title={new Date(turn.endedAt!).toLocaleString()}>
+                            {formatWhen(turn.endedAt)}
+                          </time>{' '}
+                          ·{' '}
                         </>
                       ) : null}
                       {turn.durationMs !== undefined ? `${formatDuration(turn.durationMs)} · ` : ''}

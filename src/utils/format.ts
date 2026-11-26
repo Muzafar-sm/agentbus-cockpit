@@ -85,6 +85,25 @@ export function formatTime(isoString: string): string {
   }
 }
 
+// When something happened, in the person's local time and words: the time of
+// day ("14:32", or "2:32 PM" where that is the custom), with the date before it
+// when it is not today ("Nov 24, 14:32"), and the year too when it is not this
+// year. Empty when the time is not known or not a time.
+export function formatWhen(isoString: string | undefined, now: number = Date.now()): string {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return '';
+  const today = new Date(now);
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (d.toDateString() === today.toDateString()) return time;
+  const date = d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(d.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}),
+  });
+  return `${date}, ${time}`;
+}
+
 // Every duration and latency on screen, one rule: whole ms under a second,
 // else seconds with one decimal ("640ms", "1.7s", "11.2s").
 export function formatDuration(ms?: number): string {
