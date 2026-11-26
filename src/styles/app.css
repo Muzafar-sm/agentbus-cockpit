@@ -1,5 +1,5 @@
 /* The cockpit's own styles, on top of base.css. */
-:root, .modal-back { --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; --bad: var(--red); --bad-bg: var(--red-bg); --col-side: 14.5rem; }
+:root, .modal-back, .bus-card { --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; --bad: var(--red); --bad-bg: var(--red-bg); --col-side: 14.5rem; }
 code, pre, textarea.prompt { font-family: var(--mono); }
 code { font-size: .86em; }
 .sep { color: var(--ink3); margin: 0 0.375rem; }
@@ -618,7 +618,7 @@ tr.ev-open > td { background: var(--bg); border-bottom: 1px solid var(--line); p
 /* Live status of a running turn (agentbus-notes/plans/LIVE_STATUS.md). The
    running blue and its spinner are the mockup's. One line, fixed height: it
    never grows, and long text ends in an ellipsis. */
-:root, .modal-back { --run: var(--blue); }
+:root, .modal-back, .bus-card { --run: var(--blue); }
 .run { color: var(--run); }
 .spin.run-spin { display: inline-block; width: 0.75rem; height: 0.75rem; border: 2px solid var(--blue-bg); border-top-color: var(--run); flex: none; }
 .live-line { display: flex; align-items: center; gap: 0.4375rem; min-width: 0; white-space: nowrap; }
@@ -965,7 +965,7 @@ tr.ev-open > td { background: var(--bg); border-bottom: 1px solid var(--line); p
    fails on a second definition). The look is the session view's own: a
    list row is round with light padding, grey on hover, white with a soft
    shadow when picked. */
-:root, .modal-back {
+:root, .modal-back, .bus-card {
   --sel-r: 0.625rem;
   --row-pad: 0.55rem 0.75rem;
   --row-hover: var(--hover);
@@ -1256,13 +1256,12 @@ input:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus); o
 .side-link:hover, .side-link.feedback-link:hover, .side-link.on { color: var(--ink); }
 .side-link .sl-ic { flex: none; color: currentColor; }
 
-/* The AgentBus card: a whitish card on the navy column, with its own light
-   tokens; "AgentBus" as one word in the hero colours, navy and orange. */
-.bus-card {
-  --ink: #0B1F4D; --ink2: #44507A; --ink3: #606B93;
-  --line2: #CDD2E0; --run: #1466D1; --amber: #9A5A04;
-  background: #FFFFFF; border-color: #FFFFFF; color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.25);
-}
+/* The AgentBus card: a card on the navy column in the page's own colours, white
+   in light and the dark panel in dark. The navy column changes its tokens for
+   everything inside it, so the card resets them: every token block names
+   .bus-card next to :root, as it does .modal-back. "AgentBus" is one word in the
+   hero colours, the ink and orange. */
+.bus-card { background: var(--panel); border-color: var(--line2); color: var(--ink); box-shadow: 0 1px 3px var(--shadow-lg); }
 .bus-card .brand { display: block; color: var(--ink); }
 .bus-card .bm-bus { color: var(--accent); }
 
@@ -1322,3 +1321,4 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible, textarea:focus-v
 /* An earlier answer of a turn that answered more than once: the same reply
    look, its time under it in the footer style, a little room before the next. */
 .m-agent.earlier + .tb-foot { margin-bottom: 0.75rem; }
+

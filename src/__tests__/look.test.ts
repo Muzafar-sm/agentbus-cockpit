@@ -175,4 +175,17 @@ describe('the apply panel', () => {
     expect(width('.c-jump-at')).toBeDefined();
     expect(width('.c-jump-at')).toBe(width('#c-reply .box'));
   });
+
+  it('the AgentBus card and dialogs take the theme, not the navy column or fixed colours', () => {
+    // The navy column changes the tokens for everything in it; the card and the
+    // dialogs reset them by sitting in every token block beside :root.
+    const blocks = rules(css).filter(([sel]) => /(^|,)\s*:root\b/.test(sel)).map(([sel]) => sel.split(',').map((x) => x.trim()));
+    expect(blocks.length).toBeGreaterThan(0);
+    for (const b of blocks) {
+      expect(b).toContain('.modal-back');
+      expect(b).toContain('.bus-card');
+    }
+    const fixed = rules(css).filter(([sel, body]) => /\.bus-card\b/.test(sel) && !/:root/.test(sel) && /#[0-9a-fA-F]{3,6}\b/.test(body));
+    expect(fixed).toEqual([]);
+  });
 });

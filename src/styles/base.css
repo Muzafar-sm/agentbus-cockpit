@@ -1,4 +1,4 @@
-:root, .modal-back {
+:root, .modal-back, .bus-card {
   /* Calm navy, one warm orange (agentbus-notes/plans/DESIGN_cockpit_theme.md).
      Navy is the structure; orange is the moment: Apply, a running agent, a
      selected choice. Dark values are in the block after this one. */
@@ -59,7 +59,7 @@
   --fs-m: max(13px, 0.8125rem);
 }
 @media (prefers-color-scheme: dark) {
-  :root, .modal-back {
+  :root, .modal-back, .bus-card {
     color-scheme: dark;
     --bg: #071533;
     --side: #050F26;
