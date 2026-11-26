@@ -169,6 +169,10 @@ export interface TurnDetail {
   rawPrompt?: string;
   // The text of the last call's reply.
   agentResponse?: string;
+  // Every answer the turn gave, oldest first: one per turn.completed, the text
+  // of the call that completed it and when. A turn answers more than once when
+  // the agent resumes after its own background command ends.
+  answers?: { text: string; time: string }[];
 }
 
 // The turns of one session, oldest first, and the cursor (store, seq) they

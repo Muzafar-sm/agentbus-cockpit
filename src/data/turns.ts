@@ -170,7 +170,26 @@ export function turnDetail(rawEvents: CockpitEvent[]): TurnDetail {
     rawPrompt,
     prompt: rawPrompt === undefined ? undefined : extractCleanPrompt(rawPrompt),
     agentResponse: text,
+    answers: turnAnswers(events, modelCalls),
   };
+}
+
+// Each turn.completed's answer, oldest first: the reply of the call with the
+// same exchange, else the last reply with text before it. A completion with no
+// text to show is left out, and so is one that repeats the answer before it.
+export function turnAnswers(events: CockpitEvent[], modelCalls: ModelCallPair[]): { text: string; time: string }[] {
+  const out: { text: string; time: string }[] = [];
+  events.forEach((e, idx) => {
+    if (e.kind !== 'turn.completed') return;
+    const textOf = (r?: CockpitEvent) => (r && typeof r.text === 'string' && r.text !== '' ? r.text : undefined);
+    let text = e.exchange ? textOf(modelCalls.find((c) => c.requested.exchange === e.exchange)?.responded) : undefined;
+    if (text === undefined) {
+      for (let i = idx - 1; i >= 0 && text === undefined; i--) if (events[i].kind === 'model.responded') text = textOf(events[i]);
+    }
+    if (text === undefined || out[out.length - 1]?.text === text) return;
+    out.push({ text, time: e.time });
+  });
+  return out;
 }
 
 // Add streamed events to a loaded turn. An event already held (same id) is

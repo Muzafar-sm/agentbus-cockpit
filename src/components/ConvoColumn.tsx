@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { liveStatus, LiveTurn, RUNNER_WAIT_MS, steadyNow } from '../data/liveStatus';
 import { harnessName, turnNotes } from '../data/turns';
-import { Level, QueuedTurn, SavedAgent, SessionDetail, ShellRun, Started, Turn } from '../types';
+import { Level, QueuedTurn, SavedAgent, SessionDetail, ShellRun, Started, Turn, TurnDetail } from '../types';
 import { useNow } from '../utils/useNow';
 import { Markdown } from './Markdown';
 import { formatCost, formatTokens, stateLabel, turnStateClass } from '../utils/format';
@@ -284,6 +284,12 @@ export function cannotContinue(turns: Turn[]): string {
   return `This ${SESSION} cannot take another message. Start a new one.`;
 }
 
+// A turn's answers before its last: shown above the last, which is turn.reply.
+function earlierAnswers(detail: TurnDetail | undefined): { text: string; time: string }[] {
+  const all = detail?.answers ?? [];
+  return all.length > 1 ? all.slice(0, -1) : [];
+}
+
 export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   session,
   selectedTurn,
@@ -399,7 +405,9 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
     const el = msgsRef.current;
     const turnEl = turnEls.current.get(turnId);
     if (!el || !turnEl) return;
-    const reply = (turnEl.querySelector('.m-agent') as HTMLElement | null) ?? turnEl;
+    // The newest answer: a turn that answered more than once has earlier ones above it.
+    const replies = turnEl.querySelectorAll<HTMLElement>('.m-agent');
+    const reply = replies[replies.length - 1] ?? turnEl;
     const replyTop = el.scrollTop + (reply.getBoundingClientRect().top - el.getBoundingClientRect().top);
     el.scrollTop = replyStartTop(replyTop, el);
   };
@@ -915,6 +923,24 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                       )}
                     </div>
                   )}
+
+                  {/* A turn that answered more than once (the agent resumed after
+                      its own background command) shows each earlier answer, in
+                      order, with when it came; turn.reply is the last one. */}
+                  {earlierAnswers(detail).map((a, i) => (
+                    <React.Fragment key={i}>
+                      <div className="m-agent md-reply earlier">
+                        <Markdown text={a.text} files={{ session: session.id, folder: session.folder }} />
+                      </div>
+                      <div className="tb-foot">
+                        <span className="tb-stat">
+                          <time dateTime={a.time} title={new Date(a.time).toLocaleString()}>
+                            {formatWhen(a.time)}
+                          </time>
+                        </span>
+                      </div>
+                    </React.Fragment>
+                  ))}
 
                   {answer && !showLive && (
                     <div className={`m-agent md-reply${detail ? '' : ' preview'}`}>

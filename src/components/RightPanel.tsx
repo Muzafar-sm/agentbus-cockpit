@@ -5,6 +5,7 @@ import {
   formatCost,
   formatDuration,
   formatTime,
+  formatWhen,
   formatTokens,
   stateLabel,
   toolStateClass,
@@ -600,6 +601,21 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
                 from the single turn (its whole reply) first, then the events.
                 Prefer it so a turn's whole reply is not replaced by the events'
                 partial text. */}
+            {/* Each earlier answer first, oldest first, as the chat shows them. */}
+            {(detail.answers ?? []).slice(0, -1).map((a, i) => (
+              <React.Fragment key={i}>
+                <div className="m-agent md-reply result-md earlier">
+                  <Markdown text={a.text} files={{ session: turn.sessionId, folder: turn.folder }} />
+                </div>
+                <div className="tb-foot">
+                  <span className="tb-stat">
+                    <time dateTime={a.time} title={new Date(a.time).toLocaleString()}>
+                      {formatWhen(a.time)}
+                    </time>
+                  </span>
+                </div>
+              </React.Fragment>
+            ))}
             {(turn.reply ?? detail.agentResponse) ? (
               // Formatted as the chat shows it.
               <div className="m-agent md-reply result-md">

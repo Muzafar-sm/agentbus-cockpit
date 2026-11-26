@@ -1318,3 +1318,7 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible, textarea:focus-v
 .c-jump-at { position: relative; height: 0; max-width: 45.6rem; }
 .c-jump { position: absolute; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 5; border-radius: 50%; background: var(--panel); border: 1px solid var(--line3); color: var(--ink); box-shadow: 0 2px 8px var(--shadow); }
 .c-jump:hover { background: var(--hover); color: var(--ink); }
+
+/* An earlier answer of a turn that answered more than once: the same reply
+   look, its time under it in the footer style, a little room before the next. */
+.m-agent.earlier + .tb-foot { margin-bottom: 0.75rem; }
