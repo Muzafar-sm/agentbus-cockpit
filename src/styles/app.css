@@ -100,7 +100,7 @@ code { font-size: .86em; }
 /* Stop and Stopping… keep one width, so a changing label moves nothing. */
 #c-reply .go.stop:disabled { opacity: .5; }
 /* The agent for the next message, beside Send: quiet text until hovered (mockup v4, round 17). */
-#c-reply .next-agent { max-width: 10rem; min-width: 0; }
+#c-reply .next-agent { max-width: 10rem; min-width: 0; height: 2rem; }
 #c-reply .next-agent:disabled { cursor: default; opacity: .6; }
 /* The picker and the picked agent's sign-in dot, side by side. */
 #c-reply .next-agent-at { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
@@ -1206,7 +1206,7 @@ input.invalid, textarea.invalid { border-color: var(--bad); }
 .btn-secondary:hover:not(:disabled) { background: var(--hover); border-color: var(--ink3); }
 .btn-quiet { background: var(--panel); border-color: var(--line3); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px var(--shadow); }
 .btn-quiet:hover:not(:disabled) { background: var(--hover); color: var(--ink); border-color: var(--ink3); }
-#c-reply .go { background: var(--navy); color: #fff; height: max(32px, 2.25rem); border-radius: 0.75rem; }
+#c-reply .go { background: var(--navy); color: #fff; height: 2rem; border-radius: 0.75rem; }
 #c-reply .go:not(:disabled):hover { background: var(--navy-hover); }
 .ask-card { border-color: var(--accent); border-radius: 0.875rem; }
 
