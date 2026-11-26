@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ArrowDown } from 'lucide-react';
 import { liveStatus, LiveTurn, RUNNER_WAIT_MS, steadyNow } from '../data/liveStatus';
 import { harnessName, turnNotes } from '../data/turns';
 import { Level, QueuedTurn, SavedAgent, SessionDetail, ShellRun, Started, Turn } from '../types';
@@ -374,6 +375,12 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   // off; a scroll back to the end turns it on. The code's own scrolls to the
   // end land at the end, so they keep it on.
   const followRef = useRef(true);
+  // Whether the newest message is out of view, so the jump-to-end button shows.
+  const [awayFromEnd, setAwayFromEnd] = useState(false);
+  const readEnd = () => {
+    const el = msgsRef.current;
+    if (el) setAwayFromEnd(!followsEnd(el));
+  };
   // Each turn's block, by turn id, so a turn that just ended can be brought to
   // the top of the view.
   const turnEls = useRef(new Map<string, HTMLDivElement>());
@@ -381,6 +388,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
     const el = msgsRef.current;
     if (!el) return;
     el.scrollTop = endTop(el);
+    setAwayFromEnd(false);
   };
   // Bring a turn's reply to the top of the view, its start first. Falls back to
   // the whole turn block when the reply is not on screen (an error, no reply).
@@ -399,7 +407,18 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   // The person scrolled: follow the end again only once they are back at it.
   const onMsgsScroll = () => {
     const el = msgsRef.current;
-    if (el) followRef.current = followsEnd(el);
+    if (!el) return;
+    followRef.current = followsEnd(el);
+    setAwayFromEnd(!followRef.current);
+    // The conversation never scrolls sideways: wide things scroll in their own
+    // box. A browser can still shift it (a scrollIntoView, a text selection
+    // dragged past the edge), so a sideways offset is put back at once.
+    if (el.scrollLeft !== 0) el.scrollLeft = 0;
+  };
+  // The person asked for the newest message: go there and follow it again.
+  const jumpToEnd = () => {
+    followRef.current = true;
+    scrollToEnd();
   };
 
   // While a turn runs, the content grows (a live line arrives, a queued message
@@ -413,6 +432,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
     if (!el || !content || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => {
       if (followRef.current && runningNowRef.current !== null) el.scrollTop = endTop(el);
+      readEnd();
     });
     ro.observe(content);
     return () => ro.disconnect();
@@ -971,6 +991,15 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
       </div>
 
       <div id="c-reply">
+        {awayFromEnd && (
+          // A strip as wide as the message box, so the button centres on the
+          // box and the messages, not on the whole column.
+          <div className="c-jump-at">
+            <button type="button" className="icon-btn c-jump" onClick={jumpToEnd} aria-label="Scroll to the newest message" title="Scroll to the newest message">
+              <ArrowDown size={16} strokeWidth={2} aria-hidden="true" />
+            </button>
+          </div>
+        )}
         {approvals}
         {applyBar?.tooBig ? (
           <div className="apply-bar too-big">

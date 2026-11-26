@@ -1302,3 +1302,19 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible, textarea:focus-v
    (Feedback, Remove agent) would take that column's colours, so every token
    block above names .modal-back next to :root, resetting them for the dialog. */
 .modal-back { color: var(--ink); }
+
+/* The conversation never scrolls sideways. Anything wide scrolls in its own
+   box (code, tables); long words, links and paths wrap; images fit. */
+#c-msgs { overflow-x: hidden; }
+.c-in { min-width: 0; }
+.m-user .bubble, .tb-h > span { overflow-wrap: anywhere; }
+.m-agent img, .md-reply img { max-width: 100%; height: auto; }
+.tb-stat { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* Scroll to the newest message: a small round button centred above the
+   message box, shown only while the newest message is out of view. */
+/* The strip is in the flow with the message box's own width and place, and no
+   height, so the button centres on the box whatever is open, folded or wide. */
+.c-jump-at { position: relative; height: 0; max-width: 45.6rem; }
+.c-jump { position: absolute; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 5; border-radius: 50%; background: var(--panel); border: 1px solid var(--line3); color: var(--ink); box-shadow: 0 2px 8px var(--shadow); }
+.c-jump:hover { background: var(--hover); color: var(--ink); }

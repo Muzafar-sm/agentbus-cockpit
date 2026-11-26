@@ -154,4 +154,25 @@ describe('the apply panel', () => {
     // #d-body is the one area that scrolls, as in every other panel.
     expect(all.find(([sel]) => sel === '#d-body')?.[1]).toMatch(/overflow-y:\s*auto/);
   });
+
+  it('the conversation never scrolls sideways; wide content wraps or scrolls in its own box', () => {
+    const body = (sel: string) => rules(css).filter(([s]) => s.split(',').map((x) => x.trim()).includes(sel)).map(([, b]) => b).join(';');
+    expect(body('#c-msgs')).toMatch(/overflow-x:\s*hidden/);
+    expect(body('.m-user .bubble')).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(body('.md-reply img')).toMatch(/max-width:\s*100%/);
+    expect(body('.md-reply .md-code pre')).toMatch(/overflow-x:\s*auto/);
+    expect(body('.md-reply .md-table')).toMatch(/overflow-x:\s*auto/);
+  });
+
+  it('the scroll-to-the-newest button centres on the message box, not the whole column', () => {
+    // Its strip takes the box's own width; centred on the column, it drifts
+    // right of the box when the panel is closed or a side column folded.
+    const width = (sel: string) =>
+      rules(css)
+        .filter(([s, b]) => s.split(',').map((x) => x.trim()).includes(sel) && /max-width:/.test(b))
+        .map(([, b]) => /max-width:\s*([^;]+)/.exec(b)![1].trim())
+        .pop();
+    expect(width('.c-jump-at')).toBeDefined();
+    expect(width('.c-jump-at')).toBe(width('#c-reply .box'));
+  });
 });

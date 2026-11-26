@@ -204,3 +204,58 @@ describe('signals other than running state never move the view', () => {
     expect(pos.get()).toBe(300);
   });
 });
+
+describe('the scroll-to-the-newest button', () => {
+  it('shows once the person scrolls up, takes them to the end, and goes away there', async () => {
+    fakeResizeObserver();
+    const { container, msgs } = await mount(session([turn('T1', 1, { reply: 'the answer' })]));
+    const pos = stubScroll(msgs, 1000, 400, 600);
+    const jump = () => container.querySelector('#c-reply .c-jump') as HTMLButtonElement | null;
+
+    pretendScroll(msgs, 600);
+    expect(jump()).toBeNull();
+
+    pretendScroll(msgs, 100);
+    expect(jump()).not.toBeNull();
+
+    act(() => jump()!.click());
+    expect(pos.get()).toBe(600);
+    expect(jump()).toBeNull();
+  });
+
+  it('goes away when the person scrolls back down to the newest message', async () => {
+    fakeResizeObserver();
+    const { container, msgs } = await mount(session([turn('T1', 1, { reply: 'the answer' })]));
+    stubScroll(msgs, 1000, 400, 600);
+    pretendScroll(msgs, 100);
+    expect(container.querySelector('.c-jump')).not.toBeNull();
+    pretendScroll(msgs, 598);
+    expect(container.querySelector('.c-jump')).toBeNull();
+  });
+});
+
+describe('the conversation never scrolls sideways', () => {
+  it('puts a sideways offset back to zero', async () => {
+    fakeResizeObserver();
+    const { msgs } = await mount(session([turn('T1', 1, { reply: 'the answer' })]));
+    stubScroll(msgs, 1000, 400, 600);
+    let left = 0;
+    Object.defineProperty(msgs, 'scrollLeft', { configurable: true, get: () => left, set: (v) => void (left = v) });
+    act(() => {
+      left = 240;
+      msgs.dispatchEvent(new Event('scroll'));
+    });
+    expect(left).toBe(0);
+  });
+});
+
+describe('the scroll-to-the-newest button stays centred', () => {
+  it('sits in a strip as wide as the message box, so it centres on the box', async () => {
+    fakeResizeObserver();
+    const { container, msgs } = await mount(session([turn('T1', 1, { reply: 'the answer' })]));
+    stubScroll(msgs, 1000, 400, 600);
+    pretendScroll(msgs, 100);
+    const at = container.querySelector('#c-reply > .c-jump-at');
+    expect(at?.querySelector('.c-jump')).not.toBeNull();
+  });
+});
