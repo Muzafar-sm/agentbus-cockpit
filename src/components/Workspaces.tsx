@@ -14,26 +14,40 @@ export interface WorkspacesApi {
 
 export const UNAPPLIED = 'Changes not applied yet';
 export const CLOSE_WAITING = 'The close waits behind a turn in this workspace. Click to ask again.';
+// A close answers 202 at once and runs as a job; workspace.closed on the record
+// says it ran. While one waits the list is read every CLOSE_POLL_MS, so the row
+// goes soon after. One not closed CLOSE_STALL_MS after it was asked is shown as
+// not closed, with Close to ask again, rather than Closing… for ever.
+export const CLOSE_POLL_MS = 3000;
+export const CLOSE_STALL_MS = 3 * 60_000;
+export const closeStalled = (askedMs: number, now: number) => {
+  const min = Math.max(1, Math.round((now - askedMs) / 60_000));
+  return `Asked ${min} min ago and not closed yet. It may wait behind a running turn, or the runner may be away. Close asks again.`;
+};
 
 // The workspaces the page shows: sandbox ones whose copy is still there
 // (Close is for a copy only), newest first. Undefined before the first read,
 // null on a service without the route.
 //
 // closing holds the workspaces whose Close was asked here and that the service
-// still lists open: the close waits behind a turn, or its reply has not been
-// read back yet. A workspace leaves it once a read lists it closed (its row
-// goes) or not at all. The list is what the service says, so a workspace a
-// later turn copies again shows again.
+// still lists open: the close waits behind a turn, or has not run yet. A
+// workspace leaves it once a read lists it closed (its row goes) or not at all.
+// stalled holds those of them asked more than CLOSE_STALL_MS ago, with when they
+// were asked. The list is what the service says, so a workspace a later turn
+// copies again shows again.
 export function useWorkspaces(api?: WorkspacesApi): {
   rows: WorkspaceRow[] | null | undefined;
   error: string | null;
   closing: ReadonlySet<string>;
+  stalled: ReadonlyMap<string, number>;
   // Marks a workspace as being closed and reads the list again.
   onClosing: (workspace: string) => void;
 } {
   const [rows, setRows] = useState<WorkspaceRow[] | null | undefined>(api ? undefined : null);
   const [error, setError] = useState<string | null>(null);
-  const [closing, setClosing] = useState<ReadonlySet<string>>(() => new Set());
+  // Each close asked here and not yet listed closed, with when it was asked.
+  const [asked, setAsked] = useState<ReadonlyMap<string, number>>(() => new Map());
+  const [now, setNow] = useState(() => Date.now());
   const reread = useRef<() => void>(() => {});
   useEffect(() => {
     if (!api) return;
@@ -44,11 +58,12 @@ export function useWorkspaces(api?: WorkspacesApi): {
           if (!live) return;
           setRows(got);
           setError(null);
-          setClosing((s) => {
-            if (s.size === 0) return s;
+          setNow(Date.now());
+          setAsked((m) => {
+            if (m.size === 0) return m;
             const open = new Set((got ?? []).filter((w) => !w.closed).map((w) => w.workspace));
-            const left = new Set([...s].filter((id) => open.has(id)));
-            return left.size === s.size ? s : left;
+            const left = new Map([...m].filter(([id]) => open.has(id)));
+            return left.size === m.size ? m : left;
           });
         },
         (e: unknown) => {
@@ -64,14 +79,29 @@ export function useWorkspaces(api?: WorkspacesApi): {
       clearInterval(timer);
     };
   }, [api]);
+  // While a close waits, read more often, so its row goes soon after it ran.
+  const waiting = asked.size > 0;
+  useEffect(() => {
+    if (!api || !waiting) return;
+    const timer = setInterval(() => reread.current(), CLOSE_POLL_MS);
+    return () => clearInterval(timer);
+  }, [api, waiting]);
   const open = rows
     ?.filter((w) => w.sandbox && !w.closed)
     .sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
   const onClosing = useCallback((id: string) => {
-    setClosing((s) => new Set(s).add(id));
+    const at = Date.now();
+    setNow(at);
+    setAsked((m) => new Map(m).set(id, at));
     reread.current();
   }, []);
-  return { rows: rows === null ? null : open, error, closing, onClosing };
+  const closing = new Set<string>();
+  const stalled = new Map<string, number>();
+  for (const [id, at] of asked) {
+    if (now - at > CLOSE_STALL_MS) stalled.set(id, at);
+    else closing.add(id);
+  }
+  return { rows: rows === null ? null : open, error, closing, stalled, onClosing };
 }
 
 // A workspace has changes not applied when its latest turn with changes is
@@ -104,8 +134,9 @@ export const WorkspacesTable: React.FC<{
   folders?: FolderInfo[];
   close?: (workspace: string) => Promise<CloseState>;
   closing?: ReadonlySet<string>;
+  stalled?: ReadonlyMap<string, number>;
   onClosing: (workspace: string) => void;
-}> = ({ rows, folders = [], close, closing, onClosing }) => {
+}> = ({ rows, folders = [], close, closing, stalled, onClosing }) => {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<{ id: string; text: string } | null>(null);
   if (rows.length === 0) return null;
@@ -144,6 +175,7 @@ export const WorkspacesTable: React.FC<{
           {rows.map((w) => {
             const { names, paths } = folderNames(w, folders);
             const waiting = !!closing?.has(w.workspace);
+            const stalledAt = stalled?.get(w.workspace);
             return (
               <React.Fragment key={w.workspace}>
                 <tr data-workspace={w.workspace}>
@@ -174,6 +206,13 @@ export const WorkspacesTable: React.FC<{
                     </td>
                   )}
                 </tr>
+                {stalledAt !== undefined && err?.id !== w.workspace && (
+                  <tr className="ws-err-row">
+                    <td colSpan={cols} className="ws-err ws-stalled" role="status">
+                      {closeStalled(stalledAt, Date.now())}
+                    </td>
+                  </tr>
+                )}
                 {err?.id === w.workspace && (
                   <tr className="ws-err-row">
                     <td colSpan={cols} className="bad ws-err">

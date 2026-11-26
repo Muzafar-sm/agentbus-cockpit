@@ -5,7 +5,7 @@
 // queued turn before any event of it is recorded. Nothing new is asked of the
 // service.
 import { CockpitEvent, SessionSummary } from '../types';
-import { ApiTurn } from './jobs';
+import { ApiOn, ApiTurn } from './jobs';
 import { pairToolCalls } from './turns';
 import { formatElapsed, RUNNER_WAIT_MS, steadyNow } from './liveStatus';
 
@@ -16,15 +16,36 @@ export interface AskedWork {
   agent?: string;
   // The turn that asked for it.
   by?: string;
+  // The watched turn, when the work is read from an on.
+  turn?: string;
+  // The watched turn is a review (review_turn), from the turn list.
+  review?: boolean;
   state: 'queued' | 'running';
   // When the work started running (ms), when the turn list says.
   sinceMs?: number;
 }
 
-// The work `session` asked for that is queued or running, oldest first. A
-// session that ended (its turn finished, failed or stopped, or ran and closed)
-// is left out: its result comes back as a turn of the asking session.
-export function askedWork(sessions: SessionSummary[], session: string, turnsOf?: (session: string) => ApiTurn[]): AskedWork[] {
+// The work `session` waits on that is queued or running, oldest first.
+//
+// With the ons (GET /api/v0/ons), that is every turn an on delivers to this
+// session, whoever registered it: several sessions may wait on one turn, and a
+// coordinator that took over another's work shows it, while the one it replaced
+// does not. One line per watched turn. A turn the list does not have, or one
+// that ended (its result is on its way), is left out, and so is the session's
+// own turn.
+//
+// Without them (an older service, or before the first read), it is the work
+// the session started: the asked sessions whose origin names it. A session that
+// ended (its turn finished, failed or stopped, or ran and closed) is left out:
+// its result comes back as a turn of the asking session.
+export function askedWork(
+  sessions: SessionSummary[],
+  session: string,
+  turnsOf?: (session: string) => ApiTurn[],
+  ons?: ApiOn[] | null,
+  turnById?: (turn: string) => ApiTurn | undefined
+): AskedWork[] {
+  if (ons && turnById) return waitedOn(sessions, session, ons, turnById);
   const out: AskedWork[] = [];
   for (const s of sessions) {
     if (s.origin?.kind !== 'asked' || s.origin.session !== session) continue;
@@ -39,6 +60,30 @@ export function askedWork(sessions: SessionSummary[], session: string, turnsOf?:
     }
   }
   return out.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+// The turns the ons say `session` waits on: see askedWork.
+function waitedOn(sessions: SessionSummary[], session: string, ons: ApiOn[], turnById: (turn: string) => ApiTurn | undefined): AskedWork[] {
+  const out: AskedWork[] = [];
+  const seen = new Set<string>();
+  for (const on of ons) {
+    if (on.event !== 'turn.completed' || on.session !== session || seen.has(on.turn)) continue;
+    seen.add(on.turn);
+    const t = turnById(on.turn);
+    if (!t || t.session === session || (t.state !== 'queued' && t.state !== 'running')) continue;
+    const row = sessions.find((s) => s.id === t.session);
+    const at = t.state === 'running' && t.started ? Date.parse(t.started) : NaN;
+    out.push({
+      id: t.session,
+      agent: t.agent_id ?? row?.first_agent_id ?? t.agent,
+      by: on.by?.session === session ? on.by.turn : undefined,
+      turn: t.id,
+      review: t.kind === 'review' || undefined,
+      state: t.state === 'running' ? 'running' : 'queued',
+      sinceMs: isNaN(at) ? undefined : at,
+    });
+  }
+  return out.sort((a, b) => a.id.localeCompare(b.id) || (a.turn ?? '').localeCompare(b.turn ?? ''));
 }
 
 // True when the asking turn's events show the ask as a review: the tool call

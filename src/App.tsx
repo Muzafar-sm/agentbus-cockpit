@@ -50,6 +50,7 @@ import {
   Turn,
   TurnDetail,
   VersionInfo,
+  TurnText,
 } from './types';
 
 // Whether page is a page of its own that the source has the routes for:
@@ -135,7 +136,7 @@ interface Shown {
   // The whole prompt and reply of each shown turn, loaded from the single
   // turn (getTurnText); the turn list carries no text. Keyed by turn id, it
   // survives a turn-list refresh so a turn's text is read once.
-  texts: Record<string, { prompt: string; reply?: string }>;
+  texts: Record<string, TurnText>;
 }
 
 // Add streamed events to the loaded turns they belong to.
@@ -321,7 +322,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // origin and the turn list: queued until a runner starts it, then running.
   // An asked session is one-off and stays off the list; its asking
   // conversation shows one status line for each until its result comes back.
-  const askedOf = (sessionId: string) => askedWork(allSessions ?? [], sessionId, queueView?.ofSession);
+  const askedOf = (sessionId: string) => askedWork(allSessions ?? [], sessionId, queueView?.ofSession, queueView?.ons, queueView?.turnById);
   // The sessions with something under way: their own turn queued or running,
   // or work they asked for. Each gets the running dot on its row.
   const active = useMemo(() => {
@@ -329,7 +330,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     for (const s of allSessions ?? []) {
       if (s.origin?.kind === 'asked') continue;
       const own = queueView?.ofSession(s.id) ?? [];
-      if (s.open || own.some((t) => t.state === 'queued' || t.state === 'running') || askedWork(allSessions ?? [], s.id, queueView?.ofSession).length > 0) {
+      if (s.open || own.some((t) => t.state === 'queued' || t.state === 'running') || askedWork(allSessions ?? [], s.id, queueView?.ofSession, queueView?.ons, queueView?.turnById).length > 0) {
         out.add(s.id);
       }
     }
@@ -391,12 +392,12 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // (the list carries neither). Kept by session and turn so an ended turn's
   // text is read once; a running turn is read again, as its reply grows. A
   // recorded source has no getTurnText and carries the text on its rows.
-  const turnTexts = useRef<Record<string, { prompt: string; reply?: string }>>({});
+  const turnTexts = useRef<Record<string, TurnText>>({});
   const loadTexts = useCallback(
-    async (sessionId: string, rows: Turn[]): Promise<Record<string, { prompt: string; reply?: string }>> => {
+    async (sessionId: string, rows: Turn[]): Promise<Record<string, TurnText>> => {
       const load = dataSource.getTurnText?.bind(dataSource);
       const cache = turnTexts.current;
-      const out: Record<string, { prompt: string; reply?: string }> = {};
+      const out: Record<string, TurnText> = {};
       const missing: { id: string; ended: boolean }[] = [];
       for (const t of rows) {
         // A running turn is never read from the cache: its reply is still
@@ -1366,6 +1367,9 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
               ...t,
               prompt: text?.prompt ?? detail?.prompt ?? t.prompt,
               reply: text?.reply ?? detail?.agentResponse ?? t.reply,
+              // Every answer: from the single turn when it has them (no need to
+              // open the turn), else from the loaded events.
+              answers: text?.replies ?? detail?.answers ?? t.answers,
             };
             return detail ? { ...row, detail } : row;
           })

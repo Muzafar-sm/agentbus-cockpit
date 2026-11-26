@@ -38,6 +38,7 @@ import {
   TurnList,
   AppSummary,
   AppDef,
+  TurnText,
 } from '../types';
 import { FolderInfo } from './folders';
 import { ConfigFound, FoundPath, Policy, SettingsInfo, Versioned } from './settings';
@@ -346,12 +347,13 @@ export class LiveDataSource implements DataSource {
   // turn, read from the record. The turn list carries neither, so the cockpit
   // loads each shown turn's text from here. The prompt has system reminders
   // taken out, as the former list preview did.
-  async getTurnText(session: string, turn: string): Promise<{ prompt: string; reply?: string }> {
+  async getTurnText(session: string, turn: string): Promise<TurnText> {
     const params = new URLSearchParams({ session });
     const res = await fetch(`${this.baseUrl}/api/v0/turns/${encodeURIComponent(turn)}?${params}`, { headers: this.headers() });
     if (!res.ok) throw new Error(await apiError(res));
     const t = ((await res.json()) as { turn?: ApiTurn }).turn;
-    return { prompt: extractCleanPrompt(t?.prompt ?? ''), reply: t?.reply || undefined };
+    const replies = Array.isArray(t?.replies) ? t.replies.filter((r) => typeof r?.text === 'string' && r.text !== '') : [];
+    return { prompt: extractCleanPrompt(t?.prompt ?? ''), reply: t?.reply || undefined, replies: replies.length ? replies : undefined };
   }
 
   // GET /api/v0/agents: the saved agents, in the order they were made.

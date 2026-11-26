@@ -217,7 +217,7 @@ describe('LiveDataSource', () => {
       })
     );
     const text = await new LiveDataSource({ baseUrl: BASE }).getTurnText('abc', 'T1');
-    expect(text).toEqual({ prompt: 'the whole prompt', reply: 'the whole reply' });
+    expect(text).toEqual({ prompt: 'the whole prompt', reply: 'the whole reply', replies: undefined });
     expect(paths[0]).toBe('/api/v0/turns/T1?session=abc');
   });
 

@@ -103,6 +103,9 @@ export interface Turn {
   // turn reads the reply from its detail instead.
   reply?: string;
   replyTruncated?: boolean;
+  // Every answer, oldest first, when the turn answered more than once (the
+  // agent resumed after its own background command); the last is reply.
+  answers?: Answer[];
   model?: string;
   modelCalls?: number;
   // From the turn's turn.started: the agent (harness) and folder of the run
@@ -159,6 +162,20 @@ export interface TurnOrigin {
   agent?: string;
 }
 
+// One answer of a turn: the whole text of a reply that ended it, and when.
+export interface Answer {
+  text: string;
+  time: string;
+}
+
+// One turn's whole text, from GET /api/v0/turns/{id}: the prompt, the last
+// answer (reply), and every answer in order (replies), absent until it answered.
+export interface TurnText {
+  prompt: string;
+  reply?: string;
+  replies?: Answer[];
+}
+
 // One turn's events, and what the cockpit reads from them.
 export interface TurnDetail {
   events: CockpitEvent[];
@@ -172,7 +189,7 @@ export interface TurnDetail {
   // Every answer the turn gave, oldest first: one per turn.completed, the text
   // of the call that completed it and when. A turn answers more than once when
   // the agent resumes after its own background command ends.
-  answers?: { text: string; time: string }[];
+  answers?: Answer[];
 }
 
 // The turns of one session, oldest first, and the cursor (store, seq) they
@@ -816,7 +833,7 @@ export interface DataSource {
   // /api/v0/turns/{id}). The turn list carries neither, so the cockpit loads
   // each shown turn's text from here. A source whose list already carries the
   // text (a recorded file) leaves this out.
-  getTurnText?(sessionId: string, turnId: string): Promise<{ prompt: string; reply?: string }>;
+  getTurnText?(sessionId: string, turnId: string): Promise<TurnText>;
   // A source that keeps saved agents has these: the harnesses they can run
   // on, and the agents to list, save, edit and remove. Each rejects with the
   // API's own words.

@@ -29,6 +29,8 @@ export interface ApiTurn {
   // serves them, read from the record. The list carries facts only.
   prompt?: string;
   reply?: string;
+  // Only on GET /api/v0/turns/{id}: every answer, oldest first.
+  replies?: { text: string; time: string }[];
   model?: string;
   model_calls?: number;
   started_seq?: number;
@@ -62,6 +64,18 @@ export interface QueueStarted {
   base_url?: string;
 }
 
+// A registered on, as GET /api/v0/ons lists it: when `turn` completes, its
+// reply goes to `session` as that session's next turn. by is the turn that
+// registered it, absent for one the main token registered. Only ons still
+// waiting are listed.
+export interface ApiOn {
+  id: string;
+  event: string;
+  turn: string;
+  session: string;
+  by?: { session: string; turn: string };
+}
+
 // What the screens call. One implementation talks to the agentbus API; the
 // tests give their own.
 export interface QueueSource {
@@ -73,6 +87,9 @@ export interface QueueSource {
   listTurns(): Promise<ApiTurn[]>;
   // Stops a queued or running turn.
   stop(turnId: string): Promise<void>;
+  // The ons still waiting (GET /api/v0/ons); null on a service without the
+  // route, so the cockpit falls back to the asked session's origin.
+  listOns?(): Promise<ApiOn[] | null>;
 }
 
 export const ENDED: ReadonlySet<QueueState> = new Set(['finished', 'failed', 'stopped']);
@@ -119,6 +136,15 @@ export class TurnsClient implements QueueSource {
 
   async stop(turnId: string): Promise<void> {
     await this.call('POST', `/api/v0/turns/${encodeURIComponent(turnId)}/stop`);
+  }
+
+  async listOns(): Promise<ApiOn[] | null> {
+    const res = await fetch(`${this.address}/api/v0/ons`, { headers: { Accept: 'application/json', Authorization: `Bearer ${this.token}` } });
+    // An older service has POST and DELETE on this path but no list.
+    if (res.status === 404 || res.status === 405) return null;
+    if (!res.ok) throw new Error(await apiError(res));
+    const data = (await res.json()) as { ons?: ApiOn[] };
+    return Array.isArray(data.ons) ? data.ons : [];
   }
 }
 

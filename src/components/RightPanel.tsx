@@ -602,7 +602,7 @@ const TurnPanel: React.FC<TurnPanelProps> = ({
                 Prefer it so a turn's whole reply is not replaced by the events'
                 partial text. */}
             {/* Each earlier answer first, oldest first, as the chat shows them. */}
-            {(detail.answers ?? []).slice(0, -1).map((a, i) => (
+            {(turn.answers ?? detail.answers ?? []).slice(0, -1).map((a, i) => (
               <React.Fragment key={i}>
                 <div className="m-agent md-reply result-md earlier">
                   <Markdown text={a.text} files={{ session: turn.sessionId, folder: turn.folder }} />

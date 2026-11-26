@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { liveStatus, LiveTurn, RUNNER_WAIT_MS, steadyNow } from '../data/liveStatus';
 import { harnessName, turnNotes } from '../data/turns';
-import { Level, QueuedTurn, SavedAgent, SessionDetail, ShellRun, Started, Turn, TurnDetail } from '../types';
+import { Level, QueuedTurn, SavedAgent, SessionDetail, ShellRun, Started, Turn, TurnDetail, Answer } from '../types';
 import { useNow } from '../utils/useNow';
 import { Markdown } from './Markdown';
 import { formatCost, formatTokens, stateLabel, turnStateClass } from '../utils/format';
@@ -285,8 +285,9 @@ export function cannotContinue(turns: Turn[]): string {
 }
 
 // A turn's answers before its last: shown above the last, which is turn.reply.
-function earlierAnswers(detail: TurnDetail | undefined): { text: string; time: string }[] {
-  const all = detail?.answers ?? [];
+// From the turn's own answers (the single turn's replies), else its events.
+function earlierAnswers(turn: Turn, detail: TurnDetail | undefined): Answer[] {
+  const all = turn.answers ?? detail?.answers ?? [];
   return all.length > 1 ? all.slice(0, -1) : [];
 }
 
@@ -747,7 +748,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
     const by = w.by ? session.turnsList.find((t) => t.id === w.by) : undefined;
     const events = by ? by.detail?.events ?? (live?.turn === by.id ? live.events : undefined) : undefined;
     const waited = w.state === 'queued' ? queuedWaitMs(w.id) : undefined;
-    return { w, line: askedLine(w, agentNameOf(w.agent, agents), askedReview(events, w.id), askerRunning, now, waited) };
+    return { w, line: askedLine(w, agentNameOf(w.agent, agents), !!w.review || askedReview(events, w.id), askerRunning, now, waited) };
   });
 
   // The chat is prompts and replies, under one header line per turn. A turn's
@@ -927,7 +928,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                   {/* A turn that answered more than once (the agent resumed after
                       its own background command) shows each earlier answer, in
                       order, with when it came; turn.reply is the last one. */}
-                  {earlierAnswers(detail).map((a, i) => (
+                  {earlierAnswers(turn, detail).map((a, i) => (
                     <React.Fragment key={i}>
                       <div className="m-agent md-reply earlier">
                         <Markdown text={a.text} files={{ session: session.id, folder: session.folder }} />
@@ -1006,7 +1007,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
           })}
           {pending.filter((p) => !(p.state === 'failed' && p.turnsAtSend < turnCount)).map(pendingRow)}
           {askedLines.map(({ w, line }) => (
-            <div key={w.id} className="m-live m-asked" role="status" data-asked={w.id} data-state={w.state}>
+            <div key={w.turn ?? w.id} className="m-live m-asked" role="status" data-asked={w.id} data-state={w.state}>
               <span className={`live-line ${w.state === 'running' ? 'run' : 'dim'}`}>
                 {w.state === 'running' ? <i className="spin run-spin" aria-hidden /> : null}
                 <span className="live-text">

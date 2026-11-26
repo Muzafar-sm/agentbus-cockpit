@@ -1322,3 +1322,5 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible, textarea:focus-v
    look, its time under it in the footer style, a little room before the next. */
 .m-agent.earlier + .tb-foot { margin-bottom: 0.75rem; }
 
+/* A close asked a while ago and not run: said in the waiting colour. */
+.rn-workspaces .ws-stalled { color: var(--amber); }
