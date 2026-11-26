@@ -105,7 +105,7 @@ export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pendin
             actions={actions}
             onDone={after}
             workspaces={
-              workspaces && { rows: wsOf(shown), error: ws.error, folders, close: workspaces.close, onClosed: ws.hide }
+              workspaces && { rows: wsOf(shown), error: ws.error, folders, close: workspaces.close, closing: ws.closing, onClosing: ws.onClosing }
             }
           />
         ) : (
@@ -243,7 +243,8 @@ interface RunnerWorkspaces {
   error: string | null;
   folders?: FolderInfo[];
   close: (workspace: string) => Promise<CloseState>;
-  onClosed: (workspace: string) => void;
+  closing: ReadonlySet<string>;
+  onClosing: (workspace: string) => void;
 }
 
 const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: () => void; workspaces?: RunnerWorkspaces }> = ({
@@ -358,7 +359,7 @@ const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: (
         {workspaces && (
           <>
             {workspaces.error && <Notice kind="error">{workspaces.error}</Notice>}
-            <WorkspacesTable rows={workspaces.rows} folders={workspaces.folders} close={workspaces.close} onClosed={workspaces.onClosed} />
+            <WorkspacesTable rows={workspaces.rows} folders={workspaces.folders} close={workspaces.close} closing={workspaces.closing} onClosing={workspaces.onClosing} />
           </>
         )}
         {actions && !r.online && (

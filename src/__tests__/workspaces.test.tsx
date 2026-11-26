@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RunnersPage } from '../components/RunnersPage';
-import { hasUnapplied, UNAPPLIED, WorkspacesApi } from '../components/Workspaces';
+import { CLOSE_WAITING, hasUnapplied, UNAPPLIED, WorkspacesApi } from '../components/Workspaces';
 import { LiveDataSource } from '../data/LiveDataSource';
 import { CloseState, RunnerInfo, WorkspaceRow } from '../types';
 import { click, flush, render, unmountAll } from './helpers';
@@ -98,9 +98,21 @@ describe('workspaces on a runner’s page', () => {
     expect(hasUnapplied(ws({ workspace: 'x' }))).toBe(false);
   });
 
-  it('closes a workspace with no confirm, and the row goes', async () => {
+  // A list that answers the rows given, then the next list once set.
+  const listing = (close: WorkspacesApi['close']) => {
+    let now = rows;
+    const a = { list: vi.fn(async () => now), close };
+    return { a, set: (next: WorkspaceRow[]) => (now = next) };
+  };
+  const closedNow = (id: string) => rows.map((w) => (w.workspace === id ? { ...w, closed: ago(0) } : w));
+  const label = (c: HTMLElement, id: string) => row(c, id).querySelector('.ws-close')!.textContent;
+
+  it('closes a workspace with no confirm, and the row goes once the service lists it closed', async () => {
     const close = vi.fn(async (): Promise<CloseState> => ({ state: 'closed' }));
-    const r = await page(api(close));
+    const { a, set } = listing(close);
+    const r = await page(a);
+    // The service lists it closed once the close has run.
+    set(closedNow('ws_old'));
     const btn = row(r.container, 'ws_old').querySelector('.ws-close')!;
     // Quiet: a text action, not a bordered button.
     expect(btn.className).toContain('link-btn');
@@ -108,25 +120,71 @@ describe('workspaces on a runner’s page', () => {
     await flush();
     expect(close).toHaveBeenCalledWith('ws_old');
     expect(r.container.querySelector('[role="dialog"]')).toBeNull();
+    // The close reply reads the list again at once.
+    expect(a.list).toHaveBeenCalledTimes(2);
     expect(ids(r.container)).toEqual(['ws_new', 'ws_local']);
   });
 
-  it('keeps a row whose close is still waiting out of the list on the next read', async () => {
-    const a = api(async () => ({ state: 'queued' }));
+  it('keeps a row whose close still waits, marked Closing…, until the service lists it closed', async () => {
+    const close = vi.fn(async (): Promise<CloseState> => ({ state: 'queued' }));
+    const { a, set } = listing(close);
     vi.useFakeTimers({ toFake: ['setInterval'] });
     try {
       const r = await page(a);
       await click(row(r.container, 'ws_new').querySelector('.ws-close'));
       await flush();
-      expect(ids(r.container)).toEqual(['ws_local', 'ws_old']);
-      // The service still lists it open until the turn ahead ends.
+      // The service still lists it open: the close waits behind a turn.
+      expect(ids(r.container)).toEqual(['ws_new', 'ws_local', 'ws_old']);
+      expect(label(r.container, 'ws_new')).toBe('Closing…');
+      expect(row(r.container, 'ws_new').querySelector('.ws-close')!.getAttribute('title')).toBe(CLOSE_WAITING);
+      expect(label(r.container, 'ws_old')).toBe('Close');
       vi.advanceTimersByTime(30_000);
       await flush();
-      expect(a.list).toHaveBeenCalledTimes(2);
+      expect(ids(r.container)).toEqual(['ws_new', 'ws_local', 'ws_old']);
+      expect(label(r.container, 'ws_new')).toBe('Closing…');
+      // The close ran: the next read lists it closed and the row goes.
+      set(closedNow('ws_new'));
+      vi.advanceTimersByTime(30_000);
+      await flush();
       expect(ids(r.container)).toEqual(['ws_local', 'ws_old']);
+      // A later turn copies it again: the service lists it open, and so does the page.
+      set(rows);
+      vi.advanceTimersByTime(30_000);
+      await flush();
+      expect(ids(r.container)).toEqual(['ws_new', 'ws_local', 'ws_old']);
+      expect(label(r.container, 'ws_new')).toBe('Close');
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('shows a failed close’s reason on its row, and keeps the row', async () => {
+    const r = await page(api(async () => ({ state: 'failed', error: 'the copy could not be removed: permission denied' })));
+    await click(row(r.container, 'ws_old').querySelector('.ws-close'));
+    await flush();
+    expect(ids(r.container)).toEqual(['ws_new', 'ws_local', 'ws_old']);
+    expect(label(r.container, 'ws_old')).toBe('Close');
+    const err = r.container.querySelector('.ws-err-row')!;
+    expect(err.previousElementSibling!.getAttribute('data-workspace')).toBe('ws_old');
+    expect(err.textContent).toBe('the copy could not be removed: permission denied');
+  });
+
+  it('asked again while its close still waits, shows the service’s words and stays Closing…', async () => {
+    const close = vi
+      .fn<(id: string) => Promise<CloseState>>()
+      .mockResolvedValueOnce({ state: 'running' })
+      .mockRejectedValueOnce(new Error('an apply, discard, update or close of this workspace is still running or waiting'));
+    const r = await page(api(close));
+    await click(row(r.container, 'ws_old').querySelector('.ws-close'));
+    await flush();
+    expect(label(r.container, 'ws_old')).toBe('Closing…');
+    await click(row(r.container, 'ws_old').querySelector('.ws-close'));
+    await flush();
+    expect(close).toHaveBeenCalledTimes(2);
+    expect(label(r.container, 'ws_old')).toBe('Closing…');
+    expect(r.container.querySelector('.ws-err')!.textContent).toBe(
+      'an apply, discard, update or close of this workspace is still running or waiting'
+    );
   });
 
   it('keeps the row and shows the API’s words when Close is refused', async () => {

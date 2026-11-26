@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CloseState, WorkspaceRow } from '../types';
 import { FolderInfo, folderLabel } from '../data/folders';
 import { formatAgo } from '../utils/format';
@@ -13,20 +13,28 @@ export interface WorkspacesApi {
 }
 
 export const UNAPPLIED = 'Changes not applied yet';
+export const CLOSE_WAITING = 'The close waits behind a turn in this workspace. Click to ask again.';
 
 // The workspaces the page shows: sandbox ones whose copy is still there
 // (Close is for a copy only), newest first. Undefined before the first read,
 // null on a service without the route.
+//
+// closing holds the workspaces whose Close was asked here and that the service
+// still lists open: the close waits behind a turn, or its reply has not been
+// read back yet. A workspace leaves it once a read lists it closed (its row
+// goes) or not at all. The list is what the service says, so a workspace a
+// later turn copies again shows again.
 export function useWorkspaces(api?: WorkspacesApi): {
   rows: WorkspaceRow[] | null | undefined;
   error: string | null;
-  hide: (workspace: string) => void;
+  closing: ReadonlySet<string>;
+  // Marks a workspace as being closed and reads the list again.
+  onClosing: (workspace: string) => void;
 } {
   const [rows, setRows] = useState<WorkspaceRow[] | null | undefined>(api ? undefined : null);
   const [error, setError] = useState<string | null>(null);
-  // Closed here: kept out of the list even while a close still waits behind
-  // a turn and a re-read lists the workspace as open.
-  const [gone, setGone] = useState<Set<string>>(() => new Set());
+  const [closing, setClosing] = useState<ReadonlySet<string>>(() => new Set());
+  const reread = useRef<() => void>(() => {});
   useEffect(() => {
     if (!api) return;
     let live = true;
@@ -36,22 +44,34 @@ export function useWorkspaces(api?: WorkspacesApi): {
           if (!live) return;
           setRows(got);
           setError(null);
+          setClosing((s) => {
+            if (s.size === 0) return s;
+            const open = new Set((got ?? []).filter((w) => !w.closed).map((w) => w.workspace));
+            const left = new Set([...s].filter((id) => open.has(id)));
+            return left.size === s.size ? s : left;
+          });
         },
         (e: unknown) => {
           if (live) setError(e instanceof Error ? e.message : String(e));
         }
       );
+    reread.current = read;
     read();
     const timer = setInterval(read, RUNNERS_POLL_MS);
     return () => {
       live = false;
+      reread.current = () => {};
       clearInterval(timer);
     };
   }, [api]);
   const open = rows
-    ?.filter((w) => w.sandbox && !w.closed && !gone.has(w.workspace))
+    ?.filter((w) => w.sandbox && !w.closed)
     .sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
-  return { rows: rows === null ? null : open, error, hide: (id) => setGone((s) => new Set(s).add(id)) };
+  const onClosing = useCallback((id: string) => {
+    setClosing((s) => new Set(s).add(id));
+    reread.current();
+  }, []);
+  return { rows: rows === null ? null : open, error, closing, onClosing };
 }
 
 // A workspace has changes not applied when its latest turn with changes is
@@ -76,14 +96,16 @@ function folderNames(w: WorkspaceRow, known: FolderInfo[]): { names: string; pat
 
 // One machine's open workspaces, on its page below Harnesses, in the same
 // table: the folder names in full (the paths on hover), when it was made, a
-// mark for changes not applied, and Close. A closed row goes at once; a
-// refusal shows under the row in the API's words.
+// mark for changes not applied, and Close. A row whose close the service has
+// not finished reads Closing…, and goes once the service lists it closed. A
+// refusal or a failed close shows under the row in the API's words.
 export const WorkspacesTable: React.FC<{
   rows: WorkspaceRow[];
   folders?: FolderInfo[];
   close?: (workspace: string) => Promise<CloseState>;
-  onClosed: (workspace: string) => void;
-}> = ({ rows, folders = [], close, onClosed }) => {
+  closing?: ReadonlySet<string>;
+  onClosing: (workspace: string) => void;
+}> = ({ rows, folders = [], close, closing, onClosing }) => {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<{ id: string; text: string } | null>(null);
   if (rows.length === 0) return null;
@@ -95,7 +117,9 @@ export const WorkspacesTable: React.FC<{
       (st) => {
         setBusy(null);
         if (st.state === 'failed') setErr({ id, text: st.error || 'Close failed' });
-        else onClosed(id);
+        // closed, or still queued or running behind a turn: the row stays,
+        // marked, until the service lists the workspace closed.
+        else onClosing(id);
       },
       (e: unknown) => {
         setBusy(null);
@@ -119,6 +143,7 @@ export const WorkspacesTable: React.FC<{
         <tbody>
           {rows.map((w) => {
             const { names, paths } = folderNames(w, folders);
+            const waiting = !!closing?.has(w.workspace);
             return (
               <React.Fragment key={w.workspace}>
                 <tr data-workspace={w.workspace}>
@@ -137,8 +162,14 @@ export const WorkspacesTable: React.FC<{
                   </td>
                   {close && (
                     <td className="ws-act">
-                      <Button kind="link" className="ws-close" disabled={busy === w.workspace} onClick={() => doClose(w.workspace)}>
-                        {busy === w.workspace ? 'Closing…' : 'Close'}
+                      <Button
+                        kind="link"
+                        className="ws-close"
+                        disabled={busy === w.workspace}
+                        title={waiting ? CLOSE_WAITING : undefined}
+                        onClick={() => doClose(w.workspace)}
+                      >
+                        {busy === w.workspace || waiting ? 'Closing…' : 'Close'}
                       </Button>
                     </td>
                   )}
