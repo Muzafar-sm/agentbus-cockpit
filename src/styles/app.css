@@ -1123,8 +1123,13 @@ input.invalid, textarea.invalid { border-color: var(--bad); }
 
 /* The per-turn growth chart: one thin bar per turn, the current one in ink. */
 .ctx-grow { margin-top: 0.25rem; }
-.ctx-bars { display: flex; align-items: flex-end; gap: 2px; height: 4rem; padding: 0.25rem; border: 1px solid var(--line); border-radius: 0.5rem; background: var(--bg); }
+.ctx-bars { height: 4rem; padding: 0.25rem; border: 1px solid var(--line); border-radius: 0.5rem; background: var(--bg); overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+/* The bars share the box; the track's min-width (BAR_MIN_PX each) is where
+   the box starts to scroll instead of drawing past its edge. */
+.ctx-track { display: flex; align-items: flex-end; gap: 2px; height: 100%; }
+.ctx-track.dense { gap: 1px; }
 .ctx-bar { flex: 1 1 0; min-width: 2px; background: var(--line2); border-radius: 2px 2px 0 0; }
+.ctx-track.dense .ctx-bar { border-radius: 1px 1px 0 0; }
 .ctx-bar.here { background: var(--ink2); }
 
 /* ---------- the theme: calm navy, one warm orange ----------

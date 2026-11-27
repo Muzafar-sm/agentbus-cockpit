@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { LOADING } from '../words';
 import { formatCount } from '../utils/format';
 import { ContextMeter } from './ContextMeter';
@@ -93,20 +93,43 @@ const MadeOf: React.FC<{ ctx: TurnContext }> = ({ ctx }) => {
 // session's turns can run different models, and the session view carries no
 // per-turn window, so a single window here would be wrong. The per-turn meter
 // above is where fullness-against-the-window is shown.
+//
+// Any number of turns fits its box: the bars share the box's width and shrink
+// down to BAR_MIN_PX each; past that the box scrolls sideways, and opens on
+// this turn (the newest when it is not in the chart). A dense chart closes the
+// gap to 1px so a drop (the history compacted) still reads as a step.
+export const BAR_MIN_PX = 2;
+export const DENSE_TURNS = 60;
+export const barGap = (n: number) => (n >= DENSE_TURNS ? 1 : 2);
+// The narrowest the bars can go: below it the box scrolls.
+export const trackMinPx = (n: number) => (n > 0 ? n * BAR_MIN_PX + (n - 1) * barGap(n) : 0);
+
 const Growth: React.FC<{ sc: SessionContext; turn: string }> = ({ sc, turn }) => {
   const turns = [...sc.growth].reverse(); // oldest first, left to right
   const peak = sc.peak_context_tokens || 1;
+  const box = useRef<HTMLDivElement>(null);
+  const n = turns.length;
+  const at = turns.findIndex((t) => t.turn === turn);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el || el.scrollWidth <= el.clientWidth) return;
+    const bar = at >= 0 ? (el.querySelectorAll('.ctx-bar')[at] as HTMLElement | undefined) : undefined;
+    // This turn's bar in the middle, else the newest at the right edge.
+    el.scrollLeft = bar ? bar.offsetLeft - (el.clientWidth - bar.offsetWidth) / 2 : el.scrollWidth;
+  }, [n, at]);
   return (
     <div className="ctx-grow">
-      <div className="ctx-bars" role="img" aria-label="Context size per turn, oldest to newest">
-        {turns.map((t) => (
-          <div
-            key={t.turn}
-            className={`ctx-bar ${t.turn === turn ? 'here' : ''}`}
-            style={{ height: `${Math.max(3, Math.round((t.context_tokens / peak) * 100))}%` }}
-            title={`${t.turn}: ${formatCount(t.context_tokens)} tokens${t.turn === turn ? ' (this turn)' : ''}`}
-          />
-        ))}
+      <div ref={box} className="ctx-bars" role="img" aria-label="Context size per turn, oldest to newest">
+        <div className={`ctx-track${n >= DENSE_TURNS ? ' dense' : ''}`} style={{ minWidth: `${trackMinPx(n)}px` }}>
+          {turns.map((t) => (
+            <div
+              key={t.turn}
+              className={`ctx-bar ${t.turn === turn ? 'here' : ''}`}
+              style={{ height: `${Math.max(3, Math.round((t.context_tokens / peak) * 100))}%` }}
+              title={`${t.turn}: ${formatCount(t.context_tokens)} tokens${t.turn === turn ? ' (this turn)' : ''}`}
+            />
+          ))}
+        </div>
       </div>
       <div className="strip">
         <div><span>Turns</span><b>{sc.turns}</b></div>

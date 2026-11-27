@@ -196,4 +196,14 @@ describe('the apply panel', () => {
     for (const [sel, body] of radii) expect([sel, /border-radius\s*:\s*([^;]+)/.exec(body)![1].trim()]).toEqual([sel, 'var(--bubble-radius)']);
     expect(css).toMatch(/--bubble-radius:\s*0\.85em;/);
   });
+
+  it('the session chart scrolls in its box instead of drawing past it, bars sharing it down to 2px', () => {
+    const body = (sel: string) => rules(css).find(([s]) => s === sel)?.[1] ?? '';
+    expect(body('.ctx-bars')).toMatch(/overflow-x: auto/);
+    expect(body('.ctx-bars')).toMatch(/border: 1px solid var\(--line\)/);
+    expect(body('.ctx-track')).toMatch(/display: flex/);
+    expect(body('.ctx-bar')).toMatch(/flex: 1 1 0/);
+    expect(body('.ctx-bar')).toMatch(/min-width: 2px/);
+    expect(body('.ctx-track.dense')).toMatch(/gap: 1px/);
+  });
 });

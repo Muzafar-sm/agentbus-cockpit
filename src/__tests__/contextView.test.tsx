@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { ContextView, partLabel } from '../components/ContextView';
+import { ContextView, partLabel, trackMinPx } from '../components/ContextView';
 import { SessionContext, TurnContext } from '../types';
 import { render, flush, unmountAll } from './helpers';
 
@@ -247,3 +247,56 @@ describe('ContextView', () => {
 });
 
 unmountAll();
+
+// A session of n turns, each growing, with a drop (history compacted) every 40.
+const many = (n: number): SessionContext => {
+  const growth = Array.from({ length: n }, (_, i) => ({
+    turn: `T${i + 1}`, started: '2026-11-27T09:00:00Z', calls: 1,
+    context_tokens: 20000 + (i % 40) * 5000, cache_read_tokens: 0, fresh_tokens: 0, output_tokens: 0,
+  })).reverse();
+  return { ...sessionCtx, turns: n, peak_context_tokens: 215000, growth };
+};
+
+describe('the session chart holds any number of turns in its box', () => {
+  // Its CSS (the box scrolls, bars down to 2px) is checked in look.test.ts.
+  for (const n of [10, 168, 1000]) {
+    it(`${n} turns: every bar is in the track inside the box, the track as wide as the bars need`, async () => {
+      const r = await render(
+        <ContextView session="s1" turn={`T${n}`} loadTurn={async () => turnCtx} loadSession={async () => many(n)} />
+      );
+      await flush();
+      const box = r.container.querySelector('.ctx-bars')!;
+      const track = box.querySelector(':scope > .ctx-track') as HTMLElement;
+      expect(box.children.length).toBe(1);
+      expect(track.querySelectorAll(':scope > .ctx-bar').length).toBe(n);
+      expect(r.container.querySelectorAll('.ctx-bar').length).toBe(n);
+      expect(track.style.minWidth).toBe(`${trackMinPx(n)}px`);
+      expect(trackMinPx(n)).toBe(n * 2 + (n - 1) * (n >= 60 ? 1 : 2));
+      expect(track.classList.contains('dense')).toBe(n >= 60);
+      // Each bar keeps its tooltip.
+      expect(track.querySelector('.ctx-bar.here')!.getAttribute('title')).toMatch(/\(this turn\)$/);
+      r.unmount();
+    });
+  }
+
+  it('a box that scrolls opens on this turn, the newest at the right when it is the last', async () => {
+    const sw = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
+    const cw = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, get: () => 2999 });
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 500 });
+    try {
+      const r = await render(
+        <ContextView session="s1" turn="T1000" loadTurn={async () => turnCtx} loadSession={async () => many(1000)} />
+      );
+      await flush();
+      const box = r.container.querySelector('.ctx-bars') as HTMLElement;
+      // jsdom has no layout: offsetLeft is 0, so the newest bar's place is not
+      // known here; the browser check measures it. What is checked: it scrolled.
+      expect(box.scrollLeft).not.toBe(0);
+      r.unmount();
+    } finally {
+      if (sw) Object.defineProperty(HTMLElement.prototype, 'scrollWidth', sw);
+      if (cw) Object.defineProperty(HTMLElement.prototype, 'clientWidth', cw);
+    }
+  });
+});
