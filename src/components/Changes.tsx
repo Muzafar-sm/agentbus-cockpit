@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { failedWords, followOutcome, ongoing, stalledWords, WorkspaceOutcome } from '../data/outcome';
 import { ApplyPreview, ApplyState, DiscardState, TurnChangesPage, TurnDiff, TurnDiffFile, UpdateState } from '../types';
 import { PanelHead } from './PanelHead';
 import { Button, Select } from './Controls';
@@ -130,6 +131,7 @@ function lineKind(l: string): string {
 
 // What the panel says while a Merge waits; a new preview clears it.
 const MERGE_WAITING = 'Merging… it is waiting its turn.';
+export const UPDATE_WAITING = 'Updating… it is waiting behind a running turn.';
 
 // The message Merge puts in the box: the goal only. No file list and no
 // steps: the agent finds what changed on both sides itself (SOUL v5, goals not
@@ -269,10 +271,12 @@ interface ApplyPanelProps {
   preview: ApplyPreview | null;
   error?: string | null;
   // Applies the workspace's changes up to this turn (POST
-  // /api/v0/workspaces/<id>/apply), and a read of that apply's state while it
-  // is queued or running. Absent when the source cannot apply.
+  // /api/v0/workspaces/<id>/apply). Absent when the source cannot apply.
   apply?: (turn: string) => Promise<ApplyState>;
-  readApply?: (turn: string) => Promise<ApplyState>;
+  // Reads how one action stands (GET /api/v0/workspaces/<id>/outcome?event=),
+  // for the event its 202 named. Apply, Discard, Update and Merge each follow
+  // their own event here until it ends; the result shown is this one's.
+  readOutcome?: (event: string) => Promise<WorkspaceOutcome>;
   // Told when an apply ends, applied or not, so the preview is read again.
   onApplyEnded?: () => void;
   // Take a fresh preview (the folder may have changed outside a turn).
@@ -323,7 +327,7 @@ interface ApplyPanelProps {
 // file applying would write, its diff against the person's folder now, any
 // file the person changed since (which the apply would refuse), and one
 // "Apply to my folder" for the turn the preview names.
-export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, readApply, onApplyEnded, onRefresh, onClose, pollMs = 2000, review, discard, onDiscarded, update, lastUpdate, folders }) => {
+export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, readOutcome, onApplyEnded, onRefresh, onClose, pollMs = 2000, review, discard, onDiscarded, update, lastUpdate, folders }) => {
   // The apply this panel asked for: its turn, and its state as last read.
   const [asked, setAsked] = useState<{ turn: string; state: ApplyState | null } | null>(null);
   // The reviewer the small picker shows; empty follows review.defaultAgent.
@@ -368,17 +372,39 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
   refreshRef.current = onRefresh;
 
   const state = asked?.state;
-  const pending = !!asked && (!state || state.state === 'queued' || state.state === 'running');
+  const pending = !!asked && (!state || ongoing(state.state));
+
+  // While mounted, a follow keeps reading; after, it stops.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  // Follows one action's 202 to its end on the outcome route. A reply that
+  // already ended (an older service's 200) is its own outcome.
+  const follow = (s: { state?: string; event?: string }, onWait?: (o: WorkspaceOutcome) => void) =>
+    followOutcome(s, readOutcome, { pollMs, onWait, active: () => mounted.current });
 
   const doApply = async () => {
     if (!apply || !preview?.turn) return;
     const turn = preview.turn;
+    const at = Date.now();
     setAsked({ turn, state: null });
     setApplyError(null);
     try {
       const s = await apply(turn);
       setAsked({ turn, state: s });
-      if (s.state !== 'queued' && s.state !== 'running') endedRef.current?.();
+      const o = await follow(s, (w) => setAsked({ turn, state: { ...w, state: w.state } as ApplyState }));
+      if (o.state === 'gone') return;
+      if (o.state === 'stalled') {
+        setAsked(null);
+        setApplyError(stalledWords('apply', at));
+        return;
+      }
+      setAsked({ turn, state: o as ApplyState });
+      endedRef.current?.();
     } catch (err) {
       setAsked(null);
       setApplyError((err as Error).message);
@@ -387,57 +413,75 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
 
   const doDiscard = async () => {
     if (!discard) return;
+    const at = Date.now();
     setDiscarding(true);
     setDiscardError(null);
     try {
-      const s = await discard();
-      setConfirming(false);
-      onDiscarded?.(s.dropped_turns ?? []);
-      endedRef.current?.();
+      const o = await follow(await discard());
+      if (o.state === 'gone') return;
+      if (o.state === 'failed') {
+        setDiscardError(failedWords('discard', o));
+      } else if (o.state === 'stalled') {
+        setDiscardError(stalledWords('discard', at));
+      } else {
+        setConfirming(false);
+        // The turns whose changes went, from the outcome of this discard.
+        onDiscarded?.(o.dropped_turns ?? []);
+        endedRef.current?.();
+      }
     } catch (err) {
       setDiscardError((err as Error).message);
     } finally {
-      setDiscarding(false);
+      if (mounted.current) setDiscarding(false);
     }
   };
 
+  // While an update or a merge waits, the outcome says why, in these words.
+  const waitWords = (w: WorkspaceOutcome, queued: string) => (w.state === 'queued' ? queued : 'Updating…');
+  const updatedMsg = `Updated from your folder. Apply now writes only this ${SESSION}'s work.`;
+  const conflictPaths = (o: WorkspaceOutcome) => (o.conflicts ?? []).map((c) => (typeof c === 'string' ? c : (c as { path?: string })?.path)).filter((p): p is string => !!p);
+
   const doUpdate = async () => {
     if (!update) return;
+    const at = Date.now();
     setUpdating(true);
     setUpdateError(null);
     setUpdateMsg(null);
     try {
-      const s = await update();
-      if (s.updated || s.state === 'updated') {
+      const o = await follow(await update(), (w) => setUpdateMsg(waitWords(w, UPDATE_WAITING)));
+      if (o.state === 'gone') return;
+      setUpdateMsg(null);
+      if (o.updated || o.state === 'updated') {
         // The folder is merged in: take a fresh preview, which now shows the
         // session's work against the folder as it is, with no conflicts.
-        setUpdateMsg(`Updated from your folder. Apply now writes only this ${SESSION}'s work.`);
+        setUpdateMsg(updatedMsg);
         (refreshRef.current ?? endedRef.current)?.();
-      } else if (s.state === 'conflict') {
+      } else if (o.state === 'conflict') {
         // Said in the warning at the top; the way forward is Merge.
-        takeUpdate(s.conflicts ?? []);
-      } else if (s.state === 'queued' || s.state === 'running') {
-        setUpdateMsg('Updating… it is waiting behind a running turn.');
-      } else if (s.error) {
-        setUpdateError(s.error);
+        takeUpdate(conflictPaths(o));
+      } else if (o.state === 'stalled') {
+        setUpdateError(stalledWords('update', at));
+      } else {
+        setUpdateError(failedWords('update', o));
       }
     } catch (err) {
       setUpdateError((err as Error).message);
     } finally {
-      setUpdating(false);
+      if (mounted.current) setUpdating(false);
     }
   };
 
   // Merge fills the message box at once, as Review does, so nothing the
   // person types after is overwritten. When the files do not hold the merge's
   // markers yet, it then asks AgentBus to put both sides in them (update, mode
-  // merge); the next preview shows what that did.
+  // merge), and follows that to its outcome; the next preview shows what it did.
   const doMerge = async (agentId: string, paths: string[], call: boolean) => {
     review?.onMerge?.(agentId, paths);
     if (!call || !update) return;
     // The result this click was on: a reply clears only it, never a newer one
     // that came meanwhile.
     const asked = gen.current;
+    const at = Date.now();
     const markCalled = () => {
       if (gen.current === asked) takeUpdate(null);
     };
@@ -445,50 +489,32 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
     setUpdateError(null);
     setUpdateMsg(null);
     try {
-      const s = await update('merge');
-      if (s.state === 'merged' || s.state === 'updated' || s.updated) {
-        markCalled();
-        if (s.state !== 'merged') setUpdateMsg(`Updated from your folder. Apply now writes only this ${SESSION}'s work.`);
-        (refreshRef.current ?? endedRef.current)?.();
-      } else if (s.state === 'queued' || s.state === 'running') {
-        // It ends later: its workspace.updated brings the next result and reads
-        // the preview again. Until then Merge is held, not asked for twice.
+      const o = await follow(await update('merge'), (w) => {
+        // Merge is held, not asked for twice, while it waits.
         if (gen.current === asked) setWaitingOn(asked);
-        setUpdateMsg(MERGE_WAITING);
-      } else if (s.error) {
-        setUpdateError(s.error);
+        setUpdateMsg(waitWords(w, MERGE_WAITING));
+      });
+      if (o.state === 'gone') return;
+      setWaitingOn(null);
+      setUpdateMsg(null);
+      if (o.state === 'merged' || o.state === 'updated' || o.updated) {
+        markCalled();
+        if (o.state !== 'merged') setUpdateMsg(updatedMsg);
+        (refreshRef.current ?? endedRef.current)?.();
+      } else if (o.state === 'conflict') {
+        // Markers could not show some files (unmergeable): error says so.
+        if (o.error) setUpdateError(o.error);
+      } else if (o.state === 'stalled') {
+        setUpdateError(stalledWords('update', at));
+      } else {
+        setUpdateError(failedWords('update', o));
       }
     } catch (err) {
       setUpdateError((err as Error).message);
     } finally {
-      setMerging(false);
+      if (mounted.current) setMerging(false);
     }
   };
-
-  // An apply the API answered as queued or running ends later: read its
-  // state again until it says how it ended.
-  const polling = !!asked && !!state && (state.state === 'queued' || state.state === 'running') && !!readApply;
-  useEffect(() => {
-    if (!polling || !asked) return;
-    let active = true;
-    const turn = asked.turn;
-    const id = setInterval(() => {
-      readApply!(turn).then(
-        (s) => {
-          if (!active || s.state === 'queued' || s.state === 'running') return;
-          setAsked({ turn, state: s });
-          endedRef.current?.();
-        },
-        () => {
-          // A read that fails is tried again on the next tick.
-        }
-      );
-    }, pollMs);
-    return () => {
-      active = false;
-      clearInterval(id);
-    };
-  }, [polling, asked, readApply, pollMs]);
 
   // After an apply, the panel says so until a later turn has new work. A stale
   // preview is never "applied, folder matches": it is out of date (the session
@@ -609,8 +635,10 @@ export const ApplyPanel: React.FC<ApplyPanelProps> = ({ preview, error, apply, r
               )
             )}
             {refused && (
-              <Notice kind="error">
-                {refused.error || 'The apply was refused.'}
+              <Notice kind="error" className={refused.state === 'failed' ? 'ap-failed' : 'ap-refused'}>
+                {/* Refused: files changed in the folder, each listed with why.
+                    Failed (workspace.failed): it did not run, in plain words. */}
+                {refused.state === 'failed' ? failedWords('apply', refused) : refused.error || 'The apply was refused.'}
                 {refused.conflicts && refused.conflicts.length > 0 && (
                   <ul className="ch-conflicts">
                     {refused.conflicts.map((c) => (

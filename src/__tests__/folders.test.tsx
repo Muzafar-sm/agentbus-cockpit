@@ -80,12 +80,13 @@ describe('folders by reference', () => {
 });
 
 describe('apply up to a turn', () => {
-  it('answers a refusal on 409, and an apply still running elsewhere as an error in the API words', async () => {
+  it('a refused apply is a 202 and refused on its outcome; a 409 is an error in the API words', async () => {
     const refused = { state: 'refused', error: 'a file in your folder changed', conflicts: [{ path: 'a.txt', why: 'changed' }] };
-    let reply: Response = json(refused, 409);
-    vi.stubGlobal('fetch', async () => reply);
+    let reply: Response = json({ state: 'queued', event: 'ev_1' }, 202);
+    vi.stubGlobal('fetch', async (url: string) => (url.includes('/outcome?event=ev_1') ? json(refused, 200) : reply));
     const src = new LiveDataSource({ baseUrl: BASE, token: 't' });
-    expect(await src.applyWorkspace('ws_1', 'T2')).toEqual(refused);
+    expect(await src.applyWorkspace('ws_1', 'T2')).toEqual({ state: 'queued', event: 'ev_1' });
+    expect(await src.getWorkspaceOutcome('ws_1', 'ev_1')).toEqual(refused);
     reply = json({ error: 'an apply of an earlier turn of this session has not ended; ask again once it has' }, 409);
     await expect(src.applyWorkspace('ws_1', 'T2')).rejects.toThrow('an apply of an earlier turn of this session has not ended');
   });

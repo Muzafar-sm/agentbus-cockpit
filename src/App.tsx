@@ -104,6 +104,9 @@ const TURN_LIST_KINDS = new Set([
 // Kinds that change what applying a conversation would write: a turn ended,
 // its changes recorded, or an apply done. On these the preview is read again.
 const PREVIEW_KINDS = new Set(['turn.completed', 'turn.changed', 'turn.applied', 'workspace.applied', 'workspace.discarded']);
+// A workspace action's end, matched by the workspace it names: these events
+// carry no session.
+const WORKSPACE_KINDS = new Set(['workspace.applied', 'workspace.discarded', 'workspace.updated', 'workspace.closed', 'workspace.failed']);
 
 // Kinds that change what a turn's Changes or Context tab would read: the turn
 // ended by its own completion, or its run closed (a stop or a failure ends
@@ -601,10 +604,11 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
         if (s && event.session === s.session.id && PREVIEW_KINDS.has(event.kind)) {
           readPreviewRef.current(s.session.id);
         } else if (
-          // An update (or a Merge) of the workspace on screen ended: its job has
-          // no session, so it is matched by the workspace it names.
+          // A discard, update (or Merge), close or failed action of the
+          // workspace on screen ended: its job has no session, so it is matched
+          // by the workspace it names.
           s &&
-          event.kind === 'workspace.updated' &&
+          WORKSPACE_KINDS.has(event.kind) &&
           !!s.session.workspace &&
           (event as { workspace?: unknown }).workspace === s.session.workspace
         ) {
@@ -1013,7 +1017,11 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   const workspacesApi = useMemo(() => {
     const d = dataSource;
     if (!d.listWorkspaces || !d.closeWorkspace) return undefined;
-    return { list: () => d.listWorkspaces!(), close: (id: string) => d.closeWorkspace!(id) };
+    return {
+      list: () => d.listWorkspaces!(),
+      close: (id: string) => d.closeWorkspace!(id),
+      outcome: d.getWorkspaceOutcome ? (id: string, event: string) => d.getWorkspaceOutcome!(id, event) : undefined,
+    };
   }, [dataSource]);
   const runnersOnline = runners.runners ? runners.runners.filter((r) => r.online).length : undefined;
   // Which build the service is, read once: it is fixed for the life of the
@@ -1772,9 +1780,9 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
               ? (turn: string) => dataSource.applyWorkspace!(sessionView.workspace!, turn)
               : undefined
           }
-          readApply={
-            dataSource.getTurnDiff
-              ? (turn: string) => dataSource.getTurnDiff!(previewSession, turn).then((d) => d.apply)
+          readOutcome={
+            dataSource.getWorkspaceOutcome && sessionView?.workspace
+              ? (event: string) => dataSource.getWorkspaceOutcome!(sessionView.workspace!, event)
               : undefined
           }
           onApplyEnded={() => readPreview(previewSession, true)}

@@ -1,3 +1,4 @@
+import type { WorkspaceOutcome } from '../data/outcome';
 import React, { useEffect, useState } from 'react';
 import { ApiTurn } from '../data/jobs';
 import { CloseState, PendingMachine, RunnerInfo, WorkspaceRow } from '../types';
@@ -105,7 +106,7 @@ export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pendin
             actions={actions}
             onDone={after}
             workspaces={
-              workspaces && { rows: wsOf(shown), error: ws.error, folders, close: workspaces.close, closing: ws.closing, stalled: ws.stalled, onClosing: ws.onClosing }
+              workspaces && { rows: wsOf(shown), error: ws.error, folders, close: workspaces.close, closing: ws.closing, stalled: ws.stalled, onClosing: ws.onClosing, outcome: workspaces.outcome, onClosed: ws.onClosed }
             }
           />
         ) : (
@@ -246,6 +247,8 @@ interface RunnerWorkspaces {
   closing: ReadonlySet<string>;
   stalled?: ReadonlyMap<string, number>;
   onClosing: (workspace: string) => void;
+  outcome?: (workspace: string, event: string) => Promise<WorkspaceOutcome>;
+  onClosed?: (workspace: string, ok: boolean) => void;
 }
 
 const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: () => void; workspaces?: RunnerWorkspaces }> = ({
@@ -360,7 +363,7 @@ const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: (
         {workspaces && (
           <>
             {workspaces.error && <Notice kind="error">{workspaces.error}</Notice>}
-            <WorkspacesTable rows={workspaces.rows} folders={workspaces.folders} close={workspaces.close} closing={workspaces.closing} stalled={workspaces.stalled} onClosing={workspaces.onClosing} />
+            <WorkspacesTable rows={workspaces.rows} folders={workspaces.folders} close={workspaces.close} closing={workspaces.closing} stalled={workspaces.stalled} onClosing={workspaces.onClosing} outcome={workspaces.outcome} onClosed={workspaces.onClosed} />
           </>
         )}
         {actions && !r.online && (

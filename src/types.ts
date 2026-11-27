@@ -1,3 +1,4 @@
+import type { WorkspaceOutcome } from './data/outcome';
 import type { ConfigFound, Policy, SettingsInfo, Versioned } from './data/settings';
 import type { FolderInfo } from './data/folders';
 export interface Usage {
@@ -397,6 +398,17 @@ export type WorkspaceFolderReq = { folder_ref: string } | { folder: string };
 export interface WorkspaceInfo {
   workspace: string;
   folders?: { name?: string; folder?: string; folder_ref?: string }[];
+  last_action?: LastAction;
+}
+
+// A workspace's latest action (apply, discard, update or close), as the
+// workspace routes name it: its kind, the event its 202 named, and its state.
+// Shown, never followed: an action is followed by its own event.
+export interface LastAction {
+  kind?: string;
+  event?: string;
+  state?: string;
+  time?: string;
 }
 
 // One row of GET /api/v0/workspaces, as the Runners page reads it. machine is
@@ -414,12 +426,15 @@ export interface WorkspaceRow {
   closed?: string;
   head_turn?: string;
   applied_turn?: string;
+  last_action?: LastAction;
 }
 
-// POST /api/v0/workspaces/<id>/close: queued, running, closed or failed
-// (error says why); already when it was closed before.
+// POST /api/v0/workspaces/<id>/close: 202 queued with the event to follow on
+// GET /api/v0/workspaces/<id>/outcome (it ends in workspace.closed or
+// workspace.failed); closed with already when it was closed before.
 export interface CloseState {
   state?: string;
+  event?: string;
   already?: boolean;
   error?: string;
 }
@@ -435,9 +450,13 @@ export interface TurnDiffFile {
   content?: string;
 }
 
+// An apply: the 202 reply (queued, with the event to follow) and, read from
+// the outcome route, how it ended: applied, refused (conflicts lists each file
+// and why) or failed.
 export interface ApplyState {
   // none, queued, running, applied, refused or failed.
   state: string;
+  event?: string;
   // The turn the apply was asked for. An apply makes the folder as the
   // session was at that turn: every turn not yet applied, up to it. With
   // already, the turn whose apply covered this one.
@@ -451,17 +470,11 @@ export interface ApplyState {
   error?: string;
 }
 
-// POST /api/v0/workspaces/<id>/discard: dropping a sandbox workspace's
-// unapplied changes. already is true when there was nothing to drop;
-// dropped_turns are the turns whose file changes were dropped (the
-// conversation stays), so the cockpit can mark them "Discarded" at once.
+// POST /api/v0/workspaces/<id>/discard: 202 queued with the event to follow.
+// What it dropped (dropped_turns) is on the outcome, not here.
 export interface DiscardState {
-  // queued, running, discarded, or already (nothing to drop). A source may
-  // answer with no state when the discard is done; the cockpit treats a
-  // resolved call as a discard.
   state?: string;
-  already?: boolean;
-  dropped_turns?: string[];
+  event?: string;
   error?: string;
 }
 
@@ -470,17 +483,12 @@ export interface DiscardState {
 // folder and the next apply writes only that work. updated is true on a clean
 // merge; on a conflict, conflicts names the files that changed on both sides and
 // nothing changed.
+// The reply is 202 queued with the event to follow; how it ended (updated,
+// conflict with its files, merged with unresolved files, or failed) is on the
+// outcome.
 export interface UpdateState {
-  // queued, running, updated (the folder was merged in), conflict, or failed.
   state?: string;
-  updated?: boolean;
-  conflicts?: string[];
-  // On a merge (state merged): the files now holding both sides between
-  // conflict markers, for the agent to combine.
-  unresolved?: string[];
-  // On a merge that changed nothing: the files conflict markers cannot show
-  // (not text, a link, removed on one side); error says so.
-  unmergeable?: string[];
+  event?: string;
   error?: string;
 }
 
@@ -983,6 +991,9 @@ export interface DataSource {
   // It resolves on 200 and 202; any other answer rejects with the API's words.
   listWorkspaces?(): Promise<WorkspaceRow[] | null>;
   closeWorkspace?(workspace: string): Promise<CloseState>;
+  // GET /api/v0/workspaces/{id}/outcome?event=: how the action whose 202 named
+  // event stands, waiting or ended.
+  getWorkspaceOutcome?(workspace: string, event: string): Promise<WorkspaceOutcome>;
   // A source that keeps request bodies has this: one model call's request
   // and reply by its turn and exchange. Rejects with an Error in the API's
   // own words.

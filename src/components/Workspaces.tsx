@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CloseState, WorkspaceRow } from '../types';
 import { FolderInfo, folderLabel } from '../data/folders';
 import { formatAgo } from '../utils/format';
+import { failedWords, followOutcome, WorkspaceOutcome } from '../data/outcome';
 import { Button } from './Controls';
 import { UnappliedIcon } from './Icons';
 import { RUNNERS_POLL_MS } from './RunnersList';
@@ -10,6 +11,9 @@ import { RUNNERS_POLL_MS } from './RunnersList';
 export interface WorkspacesApi {
   list: () => Promise<WorkspaceRow[] | null>;
   close: (workspace: string) => Promise<CloseState>;
+  // GET /api/v0/workspaces/{id}/outcome?event=: how the close whose 202 named
+  // event stands. Absent on an older service: the list alone says it closed.
+  outcome?: (workspace: string, event: string) => Promise<WorkspaceOutcome>;
 }
 
 export const UNAPPLIED = 'Changes not applied yet';
@@ -42,11 +46,16 @@ export function useWorkspaces(api?: WorkspacesApi): {
   stalled: ReadonlyMap<string, number>;
   // Marks a workspace as being closed and reads the list again.
   onClosing: (workspace: string) => void;
+  // The close's outcome said it ran (workspace.closed) or failed: the row goes
+  // at once, or comes back to Close.
+  onClosed: (workspace: string, ok: boolean) => void;
 } {
   const [rows, setRows] = useState<WorkspaceRow[] | null | undefined>(api ? undefined : null);
   const [error, setError] = useState<string | null>(null);
   // Each close asked here and not yet listed closed, with when it was asked.
   const [asked, setAsked] = useState<ReadonlyMap<string, number>>(() => new Map());
+  // Closes the outcome route said ran, kept until a read lists them closed.
+  const [done, setDone] = useState<ReadonlySet<string>>(() => new Set());
   const [now, setNow] = useState(() => Date.now());
   const reread = useRef<() => void>(() => {});
   useEffect(() => {
@@ -64,6 +73,12 @@ export function useWorkspaces(api?: WorkspacesApi): {
             const open = new Set((got ?? []).filter((w) => !w.closed).map((w) => w.workspace));
             const left = new Map([...m].filter(([id]) => open.has(id)));
             return left.size === m.size ? m : left;
+          });
+          setDone((d) => {
+            if (d.size === 0) return d;
+            const open = new Set((got ?? []).filter((w) => !w.closed).map((w) => w.workspace));
+            const left = new Set([...d].filter((id) => open.has(id)));
+            return left.size === d.size ? d : left;
           });
         },
         (e: unknown) => {
@@ -87,12 +102,22 @@ export function useWorkspaces(api?: WorkspacesApi): {
     return () => clearInterval(timer);
   }, [api, waiting]);
   const open = rows
-    ?.filter((w) => w.sandbox && !w.closed)
+    ?.filter((w) => w.sandbox && !w.closed && !done.has(w.workspace))
     .sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
   const onClosing = useCallback((id: string) => {
     const at = Date.now();
     setNow(at);
     setAsked((m) => new Map(m).set(id, at));
+    reread.current();
+  }, []);
+  const onClosed = useCallback((id: string, ok: boolean) => {
+    setAsked((m) => {
+      if (!m.has(id)) return m;
+      const next = new Map(m);
+      next.delete(id);
+      return next;
+    });
+    if (ok) setDone((d) => new Set(d).add(id));
     reread.current();
   }, []);
   const closing = new Set<string>();
@@ -101,7 +126,7 @@ export function useWorkspaces(api?: WorkspacesApi): {
     if (now - at > CLOSE_STALL_MS) stalled.set(id, at);
     else closing.add(id);
   }
-  return { rows: rows === null ? null : open, error, closing, stalled, onClosing };
+  return { rows: rows === null ? null : open, error, closing, stalled, onClosing, onClosed };
 }
 
 // A workspace has changes not applied when its latest turn with changes is
@@ -136,7 +161,9 @@ export const WorkspacesTable: React.FC<{
   closing?: ReadonlySet<string>;
   stalled?: ReadonlyMap<string, number>;
   onClosing: (workspace: string) => void;
-}> = ({ rows, folders = [], close, closing, stalled, onClosing }) => {
+  outcome?: (workspace: string, event: string) => Promise<WorkspaceOutcome>;
+  onClosed?: (workspace: string, ok: boolean) => void;
+}> = ({ rows, folders = [], close, closing, stalled, onClosing, outcome, onClosed }) => {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<{ id: string; text: string } | null>(null);
   if (rows.length === 0) return null;
@@ -147,10 +174,23 @@ export const WorkspacesTable: React.FC<{
     close(id).then(
       (st) => {
         setBusy(null);
-        if (st.state === 'failed') setErr({ id, text: st.error || 'Close failed' });
-        // closed, or still queued or running behind a turn: the row stays,
-        // marked, until the service lists the workspace closed.
-        else onClosing(id);
+        if (st.state === 'failed') {
+          setErr({ id, text: failedWords('close', st) });
+          return;
+        }
+        // The row stays, marked Closing…, while the close waits. Its outcome
+        // (the event the 202 named) says when it ran or failed; without the
+        // route, the list read alone says so.
+        onClosing(id);
+        if (!st.event || !outcome) return;
+        followOutcome(st, (ev) => outcome(id, ev), { giveUpMs: CLOSE_STALL_MS }).then((o) => {
+          if (o.state === 'closed') onClosed?.(id, true);
+          else if (o.state === 'failed') {
+            onClosed?.(id, false);
+            setErr({ id, text: failedWords('close', o) });
+          }
+          // stalled: the row says so from the list's own clock.
+        });
       },
       (e: unknown) => {
         setBusy(null);

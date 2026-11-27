@@ -4,6 +4,7 @@ import { RunnersPage } from '../components/RunnersPage';
 import { CLOSE_WAITING, hasUnapplied, UNAPPLIED, WorkspacesApi } from '../components/Workspaces';
 import { LiveDataSource } from '../data/LiveDataSource';
 import { CloseState, RunnerInfo, WorkspaceRow } from '../types';
+import type { WorkspaceOutcome } from '../data/outcome';
 import { click, flush, render, unmountAll } from './helpers';
 
 const now = Date.now();
@@ -35,9 +36,15 @@ const rows: WorkspaceRow[] = [
   ws({ workspace: 'ws_local', folder: '/home/p/here', created: ago(30) }),
 ];
 
-const api = (close: WorkspacesApi['close'] = async () => ({ state: 'closed' })): WorkspacesApi & { list: ReturnType<typeof vi.fn> } => ({
+// Close answers 202 queued with the event it names; the outcome route says how
+// that close ended. ends sets each workspace's outcome.
+const ends = new Map<string, WorkspaceOutcome>();
+const api = (
+  close: WorkspacesApi['close'] = async (id) => ({ state: 'queued', event: `ev_${id}` })
+): WorkspacesApi & { list: ReturnType<typeof vi.fn>; outcome: ReturnType<typeof vi.fn> } => ({
   list: vi.fn(async () => rows),
   close,
+  outcome: vi.fn(async (id: string, event: string): Promise<WorkspaceOutcome> => (event === `ev_${id}` ? ends.get(id) : undefined) ?? { state: 'queued' }),
 });
 
 const page = async (a: WorkspacesApi) => {
@@ -107,12 +114,11 @@ describe('workspaces on a runner’s page', () => {
   const closedNow = (id: string) => rows.map((w) => (w.workspace === id ? { ...w, closed: ago(0) } : w));
   const label = (c: HTMLElement, id: string) => row(c, id).querySelector('.ws-close')!.textContent;
 
-  it('closes a workspace with no confirm, and the row goes once the service lists it closed', async () => {
-    const close = vi.fn(async (): Promise<CloseState> => ({ state: 'closed' }));
-    const { a, set } = listing(close);
-    const r = await page(a);
-    // The service lists it closed once the close has run.
-    set(closedNow('ws_old'));
+  it('closes a workspace with no confirm (202), and the row goes when its outcome says closed', async () => {
+    const close = vi.fn(async (id: string): Promise<CloseState> => ({ state: 'queued', event: `ev_${id}` }));
+    const { a } = listing(close);
+    const outcome = vi.fn(async (_id: string, _event: string): Promise<WorkspaceOutcome> => ({ state: 'closed', kind: 'workspace.closed' }));
+    const r = await page({ ...a, outcome });
     const btn = row(r.container, 'ws_old').querySelector('.ws-close')!;
     // Quiet: a text action, not a bordered button.
     expect(btn.className).toContain('link-btn');
@@ -120,8 +126,9 @@ describe('workspaces on a runner’s page', () => {
     await flush();
     expect(close).toHaveBeenCalledWith('ws_old');
     expect(r.container.querySelector('[role="dialog"]')).toBeNull();
-    // The close reply reads the list again at once.
-    expect(a.list).toHaveBeenCalledTimes(2);
+    // It follows the event its own 202 named, and the outcome alone takes the
+    // row away: the list still lists it open.
+    expect(outcome).toHaveBeenCalledWith('ws_old', 'ev_ws_old');
     expect(ids(r.container)).toEqual(['ws_new', 'ws_local']);
   });
 
@@ -158,15 +165,17 @@ describe('workspaces on a runner’s page', () => {
     }
   });
 
-  it('shows a failed close’s reason on its row, and keeps the row', async () => {
-    const r = await page(api(async () => ({ state: 'failed', error: 'the copy could not be removed: permission denied' })));
+  it('shows a failed close (workspace.failed on its outcome) in plain words on its row, and keeps the row', async () => {
+    ends.set('ws_old', { state: 'failed', kind: 'workspace.failed', error: 'the copy could not be removed: permission denied' });
+    const r = await page(api());
     await click(row(r.container, 'ws_old').querySelector('.ws-close'));
     await flush();
     expect(ids(r.container)).toEqual(['ws_new', 'ws_local', 'ws_old']);
     expect(label(r.container, 'ws_old')).toBe('Close');
     const err = r.container.querySelector('.ws-err-row')!;
     expect(err.previousElementSibling!.getAttribute('data-workspace')).toBe('ws_old');
-    expect(err.textContent).toBe('the copy could not be removed: permission denied');
+    expect(err.textContent).toBe('The close did not run: the copy could not be removed: permission denied.');
+    ends.clear();
   });
 
   it('asked again while its close still waits, shows the service’s words and stays Closing…', async () => {
@@ -212,12 +221,16 @@ describe('the live source’s workspaces', () => {
     expect(await src().listWorkspaces()).toBeNull();
   });
 
-  it('closes with POST /api/v0/workspaces/{id}/close and rejects a refusal in the API’s words', async () => {
-    const f = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ state: 'closed' }), { status: 200 }));
-    expect(await src().closeWorkspace('ws_1')).toEqual({ state: 'closed' });
+  it('closes with POST /api/v0/workspaces/{id}/close (202) and rejects a refusal in the API’s words', async () => {
+    const f = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ state: 'queued', event: 'ev_c' }), { status: 202 }));
+    expect(await src().closeWorkspace('ws_1')).toEqual({ state: 'queued', event: 'ev_c' });
     expect(String(f.mock.calls[0][0])).toBe('http://svc/api/v0/workspaces/ws_1/close');
     expect((f.mock.calls[0][1] as RequestInit).method).toBe('POST');
     f.mockResolvedValueOnce(new Response(JSON.stringify({ state: 'failed', error: 'still running or waiting' }), { status: 409 }));
     await expect(src().closeWorkspace('ws_1')).rejects.toThrow('still running or waiting');
+    // The outcome of that close, by its event.
+    f.mockResolvedValueOnce(new Response(JSON.stringify({ kind: 'workspace.closed', workspace: 'ws_1' }), { status: 200 }));
+    expect((await src().getWorkspaceOutcome('ws_1', 'ev_c')).state).toBe('closed');
+    expect(String(f.mock.calls[2][0])).toBe('http://svc/api/v0/workspaces/ws_1/outcome?event=ev_c');
   });
 });

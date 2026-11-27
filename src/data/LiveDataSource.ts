@@ -1,3 +1,4 @@
+import { readOutcome, WorkspaceOutcome } from './outcome';
 import {
   QueuedTurn,
   ConnectView,
@@ -812,10 +813,10 @@ export class LiveDataSource implements DataSource {
     return Array.isArray(body?.workspaces) ? body.workspaces : [];
   }
 
-  // POST /api/v0/workspaces/<id>/close: removes the workspace's copy. 200
-  // closed, 202 still waiting behind a turn. A 409 (another apply, discard,
-  // update or close in flight) and every other refusal reject with the API's
-  // words.
+  // POST /api/v0/workspaces/<id>/close: removes the workspace's copy. 202
+  // queued with the event to follow (workspace.closed says it ran); 200 closed
+  // with already. A 409 (another apply, discard, update or close in flight)
+  // and every other refusal reject with the API's words.
   async closeWorkspace(workspace: string): Promise<CloseState> {
     const res = await fetch(`${this.baseUrl}/api/v0/workspaces/${encodeURIComponent(workspace)}/close`, {
       method: 'POST',
@@ -867,9 +868,9 @@ export class LiveDataSource implements DataSource {
   }
 
   // POST /api/v0/workspaces/<id>/apply: writes the workspace's unapplied
-  // changes to the person's folder, up to `turn` when given. 200 applied (or
-  // already), 202 still running, 409 refused with each file and why. All three
-  // are answers; any other status is an error in the API's words.
+  // changes to the person's folder, up to `turn` when given. 202 queued with
+  // the event to follow on the outcome route, which says applied, refused (each
+  // file and why) or failed. Any other status is an error in the API's words.
   async applyWorkspace(workspace: string, turn?: string): Promise<ApplyState> {
     const res = await fetch(`${this.baseUrl}/api/v0/workspaces/${encodeURIComponent(workspace)}/apply`, {
       method: 'POST',
@@ -877,25 +878,22 @@ export class LiveDataSource implements DataSource {
       body: JSON.stringify(turn ? { turn } : {}),
     });
     if (res.ok) return res.json();
-    if (res.status === 409) {
-      const text = await res.text().catch(() => '');
-      let body: unknown;
-      try {
-        body = JSON.parse(text);
-      } catch {
-        // Not JSON: the text is the error.
-      }
-      if (body && typeof (body as ApplyState).state === 'string') return body as ApplyState;
-      const msg = (body as { error?: unknown } | undefined)?.error;
-      throw new Error(typeof msg === 'string' && msg ? msg : text.trim() || 'agentbus answered 409');
-    }
     throw new Error(await apiError(res));
   }
 
+  // GET /api/v0/workspaces/<id>/outcome?event=<id>: how one action stands,
+  // the action whose 202 named the event. Waiting reads queued or running.
+  async getWorkspaceOutcome(workspace: string, event: string): Promise<WorkspaceOutcome> {
+    const q = new URLSearchParams({ event });
+    const res = await fetch(`${this.baseUrl}/api/v0/workspaces/${encodeURIComponent(workspace)}/outcome?${q}`, { headers: this.headers() });
+    if (!res.ok) throw new Error(await apiError(res));
+    return readOutcome(await res.json());
+  }
+
   // POST /api/v0/workspaces/<id>/discard: drops the workspace's unapplied
-  // changes. 200 with the changes dropped (or already, nothing to drop); 202
-  // still running; 409 when a turn or apply is in flight. The conversation
-  // stays; dropped_turns names the turns whose file changes went.
+  // changes. 202 queued with the event to follow; the outcome names the turns
+  // whose file changes went (dropped_turns). 409 when another action is in
+  // flight. The conversation stays.
   async discardWorkspace(workspace: string): Promise<DiscardState> {
     const res = await fetch(`${this.baseUrl}/api/v0/workspaces/${encodeURIComponent(workspace)}/discard`, {
       method: 'POST',
@@ -906,9 +904,9 @@ export class LiveDataSource implements DataSource {
   }
 
   // POST /api/v0/workspaces/<id>/update: merges the person's folder as it is
-  // now into the copy. 200 with state updated (the folder was merged in) or
-  // conflict (the files that changed on both sides; nothing changed); 202 still
-  // running; 409 when an apply, discard or update is in flight.
+  // now into the copy. 202 queued with the event to follow; the outcome says
+  // updated, conflict (the files changed on both sides; nothing changed),
+  // merged, or failed. 409 when another action is in flight.
   // mode merge leaves both sides in conflicting files for the agent (merged).
   async updateWorkspace(workspace: string, mode?: 'merge'): Promise<UpdateState> {
     const res = await fetch(`${this.baseUrl}/api/v0/workspaces/${encodeURIComponent(workspace)}/update`, {

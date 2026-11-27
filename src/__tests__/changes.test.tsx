@@ -5,13 +5,28 @@
 import { act } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { App, TURN_END_POLL_MS } from '../App';
-import { ApplyPanel, groupByFolder, MERGE_REQUEST, TOO_BIG, TurnChangesTab, turnTooBig } from '../components/Changes';
+import { UPDATE_WAITING, ApplyPanel, groupByFolder, MERGE_REQUEST, TOO_BIG, TurnChangesTab, turnTooBig } from '../components/Changes';
 import { LiveDataSource } from '../data/LiveDataSource';
 import { ApplyPreview, ApplyState, DiscardState, TurnChangesPage, TurnDiff, UpdateState } from '../types';
 // getWorkspaceChanges/applyWorkspace/discardWorkspace act on the session's
 // workspace; these tests build sessions without a workspace field, so the
 // cockpit falls back to the session id ('c1') as the workspace.
 import { click, ev, flush, liveReplay, panelOpen, render } from './helpers';
+import type { WorkspaceOutcome } from '../data/outcome';
+
+// The API's 202 reply (queued, with the event it names) and the outcome route
+// behind it: each action's result is what readOutcome gives for its event.
+function actions() {
+  const results = new Map<string, WorkspaceOutcome>();
+  let n = 0;
+  const queue = (o: WorkspaceOutcome) => {
+    const event = `ev_${++n}`;
+    results.set(event, o);
+    return { state: 'queued', event };
+  };
+  const readOutcome = vi.fn(async (event: string): Promise<WorkspaceOutcome> => results.get(event) ?? { state: 'queued' });
+  return { queue, readOutcome, results };
+}
 
 const finished = [
   ev({ seq: 1, session: 'c1', kind: 'session.registered', agent: 'claude', folder: '/w' }),
@@ -148,6 +163,23 @@ describe('The apply bar', () => {
     r.unmount();
   });
 
+  it('is read again when a discard, close or failed action of its workspace ends, matched by the workspace', async () => {
+    const getWorkspaceChanges = vi.fn(async () => preview);
+    const { r, push } = await open({ getWorkspaceChanges });
+    let reads = getWorkspaceChanges.mock.calls.length;
+    let seq = 20;
+    for (const kind of ['workspace.discarded', 'workspace.closed', 'workspace.failed']) {
+      // None of these carries a session: only the workspace.
+      await act(async () => push(ev({ seq: seq++, session: '', kind, workspace: 'ws_c1' })));
+      await flush();
+      expect([kind, getWorkspaceChanges.mock.calls.length]).toEqual([kind, ++reads]);
+      await act(async () => push(ev({ seq: seq++, session: '', kind, workspace: 'ws_other' })));
+      await flush();
+      expect([kind, getWorkspaceChanges.mock.calls.length]).toEqual([kind, reads]);
+    }
+    r.unmount();
+  });
+
   it('runs one read at a time: events during a read make one more read after it', async () => {
     let release: (() => void) | null = null;
     let reads = 0;
@@ -196,16 +228,19 @@ describe('The apply preview', () => {
   it('Apply applies the turn the preview names; then "Applied. Your folder matches this session." and the bar goes', async () => {
     let p = preview;
     const getWorkspaceChanges = vi.fn(async () => p);
-    const applyWorkspace = vi.fn(async () => {
+    const applyWorkspace = vi.fn(async () => ({ state: 'queued', event: 'ev_apply' }) as ApplyState);
+    const getWorkspaceOutcome = vi.fn(async (ws: string, event: string) => {
+      expect([ws, event]).toEqual(['ws_c1', 'ev_apply']);
       p = nothing;
-      return { state: 'applied', files: ['a.txt', 'logo.png'] } as ApplyState;
+      return { state: 'applied', files: ['a.txt', 'logo.png'] };
     });
-    const { r } = await open({ getWorkspaceChanges, applyWorkspace });
+    const { r } = await open({ getWorkspaceChanges, applyWorkspace, getWorkspaceOutcome });
     await click(bar(r.container)!.querySelector('.ab-review'));
     await flush();
     await click(button(r.container.querySelector('#right')!, 'Apply'));
     await flush();
     expect(applyWorkspace).toHaveBeenCalledWith('ws_c1', 'T1');
+    expect(getWorkspaceOutcome).toHaveBeenCalledWith('ws_c1', 'ev_apply');
     expect(r.container.querySelector('#right .nd-note.ok[role="status"]')!.textContent).toBe('Applied. Your folder matches this session.');
     expect(button(r.container.querySelector('#right')!, 'Apply')).toBeUndefined();
     expect(bar(r.container)).toBeNull();
@@ -239,15 +274,16 @@ describe('The apply preview', () => {
     r.unmount();
   });
 
-  it('a refused apply shows the API words and each conflict', async () => {
+  it('a refused apply (a 202, refused on its outcome) shows the API words and each conflict', async () => {
     const refused: ApplyState = {
       state: 'refused',
       error: 'apply refused: 1 file(s) in your folder changed since the checkpoint: a.txt',
       conflicts: [{ path: 'a.txt', why: 'changed in your folder since the checkpoint' }],
     };
-    const apply = vi.fn(async () => refused);
+    const { queue, readOutcome } = actions();
+    const apply = vi.fn(async () => queue(refused) as ApplyState);
     const onApplyEnded = vi.fn();
-    const r = await render(<ApplyPanel preview={preview} apply={apply} onApplyEnded={onApplyEnded} />);
+    const r = await render(<ApplyPanel preview={preview} apply={apply} readOutcome={readOutcome} onApplyEnded={onApplyEnded} />);
     await click(button(r.container, 'Apply'));
     await flush();
     expect(apply).toHaveBeenCalledWith('T1');
@@ -258,11 +294,11 @@ describe('The apply preview', () => {
     r.unmount();
   });
 
-  it('an apply still queued is read again until it ends', async () => {
+  it('an apply still queued follows its own event on the outcome route until it ends', async () => {
     let ended = false;
-    const readApply = vi.fn(async () => (ended ? { state: 'applied' } : { state: 'queued' }) as ApplyState);
-    const apply = vi.fn(async () => ({ state: 'queued' }) as ApplyState);
-    const r = await render(<ApplyPanel preview={preview} apply={apply} readApply={readApply} pollMs={5} />);
+    const readOutcome = vi.fn(async (_event: string): Promise<WorkspaceOutcome> => (ended ? { state: 'applied' } : { state: 'queued' }));
+    const apply = vi.fn(async () => ({ state: 'queued', event: 'ev_9' }) as ApplyState);
+    const r = await render(<ApplyPanel preview={preview} apply={apply} readOutcome={readOutcome} pollMs={5} />);
     await click(button(r.container, 'Apply'));
     await flush();
     expect(r.container.textContent).toContain('Applying…');
@@ -272,7 +308,8 @@ describe('The apply preview', () => {
         await new Promise((done) => setTimeout(done, 10));
       });
     }
-    expect(readApply).toHaveBeenCalledWith('T1');
+    expect(readOutcome).toHaveBeenCalledWith('ev_9');
+    expect(readOutcome.mock.calls.every((c) => c[0] === 'ev_9')).toBe(true);
     expect(r.container.textContent).toContain('Applied. Your folder matches this session.');
     r.unmount();
   });
@@ -643,11 +680,76 @@ describe('No workspace', () => {
   });
 });
 
+describe('One rule for Apply, Discard and Update: send, wait, show the outcome of that event', () => {
+  it('a failed apply (workspace.failed) is said in plain words, and Apply comes back', async () => {
+    const { queue, readOutcome } = actions();
+    const apply = vi.fn(async () => queue({ state: 'failed', kind: 'workspace.failed', error: 'the runner holding this copy went away' }) as ApplyState);
+    const r = await render(<ApplyPanel preview={preview} apply={apply} readOutcome={readOutcome} />);
+    await click(button(r.container, 'Apply'));
+    await flush();
+    expect(r.container.querySelector('.ap-failed')!.textContent).toBe('The apply did not run: the runner holding this copy went away.');
+    expect(button(r.container, 'Apply')!.disabled).toBe(false);
+    r.unmount();
+  });
+
+  it('a failed discard is said in plain words, and marks no turn', async () => {
+    const { queue, readOutcome } = actions();
+    const discard = vi.fn(async (): Promise<DiscardState> => queue({ state: 'failed', error: 'the copy could not be reset' }));
+    const onDiscarded = vi.fn();
+    const r = await render(<ApplyPanel preview={preview} apply={vi.fn()} discard={discard} readOutcome={readOutcome} onDiscarded={onDiscarded} />);
+    await click(button(r.container, 'Discard'));
+    await click(button(r.container.querySelector('.ap-confirm')!, 'Discard'));
+    await flush();
+    expect(r.container.textContent).toContain('The discard did not run: the copy could not be reset.');
+    expect(onDiscarded).not.toHaveBeenCalled();
+    r.unmount();
+  });
+
+  it('an update waiting behind a turn says so from its outcome, then "Updated" from the outcome too', async () => {
+    let ended = false;
+    const update = vi.fn(async (): Promise<UpdateState> => ({ state: 'queued', event: 'ev_u' }));
+    const readOutcome = vi.fn(async (_e: string): Promise<WorkspaceOutcome> => (ended ? { state: 'updated', kind: 'workspace.updated' } : { state: 'queued' }));
+    const conflicted: ApplyPreview = { ...preview, conflicts: [{ path: 'a.txt', why: 'changed in your folder since the checkpoint' }] };
+    const onRefresh = vi.fn();
+    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} readOutcome={readOutcome} onRefresh={onRefresh} pollMs={5} />);
+    await click(button(r.container, 'Update from my folder')!);
+    await flush();
+    expect(r.container.textContent).toContain(UPDATE_WAITING);
+    expect(onRefresh).not.toHaveBeenCalled();
+    ended = true;
+    for (let i = 0; i < 50 && !r.container.textContent!.includes('Updated from your folder'); i++) {
+      await act(async () => {
+        await new Promise((done) => setTimeout(done, 10));
+      });
+    }
+    expect(r.container.textContent).toContain('Updated from your folder');
+    expect(r.container.textContent).not.toContain(UPDATE_WAITING);
+    expect(readOutcome.mock.calls.every((c) => c[0] === 'ev_u')).toBe(true);
+    expect(onRefresh).toHaveBeenCalled();
+    r.unmount();
+  });
+
+  it('an action whose outcome never comes is said, not waited on for ever', async () => {
+    const { followOutcome } = await import('../data/outcome');
+    const o = await followOutcome({ state: 'queued', event: 'ev_x' }, async () => ({ state: 'queued' }), { pollMs: 1, giveUpMs: 20 });
+    expect(o).toEqual({ state: 'stalled', event: 'ev_x' });
+  });
+
+  it('reads the outcome whether the route names its result at the top or under the event', async () => {
+    const { readOutcome } = await import('../data/outcome');
+    expect(readOutcome({ kind: 'workspace.applied', applied: { files: ['a.txt'], count: 1 } })).toMatchObject({ state: 'applied', files: ['a.txt'], count: 1 });
+    expect(readOutcome({ state: 'refused', conflicts: [{ path: 'a.txt', why: 'x' }] })).toMatchObject({ state: 'refused', conflicts: [{ path: 'a.txt', why: 'x' }] });
+    expect(readOutcome({ kind: 'workspace.failed', failed: { error: 'gone' } })).toMatchObject({ state: 'failed', error: 'gone' });
+    expect(readOutcome({ state: 'running' }).state).toBe('running');
+  });
+});
+
 describe('Discard', () => {
   it('a sandbox session shows Discard beside Apply; it asks once in place, then drops the changes', async () => {
-    const discard = vi.fn(async (): Promise<DiscardState> => ({ dropped_turns: ['T1'] }));
+    const { queue, readOutcome } = actions();
+    const discard = vi.fn(async (): Promise<DiscardState> => queue({ state: 'discarded', dropped_turns: ['T1'] }));
     const onDiscarded = vi.fn();
-    const r = await render(<ApplyPanel preview={preview} apply={vi.fn()} discard={discard} onDiscarded={onDiscarded} />);
+    const r = await render(<ApplyPanel preview={preview} apply={vi.fn()} discard={discard} readOutcome={readOutcome} onDiscarded={onDiscarded} />);
     // Both actions on the right; the question is not shown yet.
     expect(button(r.container, 'Discard')).not.toBeUndefined();
     expect(button(r.container, 'Apply')).not.toBeUndefined();
@@ -658,7 +760,8 @@ describe('Discard', () => {
     expect(confirm.querySelector('.ap-confirm-q')!.textContent).toBe('Discard 2 files?');
     expect(r.container.querySelector('[role="dialog"]')).toBeNull();
     expect(discard).not.toHaveBeenCalled();
-    // Confirming drops the changes and reports the dropped turns.
+    // Confirming drops the changes and reports the dropped turns, read from
+    // the outcome of this discard's event (the 202 carries none).
     await click(button(confirm, 'Discard'));
     await flush();
     expect(discard).toHaveBeenCalledTimes(1);
@@ -695,17 +798,24 @@ describe('Discard', () => {
     r.unmount();
   });
 
-  it('the live source posts to the workspace discard route', async () => {
+  it('the live source posts to the workspace discard route (202) and reads its outcome by event', async () => {
     const calls: string[] = [];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       calls.push(`${init?.method ?? 'GET'} ${url}`);
-      return new Response(JSON.stringify({ dropped_turns: ['T1', 'T2'] }), { status: 200 });
+      if (url.includes('/outcome')) {
+        return new Response(JSON.stringify({ state: 'discarded', kind: 'workspace.discarded', discarded: { dropped_turns: ['T1', 'T2'] } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ state: 'queued', event: 'ev_d' }), { status: 202 });
     });
     vi.stubGlobal('fetch', fetchMock);
     try {
       const src = new LiveDataSource({ baseUrl: 'http://cockpit.test', token: 'tok' });
-      expect((await src.discardWorkspace('ws_1')).dropped_turns).toEqual(['T1', 'T2']);
-      expect(calls).toEqual(['POST http://cockpit.test/api/v0/workspaces/ws_1/discard']);
+      expect(await src.discardWorkspace('ws_1')).toEqual({ state: 'queued', event: 'ev_d' });
+      expect((await src.getWorkspaceOutcome('ws_1', 'ev_d')).dropped_turns).toEqual(['T1', 'T2']);
+      expect(calls).toEqual([
+        'POST http://cockpit.test/api/v0/workspaces/ws_1/discard',
+        'GET http://cockpit.test/api/v0/workspaces/ws_1/outcome?event=ev_d',
+      ]);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -716,9 +826,10 @@ describe('Update from my folder', () => {
   const conflicted: ApplyPreview = { ...preview, conflicts: [{ path: 'a.txt', why: 'changed in your folder since the checkpoint' }] };
 
   it('offers Update when the folder changed, merges it, and refreshes the preview', async () => {
-    const update = vi.fn(async (): Promise<UpdateState> => ({ state: 'updated', updated: true }));
+    const { queue, readOutcome } = actions();
+    const update = vi.fn(async (): Promise<UpdateState> => queue({ state: 'updated', updated: true }));
     const onRefresh = vi.fn();
-    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} onRefresh={onRefresh} />);
+    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} readOutcome={readOutcome} onRefresh={onRefresh} />);
     const btn = button(r.container, 'Update from my folder')!;
     expect(btn).not.toBeUndefined();
     expect(btn.disabled).toBe(false);
@@ -731,7 +842,8 @@ describe('Update from my folder', () => {
   });
 
   it('a conflicting update turns Review into Merge, hides Update, and says so at the top', async () => {
-    const update = vi.fn(async (): Promise<UpdateState> => ({ state: 'conflict', conflicts: ['a.txt', 'b.txt'] }));
+    const { queue, readOutcome } = actions();
+    const update = vi.fn(async (): Promise<UpdateState> => queue({ state: 'conflict', conflicts: ['a.txt', 'b.txt'] }));
     const onRefresh = vi.fn();
     const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge: vi.fn() };
     const two: ApplyPreview = {
@@ -741,7 +853,7 @@ describe('Update from my folder', () => {
         { path: 'b.txt', why: 'changed in your folder since the checkpoint' },
       ],
     };
-    const r = await render(<ApplyPanel preview={two} apply={vi.fn()} update={update} onRefresh={onRefresh} review={review} />);
+    const r = await render(<ApplyPanel preview={two} apply={vi.fn()} update={update} readOutcome={readOutcome} onRefresh={onRefresh} review={review} />);
     expect(button(r.container, 'Review')).not.toBeUndefined();
     expect(button(r.container, 'Merge')).toBeUndefined();
     await click(button(r.container, 'Update from my folder')!);
@@ -759,9 +871,10 @@ describe('Update from my folder', () => {
 
   it('Merge fills the message at once, then asks AgentBus to merge; the next preview decides what shows', async () => {
     const order: string[] = [];
+    const { queue, readOutcome } = actions();
     const update = vi.fn(async (mode?: 'merge'): Promise<UpdateState> => {
       order.push(`update:${mode ?? ''}`);
-      return mode === 'merge' ? { state: 'merged', updated: true, unresolved: ['a.txt'] } : { state: 'conflict', conflicts: ['a.txt'] };
+      return queue(mode === 'merge' ? { state: 'merged', updated: true, unresolved: ['a.txt'] } : { state: 'conflict', conflicts: ['a.txt'] });
     });
     const onRefresh = vi.fn();
     const onMerge = vi.fn(() => {
@@ -769,7 +882,7 @@ describe('Update from my folder', () => {
     });
     const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge };
     const markers: ApplyPreview = { ...preview, conflicts: [{ path: 'a.txt', why: 'still holds conflict markers', markers: true }] };
-    const panel = (p: ApplyPreview) => <ApplyPanel preview={p} apply={vi.fn()} update={update} onRefresh={onRefresh} review={review} />;
+    const panel = (p: ApplyPreview) => <ApplyPanel preview={p} apply={vi.fn()} update={update} readOutcome={readOutcome} onRefresh={onRefresh} review={review} />;
     const r = await render(panel(conflicted));
     await click(button(r.container, 'Update from my folder')!);
     await flush();
@@ -799,40 +912,47 @@ describe('Update from my folder', () => {
   });
 
   it('Merge goes when a new preview has no conflict left, even before it was clicked', async () => {
-    const update = vi.fn(async (): Promise<UpdateState> => ({ state: 'conflict', conflicts: ['a.txt'] }));
+    const { queue, readOutcome } = actions();
+    const update = vi.fn(async (): Promise<UpdateState> => queue({ state: 'conflict', conflicts: ['a.txt'] }));
     const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge: vi.fn() };
-    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} review={review} />);
+    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} readOutcome={readOutcome} review={review} />);
     await click(button(r.container, 'Update from my folder')!);
     await flush();
     expect(button(r.container, 'Merge')).not.toBeUndefined();
     // The person resolved it in their folder; the next preview has no conflict.
-    await act(async () => r.root.render(<ApplyPanel preview={{ ...preview }} apply={vi.fn()} update={update} review={review} />));
+    await act(async () => r.root.render(<ApplyPanel preview={{ ...preview }} apply={vi.fn()} update={update} readOutcome={readOutcome} review={review} />));
     expect(button(r.container, 'Merge')).toBeUndefined();
     expect(button(r.container, 'Review')).not.toBeUndefined();
     r.unmount();
   });
 
-  it('a Merge still waiting its turn says so and is not asked for twice', async () => {
+  it('a Merge still waiting its turn says so, from its outcome, and is not asked for twice', async () => {
+    const { queue, readOutcome, results } = actions();
     const update = vi.fn(async (mode?: 'merge'): Promise<UpdateState> =>
-      mode === 'merge' ? { state: 'queued' } : { state: 'conflict', conflicts: ['a.txt'] }
+      queue(mode === 'merge' ? { state: 'queued' } : { state: 'conflict', conflicts: ['a.txt'] })
     );
     const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge: vi.fn() };
-    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} review={review} />);
+    const panel = (p: ApplyPreview) => <ApplyPanel preview={p} apply={vi.fn()} update={update} readOutcome={readOutcome} review={review} pollMs={5} />;
+    const r = await render(panel(conflicted));
     await click(button(r.container, 'Update from my folder')!);
     await flush();
     await click(button(r.container, 'Merge')!);
     await flush();
+    // The outcome of the merge's event says it waits: said, and held.
     expect(r.container.textContent).toContain('Merging… it is waiting its turn.');
-    // Held, not asked for twice.
-    expect(button(r.container, 'Merge')!.disabled).toBe(true);
+    expect(button(r.container, 'Merging…')!.disabled).toBe(true);
     expect(button(r.container, 'Update from my folder')).toBeUndefined();
     expect(update).toHaveBeenCalledTimes(2);
-    // It ends: the record streams the merge's result and the preview is read
-    // again; the files now hold the markers, so Merge only fills.
+    // It ends: the outcome says merged and the preview is read again; the
+    // files now hold the markers, so Merge only fills.
+    results.set('ev_2', { state: 'merged', unresolved: ['a.txt'] });
     const markers: ApplyPreview = { ...preview, conflicts: [{ path: 'a.txt', why: 'still holds conflict markers', markers: true }] };
-    await act(async () =>
-      r.root.render(<ApplyPanel preview={markers} apply={vi.fn()} update={update} review={review} lastUpdate={{ result: 'merged' }} />)
-    );
+    await act(async () => r.root.render(panel(markers)));
+    for (let i = 0; i < 50 && !button(r.container, 'Merge'); i++) {
+      await act(async () => {
+        await new Promise((done) => setTimeout(done, 10));
+      });
+    }
     expect(button(r.container, 'Merge')!.disabled).toBe(false);
     expect(r.container.textContent).not.toContain('Merging… it is waiting its turn.');
     r.unmount();
@@ -840,16 +960,17 @@ describe('Update from my folder', () => {
 
   it('a late Merge reply clears only its own result, never a newer conflict', async () => {
     let finish: ((s: UpdateState) => void) | null = null;
+    const { queue, readOutcome } = actions();
     const update = vi.fn((mode?: 'merge'): Promise<UpdateState> =>
       mode === 'merge'
         ? new Promise<UpdateState>((done) => {
             finish = done;
           })
-        : Promise.resolve({ state: 'conflict', conflicts: ['a.txt'] })
+        : Promise.resolve(queue({ state: 'conflict', conflicts: ['a.txt'] }))
     );
     const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge: vi.fn() };
     const panel = (u?: { result?: string; conflicts?: string[] }) => (
-      <ApplyPanel preview={conflicted} apply={vi.fn()} update={update} review={review} lastUpdate={u ?? null} />
+      <ApplyPanel preview={conflicted} apply={vi.fn()} update={update} readOutcome={readOutcome} review={review} lastUpdate={u ?? null} />
     );
     const r = await render(panel());
     await click(button(r.container, 'Update from my folder')!);
@@ -857,7 +978,7 @@ describe('Update from my folder', () => {
     await click(button(r.container, 'Merge')!); // waits
     // Meanwhile the record streams a newer update result: a conflict again.
     await act(async () => r.root.render(panel({ result: 'conflict', conflicts: ['a.txt'] })));
-    await act(async () => finish!({ state: 'merged', updated: true, unresolved: ['a.txt'] }));
+    await act(async () => finish!(queue({ state: 'merged', updated: true, unresolved: ['a.txt'] })));
     await flush();
     // The newer conflict still offers Merge, and Merge still asks AgentBus.
     await click(button(r.container, 'Merge')!);
@@ -867,31 +988,33 @@ describe('Update from my folder', () => {
   });
 
   it('a conflict result survives the preview read again after it, and a streamed one offers Merge', async () => {
-    const update = vi.fn(async (): Promise<UpdateState> => ({ state: 'conflict', conflicts: ['a.txt'] }));
+    const { queue, readOutcome } = actions();
+    const update = vi.fn(async (): Promise<UpdateState> => queue({ state: 'conflict', conflicts: ['a.txt'] }));
     const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge: vi.fn() };
-    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} review={review} />);
+    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} readOutcome={readOutcome} review={review} />);
     await click(button(r.container, 'Update from my folder')!);
     await flush();
     // The update's own workspace.updated reads the preview again: a new
     // preview, still refusing a.txt. Merge stays (review finding, 2026-11-24).
     const again: ApplyPreview = { ...conflicted, previewed_at: '2026-11-24T11:00:00Z' };
-    await act(async () => r.root.render(<ApplyPanel preview={again} apply={vi.fn()} update={update} review={review} />));
+    await act(async () => r.root.render(<ApplyPanel preview={again} apply={vi.fn()} update={update} readOutcome={readOutcome} review={review} />));
     expect(button(r.container, 'Merge')).not.toBeUndefined();
     expect(button(r.container, 'Update from my folder')).toBeUndefined();
     r.unmount();
     // An update that ended after nobody waited for it, as the record streams it.
-    const r2 = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} review={review} lastUpdate={{ result: 'conflict', conflicts: ['a.txt'] }} />);
+    const r2 = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} readOutcome={readOutcome} review={review} lastUpdate={{ result: 'conflict', conflicts: ['a.txt'] }} />);
     expect(button(r2.container, 'Merge')).not.toBeUndefined();
     r2.unmount();
   });
 
   it('a Merge that finds nothing left to combine reads as a plain update', async () => {
+    const { queue, readOutcome } = actions();
     const update = vi.fn(async (mode?: 'merge'): Promise<UpdateState> =>
-      mode === 'merge' ? { state: 'updated', updated: true } : { state: 'conflict', conflicts: ['a.txt'] }
+      queue(mode === 'merge' ? { state: 'updated', updated: true } : { state: 'conflict', conflicts: ['a.txt'] })
     );
     const onRefresh = vi.fn();
     const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge: vi.fn() };
-    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} onRefresh={onRefresh} review={review} />);
+    const r = await render(<ApplyPanel preview={conflicted} apply={vi.fn()} update={update} readOutcome={readOutcome} onRefresh={onRefresh} review={review} />);
     await click(button(r.container, 'Update from my folder')!);
     await flush();
     await click(button(r.container, 'Merge')!);
@@ -903,12 +1026,13 @@ describe('Update from my folder', () => {
 
   it('a merge that changed nothing (files that cannot hold markers) says why', async () => {
     const why = 'some files cannot be merged with conflict markers (not text, a link, or removed on one side): a.bin; nothing changed';
+    const { queue, readOutcome } = actions();
     const update = vi.fn(async (mode?: 'merge'): Promise<UpdateState> =>
-      mode === 'merge' ? { state: 'conflict', conflicts: ['a.bin'], unmergeable: ['a.bin'], error: why } : { state: 'conflict', conflicts: ['a.bin'] }
+      queue(mode === 'merge' ? { state: 'conflict', conflicts: ['a.bin'], unmergeable: ['a.bin'], error: why } : { state: 'conflict', conflicts: ['a.bin'] })
     );
     const review = { options: [{ id: 'ag1', name: 'Codex' }], defaultAgent: 'ag1', onReview: vi.fn(), onMerge: vi.fn() };
     const bin: ApplyPreview = { ...preview, conflicts: [{ path: 'a.bin', why: 'changed in your folder since the checkpoint' }] };
-    const r = await render(<ApplyPanel preview={bin} apply={vi.fn()} update={update} onRefresh={vi.fn()} review={review} />);
+    const r = await render(<ApplyPanel preview={bin} apply={vi.fn()} update={update} readOutcome={readOutcome} onRefresh={vi.fn()} review={review} />);
     await click(button(r.container, 'Update from my folder')!);
     await flush();
     await click(button(r.container, 'Merge')!);
@@ -938,15 +1062,19 @@ describe('Update from my folder', () => {
     const calls: string[] = [];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       calls.push(`${init?.method ?? 'GET'} ${url}`);
-      return new Response(JSON.stringify({ state: 'updated', updated: true }), { status: 200 });
+      if (url.includes('/outcome')) return new Response(JSON.stringify({ kind: 'workspace.updated', updated: { result: 'conflict', conflicts: ['a.txt'] } }), { status: 200 });
+      return new Response(JSON.stringify({ state: 'queued', event: 'ev_u' }), { status: 202 });
     });
     vi.stubGlobal('fetch', fetchMock);
     try {
       const src = new LiveDataSource({ baseUrl: 'http://cockpit.test', token: 'tok' });
-      expect((await src.updateWorkspace('ws_1')).updated).toBe(true);
-      expect(calls).toEqual(['POST http://cockpit.test/api/v0/workspaces/ws_1/update']);
+      expect(await src.updateWorkspace('ws_1')).toEqual({ state: 'queued', event: 'ev_u' });
+      // The result is on the outcome: its state named from the event's own result.
+      expect(await src.getWorkspaceOutcome('ws_1', 'ev_u')).toMatchObject({ state: 'conflict', conflicts: ['a.txt'] });
+      calls.length = 0;
       await src.updateWorkspace('ws_1', 'merge');
-      expect(fetchMock.mock.calls[1][1]?.body).toBe('{"mode":"merge"}');
+      expect(calls).toEqual(['POST http://cockpit.test/api/v0/workspaces/ws_1/update']);
+      expect(fetchMock.mock.calls[2][1]?.body).toBe('{"mode":"merge"}');
     } finally {
       vi.unstubAllGlobals();
     }
@@ -954,12 +1082,14 @@ describe('Update from my folder', () => {
 });
 
 describe('The live source', () => {
-  it('reads the diff and GET /workspaces/<id>/changes, says a machine offline plainly, and takes a 409 apply as an answer', async () => {
+  it('reads the diff and GET /workspaces/<id>/changes, says a machine offline plainly; an apply is a 202 refused on its outcome', async () => {
     const calls: string[] = [];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       calls.push(`${init?.method ?? 'GET'} ${url}`);
-      if (url.endsWith('/apply')) {
-        return new Response(JSON.stringify({ state: 'refused', conflicts: [{ path: 'a.txt', why: 'x' }] }), { status: 409 });
+      if (url.endsWith('/workspaces/c1/apply')) return new Response(JSON.stringify({ state: 'queued', event: 'ev_a' }), { status: 202 });
+      if (url.endsWith('/workspaces/busy/apply')) return new Response('{"error":"an apply is running"}', { status: 409 });
+      if (url.includes('/workspaces/c1/outcome')) {
+        return new Response(JSON.stringify({ state: 'refused', conflicts: [{ path: 'a.txt', why: 'x' }] }), { status: 200 });
       }
       if (url.includes('/diff')) return new Response(JSON.stringify(diff), { status: 200 });
       if (url.includes('/workspaces/c1/changes')) return new Response(JSON.stringify(preview), { status: 200 });
@@ -973,12 +1103,18 @@ describe('The live source', () => {
       const src = new LiveDataSource({ baseUrl: 'http://cockpit.test', token: 'tok' });
       expect((await src.getTurnDiff('c1', 'T1')).files!.count).toBe(1);
       expect((await src.getWorkspaceChanges('c1')).count).toBe(2);
-      expect((await src.applyWorkspace('c1', 'T1')).state).toBe('refused');
+      expect(await src.applyWorkspace('c1', 'T1')).toEqual({ state: 'queued', event: 'ev_a' });
+      const out = await src.getWorkspaceOutcome('c1', 'ev_a');
+      expect(out.state).toBe('refused');
+      expect(out.conflicts).toEqual([{ path: 'a.txt', why: 'x' }]);
       expect(calls).toEqual([
         'GET http://cockpit.test/api/v0/turns/T1/diff?session=c1',
         'GET http://cockpit.test/api/v0/workspaces/c1/changes?limit=1000',
         'POST http://cockpit.test/api/v0/workspaces/c1/apply',
+        'GET http://cockpit.test/api/v0/workspaces/c1/outcome?event=ev_a',
       ]);
+      // A 409 is no longer an answer: it is the API's words.
+      await expect(src.applyWorkspace('busy')).rejects.toThrow('an apply is running');
       await expect(src.getWorkspaceChanges('off')).rejects.toThrow('The machine with this folder is offline.');
       await expect(src.getWorkspaceChanges('slow')).rejects.toThrow('The machine with this folder did not answer in 30 seconds.');
       await expect(src.getWorkspaceChanges('busy')).rejects.toThrow('an apply is running');
@@ -1006,8 +1142,9 @@ describe('A folder too big to track (over 200,000 files)', () => {
     expect(a.container.querySelector('#d-body')!.textContent).toBe(TOO_BIG);
     expect(button(a.container, 'Apply')).toBeUndefined();
     a.unmount();
-    const apply = vi.fn(async (): Promise<ApplyState> => ({ state: 'refused', error: TRUNCATED_ERR }));
-    const b = await render(<ApplyPanel preview={preview} apply={apply} />);
+    const { queue, readOutcome } = actions();
+    const apply = vi.fn(async (): Promise<ApplyState> => queue({ state: 'refused', error: TRUNCATED_ERR }) as ApplyState);
+    const b = await render(<ApplyPanel preview={preview} apply={apply} readOutcome={readOutcome} />);
     await click(button(b.container, 'Apply'));
     await flush();
     expect(b.container.querySelector('#d-body')!.textContent).toBe(TOO_BIG);
