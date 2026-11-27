@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RunnersPage } from '../components/RunnersPage';
-import { CLOSE_WAITING, hasUnapplied, UNAPPLIED, WorkspacesApi } from '../components/Workspaces';
+import { CLOSE_WAITING, hasUnapplied, UNAPPLIED, WorkspacesApi, workspaceState } from '../components/Workspaces';
 import { LiveDataSource } from '../data/LiveDataSource';
 import { CloseState, RunnerInfo, WorkspaceRow } from '../types';
 import type { WorkspaceOutcome } from '../data/outcome';
@@ -76,15 +76,45 @@ describe('workspaces on a runner’s page', () => {
     // Below Harnesses' place, under its own heading.
     expect(table(r.container)!.previousElementSibling!.textContent).toBe('Workspaces');
     // The folder name in full, its path on hover, and when it was made.
-    expect(row(r.container, 'ws_old').querySelector('.ws-n')!.textContent).toBe('old-app');
-    expect(row(r.container, 'ws_old').querySelector('.ws-n')!.getAttribute('title')).toBe('/Users/p/Sites/old-app');
+    expect(row(r.container, 'ws_old').querySelector('.ws-sub')!.textContent).toBe('old-app · ws_old');
+    expect(row(r.container, 'ws_old').querySelector('.ws-sub')!.getAttribute('title')).toBe('/Users/p/Sites/old-app');
     expect(row(r.container, 'ws_old').querySelector('.ws-age')!.textContent).toBe('3 days ago');
     // Another runner's page shows its own.
     await pick(r.container, 'run_b');
     expect(ids(r.container)).toEqual(['ws_two']);
-    expect(row(r.container, 'ws_two').querySelector('.ws-n')!.textContent).toBe('api, web');
-    expect(row(r.container, 'ws_two').querySelector('.ws-n')!.getAttribute('title')).toBe('/srv/api\n/srv/web');
+    expect(row(r.container, 'ws_two').querySelector('.ws-sub')!.textContent).toBe('api, web · ws_two');
+    expect(row(r.container, 'ws_two').querySelector('.ws-sub')!.getAttribute('title')).toBe('/srv/api\n/srv/web');
     expect(row(r.container, 'ws_two').querySelector('.ws-age')!.textContent).toBe('1 hour ago');
+  });
+
+  it('names each workspace’s task (its session’s title), its id and its state: open, closing, closed, put away', async () => {
+    const more: WorkspaceRow[] = [
+      ...rows,
+      ws({ workspace: 'ws_away', machine: 'con_aaaaaaaaaaaaaaaa', folder: '/Users/p/away', closed: ago(30),
+        last_action: { kind: 'workspace.closed', put_away: { on: 'on_1' } } as unknown as WorkspaceRow['last_action'] }),
+    ];
+    const close = vi.fn(async (id: string): Promise<CloseState> => ({ state: 'queued', event: `ev_${id}` }));
+    const a: WorkspacesApi = { list: vi.fn(async () => more), close };
+    const taskOf = (w: string) => ({ ws_new: 'Fix the login page', ws_old: 'Write the release notes' })[w];
+    const r = await render(<RunnersPage runners={runners} error={null} onBack={() => {}} workspaces={a} taskOf={taskOf} />);
+    await flush();
+    const cell = (id: string, sel: string) => row(r.container, id).querySelector(sel)!.textContent;
+    expect(cell('ws_new', '.ws-task')).toBe('Fix the login page');
+    expect(cell('ws_local', '.ws-task')).toBe('No session yet');
+    expect(cell('ws_new', '.ws-id')).toBe('ws_new');
+    expect(cell('ws_new', '.ws-state')).toBe('open');
+    // Closed and put-away copies wait behind Show closed, newest removal first.
+    expect(ids(r.container)).toEqual(['ws_new', 'ws_local', 'ws_old']);
+    await click([...r.container.querySelectorAll('button')].find((b) => b.textContent === 'Show closed (2)'));
+    expect(ids(r.container)).toEqual(['ws_new', 'ws_local', 'ws_old', 'ws_closed', 'ws_away']);
+    expect(cell('ws_closed', '.ws-state')).toBe('closed');
+    expect(cell('ws_away', '.ws-state')).toBe('put away');
+    expect(row(r.container, 'ws_away').querySelector('.ws-close')).toBeNull();
+    // Close: closing until it runs.
+    await click(row(r.container, 'ws_old').querySelector('.ws-close'));
+    await flush();
+    expect(cell('ws_old', '.ws-state')).toBe('closing');
+    expect(workspaceState(more[3])).toBe('closed');
   });
 
   it('gives a runner with no open workspaces no table', async () => {

@@ -3,7 +3,7 @@ import React, { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { ReplayDataSource } from '../data/ReplayDataSource';
-import { SETTINGS_CONTROLS, SettingsPage, shortWhen } from '../components/SettingsPage';
+import { BUDGET_LINE, SETTINGS_CONTROLS, SettingsPage, shortWhen } from '../components/SettingsPage';
 import { LiveDataSource } from '../data/LiveDataSource';
 import { addFound, changeOf, flatPolicy, homeFilesOf, isEmpty, lines, nestPolicy, Policy, SettingsApi, SettingsInfo } from '../data/settings';
 import { click, ev, flush, jsonl, panelOpen, render, unmountAll } from './helpers';
@@ -888,3 +888,66 @@ describe('the Settings page in the app', () => {
   });
 });
 
+
+describe('the history budget on Limits', () => {
+  const compaction = () => {
+    let value = { claude: 0.8, codex: 0.8, opencode: 0.85, gemini: 0.7, budget: 0.4 };
+    let version = 1;
+    const get = vi.fn(async () => ({ value: { ...value }, etag: `"c${version}"` }));
+    const put = vi.fn(async (c: typeof value, etag: string) => {
+      if (etag !== `"c${version}"`) throw new Error('the compaction points changed since you read them');
+      value = { ...c };
+      version++;
+      return { value: { ...value }, etag: `"c${version}"` };
+    });
+    return { get, put };
+  };
+
+  it('shows budget as a share of the window with one plain line, and saves it with every other field as read', async () => {
+    const { api } = fakeApi();
+    const c = compaction();
+    const { container } = await render(<SettingsPage api={{ ...api, getCompaction: c.get, putCompaction: c.put }} onBack={() => {}} />);
+    await flush();
+    await pick(container, '[data-part="limits"]');
+    await flush();
+    const row = container.querySelector('[data-key="compaction.budget"]')!;
+    expect(row.querySelector('.pg-ctl-n')!.textContent).toBe('History budget');
+    expect(row.querySelector('.pg-note')!.textContent).toBe(BUDGET_LINE);
+    const input = row.querySelector('input[name="compaction.budget"]') as HTMLInputElement;
+    expect(input.value).toBe('40');
+    expect(button(row as HTMLElement, 'Save')!.disabled).toBe(true);
+    // Out of range: said, and not saved.
+    await setValue(input, '0');
+    expect(row.querySelector('.form-error')!.textContent).toBe('A share from 1 to 100.');
+    expect(button(row as HTMLElement, 'Save')!.disabled).toBe(true);
+    await setValue(input, '30');
+    await click(button(row as HTMLElement, 'Save'));
+    await flush();
+    expect(c.put).toHaveBeenCalledWith({ claude: 0.8, codex: 0.8, opencode: 0.85, gemini: 0.7, budget: 0.3 }, '"c1"');
+    expect(row.querySelector('[role="status"]')!.textContent).toBe('Saved. The next turn keeps to it.');
+  });
+
+  it('is absent on a service without the route', async () => {
+    const { api } = fakeApi();
+    const { container } = await render(<SettingsPage api={api} onBack={() => {}} />);
+    await flush();
+    await pick(container, '[data-part="limits"]');
+    expect(container.querySelector('[data-key="compaction.budget"]')).toBeNull();
+  });
+
+  it('the live source reads and writes /api/v0/settings/compaction with its version', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? 'GET'} ${new URL(url).pathname} ${(init?.headers as Record<string, string>)?.['If-Match'] ?? ''}`.trim());
+      return new Response(JSON.stringify({ budget: 0.5, claude: 0.8 }), { status: 200, headers: { ETag: '"v7"' } });
+    }));
+    try {
+      const src = new LiveDataSource({ baseUrl: 'http://svc', token: 't' });
+      expect(await src.getCompaction()).toEqual({ value: { budget: 0.5, claude: 0.8 }, etag: '"v7"' });
+      await src.putCompaction({ budget: 0.5, claude: 0.8 }, '"v7"');
+      expect(calls).toEqual(['GET /api/v0/settings/compaction', 'PUT /api/v0/settings/compaction "v7"']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

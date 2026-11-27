@@ -66,6 +66,11 @@ interface ConvoColumnProps {
   agentDot?: (agent: SavedAgent) => React.ReactNode;
   // Given only when the source can stop a turn. Rejects with the API's message.
   onStop?: (turn: Turn) => Promise<void>;
+  // Stops a queued message's turn before it starts (POST
+  // /api/v0/turns/{id}/stop): its Cancel, and its Edit, which then puts the
+  // text back in the box to send again. not-running: it started or ended
+  // first. Absent: a queued message offers neither.
+  onCancelQueued?: (turn: string) => Promise<'stopping' | 'not-running'>;
   // The turns the person asked to stop that have not ended yet.
   stopping?: ReadonlySet<string>;
   // Turns whose file changes a Discard dropped: each carries a small
@@ -250,7 +255,25 @@ export interface Pending {
   error?: string;
   // What it was sent with: the agent it named, if any.
   agent?: string;
+  // A Cancel or Edit of it while queued is on its way.
+  cancelling?: 'cancel' | 'edit';
+  // Why a Cancel or Edit did not take, in plain words or the API's.
+  cancelError?: string;
 }
+
+// An asked session's title is cut to this many characters on its line; the
+// whole title is on hover.
+const ASKED_TITLE_MAX = 48;
+// A title cut to ASKED_TITLE_MAX at a word's end, with an ellipsis.
+export function shortTitle(t: string): string {
+  if (t.length <= ASKED_TITLE_MAX) return t;
+  const cut = t.slice(0, ASKED_TITLE_MAX - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > ASKED_TITLE_MAX / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+// A queued message whose Cancel came after its turn started.
+export const TOO_LATE = 'It had already started, so it was not cancelled.';
 
 // An update of a session's pending messages.
 export type PendingUpdate = (list: Pending[]) => Pending[];
@@ -264,7 +287,7 @@ export { RUNNER_WAIT_MS };
 
 // A key for one message: its turn carries it, so the message is matched to
 // the turn that runs it.
-function messageKey(): string {
+export function messageKey(): string {
   const rand =
     typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
@@ -302,6 +325,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   open,
   onSend,
   onStop,
+  onCancelQueued,
   stopping,
   discardedTurns,
   live,
@@ -500,15 +524,20 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   // A failed one stays, with Retry and Edit, until the person acts on it.
   const turnCount = session.turnsList.length;
   const keys = session.turnsList.map((t) => t.key).filter(Boolean).join('\n');
+  const turnIds = session.turnsList.map((t) => t.id).join('\n');
   useEffect(() => {
     const listed = new Set(session.turnsList.map((t) => t.key).filter(Boolean));
+    const ids = new Set(session.turnsList.map((t) => t.id));
     setPending((list) => {
       // A message whose own turn is listed goes in any state: a failed copy
-      // whose request did get through is not left beside its turn.
-      const next = list.filter((p) => (keyed ? !listed.has(p.key) : p.state === 'failed' || turnCount <= p.turnsAtSend));
+      // whose request did get through is not left beside its turn. Its turn is
+      // known by its key, or by the id the service answered with.
+      const next = list.filter((p) =>
+        p.turn && ids.has(p.turn) ? false : keyed ? !listed.has(p.key) : p.state === 'failed' || turnCount <= p.turnsAtSend
+      );
       return next.length === list.length ? list : next;
     });
-  }, [turnCount, keys, keyed]);
+  }, [turnCount, keys, keyed, turnIds]);
 
   // The events a running turn's status is read from: its loaded events, or
   // the stream's copy of the session's latest turn.
@@ -671,6 +700,31 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
     inputRef.current?.focus();
   };
 
+  // Cancel or Edit a message still queued: its turn is stopped before it
+  // starts. Cancel drops it; Edit then puts its text back in the box, its
+  // agent picked, to send again as a new turn. A turn that started first is
+  // not stopped: its message stays, and says so.
+  const withdraw = async (p: Pending, how: 'cancel' | 'edit') => {
+    if (!onCancelQueued || !p.turn || p.cancelling) return;
+    const set = (patch: Partial<Pending>) => setPending((list) => list.map((x) => (x.key === p.key ? { ...x, ...patch } : x)));
+    set({ cancelling: how, cancelError: undefined });
+    try {
+      const r = await onCancelQueued(p.turn);
+      if (r === 'not-running') {
+        set({ cancelling: undefined, cancelError: TOO_LATE });
+        return;
+      }
+      setPending((list) => list.filter((x) => x.key !== p.key));
+      if (how === 'edit') {
+        if (p.agent) setPicked(p.agent);
+        setDraft((d) => (d.trim() === '' ? p.prompt : `${d}\n${p.prompt}`));
+        inputRef.current?.focus();
+      }
+    } catch (err) {
+      set({ cancelling: undefined, cancelError: (err as Error).message });
+    }
+  };
+
   // A queued message whose turn ends without starting (refused, stopped)
   // shows as failed, with why.
   const sessionId = session.id;
@@ -729,6 +783,21 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                     : `${STATE.queued} · waiting for a runner`
                 : `${STATE.waiting} for the agent`}
           </span>
+          {p.state === 'queued' && p.turn && onCancelQueued && (
+            <>
+              <Button kind="link" className="pend-edit" disabled={!!p.cancelling} onClick={() => withdraw(p, 'edit')}>
+                {p.cancelling === 'edit' ? 'Editing…' : 'Edit'}
+              </Button>
+              <Button kind="link" className="pend-cancel" disabled={!!p.cancelling} onClick={() => withdraw(p, 'cancel')}>
+                {p.cancelling === 'cancel' ? 'Cancelling…' : 'Cancel'}
+              </Button>
+            </>
+          )}
+          {p.cancelError && (
+            <Notice kind="error" inline>
+              {p.cancelError}
+            </Notice>
+          )}
         </div>
       )}
     </div>
@@ -1011,13 +1080,23 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
               <span className={`live-line ${w.state === 'running' ? 'run' : 'dim'}`}>
                 {w.state === 'running' ? <i className="spin run-spin" aria-hidden /> : null}
                 <span className="live-text">
-                  {w.state === 'running' && onOpenSession ? (
-                    <OpenSessionLink session={w.id} onOpen={onOpenSession}>
-                      {line}
-                    </OpenSessionLink>
-                  ) : (
-                    line
+                  {w.title && (
+                    <>
+                      <span className="asked-title" title={w.title}>
+                        {shortTitle(w.title)}
+                      </span>
+                      <span className="sep"> · </span>
+                    </>
                   )}
+                  <span className="asked-line">
+                    {w.state === 'running' && onOpenSession ? (
+                      <OpenSessionLink session={w.id} onOpen={onOpenSession}>
+                        {line}
+                      </OpenSessionLink>
+                    ) : (
+                      line
+                    )}
+                  </span>
                 </span>
               </span>
             </div>

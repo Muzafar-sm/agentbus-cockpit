@@ -1,5 +1,5 @@
 import type { WorkspaceOutcome } from './data/outcome';
-import type { ConfigFound, Policy, SettingsInfo, Versioned } from './data/settings';
+import type { Compaction, ConfigFound, Policy, SettingsInfo, Versioned } from './data/settings';
 import type { FolderInfo } from './data/folders';
 export interface Usage {
   input_tokens: number;
@@ -906,6 +906,8 @@ export interface DataSource {
   patchPolicy?(change: Policy, etag: string): Promise<Versioned<Policy>>;
   getInstructions?(): Promise<Versioned<string>>;
   putInstructions?(text: string, etag: string): Promise<Versioned<string>>;
+  getCompaction?(): Promise<Versioned<Compaction>>;
+  putCompaction?(c: Compaction, etag: string): Promise<Versioned<Compaction>>;
   // The usual config paths in the home of a folder's machine, for Use my
   // config on the Settings page (GET /api/v0/folders/{ref}/home-files).
   findConfig?(): Promise<ConfigFound>;

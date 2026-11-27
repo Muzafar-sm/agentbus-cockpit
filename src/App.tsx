@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import rawSessionsJsonl from '../testdata/sessions-v0.jsonl?raw';
 import { AgentsColumn } from './components/AgentsColumn';
-import { agentNameOf, ConvoColumn, currentAgent, Pending, PendingUpdate } from './components/ConvoColumn';
+import { agentNameOf, ConvoColumn, currentAgent, messageKey, Pending, PendingUpdate } from './components/ConvoColumn';
 import { ApprovalsPanel } from './components/ApprovalsPanel';
 import { AgentsDialog } from './components/AgentsDialog';
 import { SettingsPage } from './components/SettingsPage';
@@ -25,7 +25,7 @@ import { SessionsColumn } from './components/SessionsColumn';
 import { FolderInfo, FoldersContext, rememberFolder, rememberMachine } from './data/folders';
 import { ReplayDataSource } from './data/ReplayDataSource';
 import { applyList, countedIn, isNewerList, ListCursor, StreamedCost, streamedCost } from './data/sessionList';
-import { addLiveEvent, LiveTurns, mergeLive, noteEventTime } from './data/liveStatus';
+import { addLiveEvent, LiveTurns, mergeLive, noteEventTime, steadyNow } from './data/liveStatus';
 import { askedWork } from './data/askedWork';
 import { refreshNow } from './utils/useNow';
 import { versionLabel } from './utils/format';
@@ -65,6 +65,17 @@ function ownPageShown(page: string, d: DataSource): boolean {
 
 // No pending messages, the same array each time.
 const NO_PENDING: Pending[] = [];
+// A session with no first message yet, open in the conversation: its workspace
+// is made, and session is set once its first message started one.
+interface Draft {
+  id: number;
+  req: RunRequest;
+  title?: string;
+  session?: string;
+  workspace: string;
+}
+// The pending list of a draft, before it has a session.
+const draftKey = (id: number) => `draft-${id}`;
 
 // The longest wait before the sessions are fetched again after an event.
 const LIST_REFRESH_MS = 500;
@@ -339,6 +350,17 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     }
     return out;
   }, [allSessions, queueView]);
+  // Each workspace's task: the title of the session (or sessions) whose turns
+  // run in it, newest first. The workspace list names no session.
+  const taskOfWorkspace = useMemo(() => {
+    const by = new Map<string, string[]>();
+    for (const s of allSessions ?? []) {
+      if (!s.workspace) continue;
+      const t = s.title || s.id;
+      by.set(s.workspace, [...(by.get(s.workspace) ?? []), t]);
+    }
+    return (ws: string) => by.get(ws)?.join(', ');
+  }, [allSessions]);
   const loading = allSessions === null;
   // A session's title, from the sessions the cockpit holds (GET /sessions).
   // Overview views (the queue) name a turn by this session fact, not by its
@@ -960,6 +982,8 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
       getInstructions: () => d.getInstructions!(),
       putInstructions: (t, etag) => d.putInstructions!(t, etag),
       findConfig: d.findConfig ? () => d.findConfig!() : undefined,
+      getCompaction: d.getCompaction ? () => d.getCompaction!() : undefined,
+      putCompaction: d.putCompaction ? (c, etag) => d.putCompaction!(c, etag) : undefined,
     };
   }, [dataSource]);
   // The apps the source serves, for the Apps page. Absent when the source has
@@ -1076,7 +1100,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // refused for one.
   // The latest workspace.updated result per workspace, as streamed.
   const [lastUpdates, setLastUpdates] = useState<Record<string, { result?: string; conflicts?: string[] }>>({});
-  const [draft, setDraft] = useState<{ id: number; req: RunRequest; title?: string; session?: string; workspace: string } | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
   const draftSeq = useRef(0);
   const startRun = async (req: RunRequest, title?: string) => {
     if (req.prompt.trim() === '') {
@@ -1101,48 +1125,72 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
       return;
     }
     const gen = nextSend();
-    await launch(req, title, gen);
-    setDraft(null);
+    // Its queued copy goes when its turn is listed (it starts): matched by the
+    // turn's id the reply names.
+    const key = req.idempotency_key ?? messageKey();
+    const started = await launch(req, title, gen);
+    // The new session shows at once, its first message in it, queued until
+    // its turn starts: a draft that already has its session, read from its
+    // pending list until the session is listed and replaces it.
+    const id = ++draftSeq.current;
+    const p: Pending = {
+      key,
+      prompt: req.prompt,
+      turnsAtSend: 0,
+      state: started.state === 'queued' ? 'queued' : 'accepted',
+      ahead: started.ahead,
+      turn: started.turn,
+      queuedAt: started.state === 'queued' ? steadyNow() : undefined,
+      agent: req.agent,
+    };
+    setPendingBySession((m) => ({ ...m, [draftKey(id)]: [p] }));
+    setPendingAlias((m) => ({ ...m, [started.session]: draftKey(id) }));
+    draftRun.current = { id, started: Promise.resolve(started) };
+    // Only when nothing was started, sent or picked since: a late reply never
+    // pulls the person away (awaitTurn's rule).
+    const current = gen === sendGenRef.current;
+    if (current && shownRef.current?.session.id !== started.session) {
+      setDraft({ id, req: { ...req, prompt: '' }, title, workspace: '', session: started.session });
+    } else if (current) {
+      setDraft(null);
+    }
     setNewSession(null);
     columns.forward('convo');
   };
   // The draft's first message, once sent. A message sent after it goes to
   // the session that one opens, never to a second new session.
   const draftRun = useRef<{ id: number; started: Promise<Started> } | null>(null);
-  const sendDraft = draft
-    ? async (prompt: string, agent: string | undefined, key: string): Promise<Started> => {
-        const gen = nextSend();
-        const id = draft.id;
-        const first = draftRun.current?.id === id ? draftRun.current.started : null;
-        if (first && dataSource.sendMessage) {
-          const { session } = await first;
-          const next = await dataSource.sendMessage(session, { prompt, agent, idempotency_key: key });
-          refreshQueue?.();
-          return next;
-        }
-        const run = launchInWorkspace(
-          draft.workspace,
-          { ...draft.req, agent: agent ?? draft.req.agent, prompt, idempotency_key: key },
-          draft.title,
-          gen
-        );
-        draftRun.current = { id, started: run };
-        let started: Started;
-        try {
-          started = await run;
-        } catch (err) {
-          // Refused (e.g. the agent cannot start, not the folder -- that was
-          // checked when the workspace was made). The message stays as a failed
-          // card the person can edit and send again, the agent picked right
-          // there.
-          if (draftRun.current?.started === run) draftRun.current = null;
-          throw err;
-        }
-        // The draft stays on screen, with its message, until its session is shown.
-        setDraft((d) => (d && d.id === id ? { ...d, session: started.session } : d));
-        return started;
-      }
-    : undefined;
+  const sendInDraft = async (d: Draft, prompt: string, agent: string | undefined, key: string): Promise<Started> => {
+    const gen = nextSend();
+    const id = d.id;
+    const first = draftRun.current?.id === id ? draftRun.current.started : null;
+    if (first && dataSource.sendMessage) {
+      const { session } = await first;
+      const next = await dataSource.sendMessage(session, { prompt, agent, idempotency_key: key });
+      refreshQueue?.();
+      return next;
+    }
+    const run = launchInWorkspace(d.workspace, { ...d.req, agent: agent ?? d.req.agent, prompt, idempotency_key: key }, d.title, gen);
+    draftRun.current = { id, started: run };
+    let started: Started;
+    try {
+      started = await run;
+    } catch (err) {
+      // Refused (e.g. the agent cannot start, not the folder -- that was
+      // checked when the workspace was made). The message stays as a failed
+      // card the person can edit and send again, the agent picked right
+      // there.
+      if (draftRun.current?.started === run) draftRun.current = null;
+      throw err;
+    }
+    // The session reads the draft's messages from here on, so the first one,
+    // queued, carries over when the session replaces the draft.
+    setPendingAlias((m) => ({ ...m, [started.session]: draftKey(id) }));
+    // The draft stays on screen, with its message, until its session is shown.
+    setDraft((cur) => (cur && cur.id === id ? { ...cur, session: started.session } : cur));
+    return started;
+  };
+  const sendDraft = draft ? (prompt: string, agent: string | undefined, key: string) => sendInDraft(draft, prompt, agent, key) : undefined;
   // The draft's session is on screen: the draft is done.
   useEffect(() => {
     if (draft?.session && shown?.session.id === draft.session) setDraft(null);
@@ -1193,6 +1241,11 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // The messages sent from each session that are not turns yet, kept here so
   // they outlive a switch to another session and back.
   const [pendingBySession, setPendingBySession] = useState<Record<string, Pending[]>>({});
+  // A session started from a draft keeps the draft's messages: its pending
+  // list is the draft's (draftKey), so the first message, still queued, does
+  // not leave the screen when the session replaces the draft.
+  const [pendingAlias, setPendingAlias] = useState<Record<string, string>>({});
+  const pendingKey = (session: string) => pendingAlias[session] ?? session;
   // What the person had typed in each session's box, so a switch to another
   // session and back shows it again. Read once, when the session is shown.
   const draftsRef = useRef(new Map<string, string>());
@@ -1204,9 +1257,10 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   const onPending = useCallback(
     (update: PendingUpdate) => {
       if (!shownSessionId) return;
-      setPendingBySession((m) => ({ ...m, [shownSessionId]: update(m[shownSessionId] ?? []) }));
+      const k = pendingAlias[shownSessionId] ?? shownSessionId;
+      setPendingBySession((m) => ({ ...m, [k]: update(m[k] ?? []) }));
     },
-    [shownSessionId]
+    [shownSessionId, pendingAlias]
   );
   // Reads a queued message's turn; the same function across renders, so the
   // poll that uses it is not restarted by every turn-list refresh.
@@ -1286,6 +1340,14 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // (its run.ended reads the turn list again). A 409 means it had ended
   // already: read the list again now. Any other refusal rejects with the
   // API's words, for the conversation to show.
+  // Cancel (or Edit) a message still queued: stop its turn before it starts.
+  const cancelQueued = dataSource.stopTurn
+    ? async (turn: string) => {
+        const r = await dataSource.stopTurn!(turn);
+        refreshQueue?.();
+        return r;
+      }
+    : undefined;
   const stopTurn = dataSource.stopTurn
     ? async (turn: Turn) => {
         if (stoppingRef.current.has(turn.id)) return;
@@ -1555,6 +1617,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   if (pageShown && page === 'runners') {
     return (
       <RunnersPage
+        taskOf={taskOfWorkspace}
         runners={runners.runners}
         error={runners.error}
         pending={runners.pending}
@@ -1690,6 +1753,9 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           }}
           resumable
           onSend={sendDraft}
+          pending={pendingBySession[draftKey(draft.id)] ?? NO_PENDING}
+          onCancelQueued={cancelQueued}
+          onPending={(u: PendingUpdate) => setPendingBySession((m) => ({ ...m, [draftKey(draft.id)]: u(m[draftKey(draft.id)] ?? []) }))}
           selectedTurn={null}
           onSelectTurn={() => undefined}
           level="session"
@@ -1716,9 +1782,10 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           onDraftChange={onDraftChange}
           queuedTurn={queuedTurn}
           keyed={!!dataSource.queuedTurn}
-          pending={pendingBySession[sessionView.id] ?? NO_PENDING}
+          pending={pendingBySession[pendingKey(sessionView.id)] ?? NO_PENDING}
           onPending={onPending}
           onStop={stopTurn}
+          onCancelQueued={cancelQueued}
           stopping={stopping}
           discardedTurns={discardedTurns}
           live={dataSource.subscribe ? liveTurns[sessionView.id] : undefined}

@@ -42,7 +42,7 @@ import {
   TurnText,
 } from '../types';
 import { FolderInfo } from './folders';
-import { ConfigFound, FoundPath, Policy, SettingsInfo, Versioned } from './settings';
+import { Compaction, ConfigFound, FoundPath, Policy, SettingsInfo, Versioned } from './settings';
 import { COMMAND_KINDS, shellRun } from './shell';
 import { ApiTurn } from './jobs';
 import { extractCleanPrompt, turnDetail, turnOrigin } from './turns';
@@ -562,6 +562,17 @@ export class LiveDataSource implements DataSource {
   async getInstructions(): Promise<Versioned<string>> {
     const r = await this.versioned<{ text: string }>('GET', '/api/v0/settings/instructions');
     return { value: r.value.text ?? '', etag: r.etag };
+  }
+
+  // GET and PUT /api/v0/settings/compaction: the compaction points and the
+  // history budget. A PUT sends every field as read with the one changed: a
+  // field left out goes back to its default.
+  async getCompaction(): Promise<Versioned<Compaction>> {
+    return this.versioned<Compaction>('GET', '/api/v0/settings/compaction');
+  }
+
+  async putCompaction(c: Compaction, etag: string): Promise<Versioned<Compaction>> {
+    return this.versioned<Compaction>('PUT', '/api/v0/settings/compaction', etag, c);
   }
 
   async putInstructions(text: string, etag: string): Promise<Versioned<string>> {

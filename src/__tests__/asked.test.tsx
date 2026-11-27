@@ -373,7 +373,7 @@ describe('asked work across sessions', () => {
     const queue: QueueSource = { address: 'http://cockpit.test', pollMs: 10, listTurns: async () => rows, stop: async () => {} };
     const lr = liveReplay([...parentIdle, ...childRow], { listAgents: async () => SAVED });
     const r = await render(<App dataSource={lr.source} queue={queue} />);
-    const line = () => r.container.querySelector('.m-asked')?.textContent ?? null;
+    const line = () => r.container.querySelector('.m-asked .asked-line')?.textContent ?? null;
     const dotted = () =>
       Array.from(r.container.querySelectorAll('#sessions [data-session]')).some((x) => rowSession(x) === 'p' && x.querySelector('.s-icons .live'));
     // Just queued: it waits like a sent message, then names the runner.
@@ -405,3 +405,42 @@ async function waitFor(check: () => boolean, what: string) {
   }
   throw new Error('timed out waiting for ' + what);
 }
+
+describe('an asked-work line names the session and why it waits', () => {
+  const at = (id: string, f: Partial<ApiTurn>): ApiTurn => ({ id, session: 'b1', agent: 'codex', agent_id: 'codex', folder: '/f', state: 'queued', ...f }) as ApiTurn;
+  const sessions = [
+    { id: 'c1', title: 'coordinator' },
+    { id: 'b1', title: 'Build the export button for the reports page and its tests', origin: { kind: 'asked', session: 'c1', turn: 'T1' } },
+  ] as never[];
+  const turns = [
+    at('tb2', { number: 2, state: 'running', asked: '2026-11-27T10:00:00Z', started: '2026-11-27T10:00:01Z' }),
+    at('tb3', { number: 3, state: 'queued', asked: '2026-11-27T10:01:00Z', ahead: 1 }),
+  ];
+
+  it('carries the asked session’s title and the turn it waits behind, from the turn’s own fields', async () => {
+    const { askedWork } = await import('../data/askedWork');
+    const ons = [{ id: 'on_1', event: 'turn.completed', turn: 'tb3', session: 'c1' }];
+    const [w] = askedWork(sessions, 'c1', (s) => turns.filter((t) => t.session === s), ons, (id) => turns.find((t) => t.id === id));
+    expect(w.title).toBe('Build the export button for the reports page and its tests');
+    expect(w.ahead).toBe(1);
+    expect(w.behind).toEqual({ turn: 'tb2', number: 2, state: 'running' });
+    expect(askedLine(w, 'Codex', false, false, Date.now())).toBe('Codex queued · behind turn 2, running');
+    // Behind a turn the list does not have: how many, not which.
+    expect(askedLine({ ...w, behind: undefined, ahead: 2 }, 'Codex', true, false, Date.now())).toBe('Codex review queued · behind 2 earlier turns');
+    // Nothing ahead: the wait for a runner, as before.
+    expect(askedLine({ ...w, behind: undefined, ahead: undefined }, 'Codex', false, false, Date.now(), RUNNER_WAIT_MS + 1)).toBe(
+      'Codex queued · waiting for a runner'
+    );
+  });
+
+  it('the line shows the title first, cut short, whole on hover', async () => {
+    const s = { id: 'c1', title: 'coordinator', agent: 'claude', turns: 0, turnsList: [], usage: createEmptyUsage() } as unknown as SessionDetail;
+    const asked = [{ id: 'b1', agent: 'codex', state: 'queued' as const, title: sessions[1]['title' as never] as unknown as string, ahead: 1, behind: { turn: 'tb2', number: 2, state: 'running' } }];
+    const r = await render(<ConvoColumn session={s} selectedTurn={null} onSelectTurn={() => {}} asked={asked} />);
+    const t = r.container.querySelector('.m-asked .asked-title')!;
+    expect(t.getAttribute('title')).toBe('Build the export button for the reports page and its tests');
+    expect(t.textContent).toBe('Build the export button for the reports page…');
+    expect(r.container.querySelector('.m-asked')!.textContent).toContain('queued · behind turn 2, running');
+    r.unmount();
+  });
+});

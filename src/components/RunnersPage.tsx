@@ -45,6 +45,8 @@ interface RunnersPageProps extends RunnersState {
   workspaces?: WorkspacesApi;
   // The folders the service lists, to name a workspace's folder by its ref.
   folders?: FolderInfo[];
+  // The title of the session whose turns run in a workspace: its task.
+  taskOf?: (workspace: string) => string | undefined;
 }
 
 const Sep = () => <span className="sep">·</span>;
@@ -53,7 +55,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 // The runners page (/runners), in the mockup's three columns: every machine,
 // one runner each, with the machines waiting for approval on top; the picked
 // one, with what it reported; and the queue.
-export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pending, reload, onBack, onApps, onRunners, onSettings, runnersOnline, version, sourceLabel, streamUp, onDisconnect, disconnectLabel, queue, actions, workspaces, folders }) => {
+export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pending, reload, onBack, onApps, onRunners, onSettings, runnersOnline, version, sourceLabel, streamUp, onDisconnect, disconnectLabel, queue, actions, workspaces, folders, taskOf }) => {
   const [picked, setPicked] = useState<string | null>(null);
   const ws = useWorkspaces(workspaces);
   const waiting = pending ?? [];
@@ -68,8 +70,8 @@ export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pendin
   // the service's own machine. The API does not say which runner that is, so
   // the first runner listed takes them: the only one, in agentbus up.
   const home = runners?.find((r) => r.role !== 'connector' && r.machine);
-  const wsOf = (r: RunnerInfo): WorkspaceRow[] =>
-    (ws.rows ?? []).filter((w) => (w.machine ? w.machine === r.machine : r.id === home?.id));
+  const onMachine = (r: RunnerInfo) => (w: WorkspaceRow) => (w.machine ? w.machine === r.machine : r.id === home?.id);
+  const wsOf = (r: RunnerInfo): WorkspaceRow[] => (ws.rows ?? []).filter(onMachine(r));
   const after = () => {
     setPicked(null);
     reload?.();
@@ -106,7 +108,7 @@ export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pendin
             actions={actions}
             onDone={after}
             workspaces={
-              workspaces && { rows: wsOf(shown), error: ws.error, folders, close: workspaces.close, closing: ws.closing, stalled: ws.stalled, onClosing: ws.onClosing, outcome: workspaces.outcome, onClosed: ws.onClosed }
+              workspaces && { rows: wsOf(shown), closedRows: ws.closedRows.filter(onMachine(shown)), taskOf, error: ws.error, folders, close: workspaces.close, closing: ws.closing, stalled: ws.stalled, onClosing: ws.onClosing, outcome: workspaces.outcome, onClosed: ws.onClosed }
             }
           />
         ) : (
@@ -245,6 +247,8 @@ interface RunnerWorkspaces {
   folders?: FolderInfo[];
   close: (workspace: string) => Promise<CloseState>;
   closing: ReadonlySet<string>;
+  closedRows?: WorkspaceRow[];
+  taskOf?: (workspace: string) => string | undefined;
   stalled?: ReadonlyMap<string, number>;
   onClosing: (workspace: string) => void;
   outcome?: (workspace: string, event: string) => Promise<WorkspaceOutcome>;
@@ -363,7 +367,7 @@ const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: (
         {workspaces && (
           <>
             {workspaces.error && <Notice kind="error">{workspaces.error}</Notice>}
-            <WorkspacesTable rows={workspaces.rows} folders={workspaces.folders} close={workspaces.close} closing={workspaces.closing} stalled={workspaces.stalled} onClosing={workspaces.onClosing} outcome={workspaces.outcome} onClosed={workspaces.onClosed} />
+            <WorkspacesTable rows={workspaces.rows} closedRows={workspaces.closedRows} taskOf={workspaces.taskOf} folders={workspaces.folders} close={workspaces.close} closing={workspaces.closing} stalled={workspaces.stalled} onClosing={workspaces.onClosing} outcome={workspaces.outcome} onClosed={workspaces.onClosed} />
           </>
         )}
         {actions && !r.online && (

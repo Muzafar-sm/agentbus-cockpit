@@ -135,4 +135,19 @@ export interface SettingsApi {
   // machine (GET /api/v0/folders/{ref}/home-files). Absent: a source
   // without the route.
   findConfig?(): Promise<ConfigFound>;
+  // GET and PUT /api/v0/settings/compaction: the compaction points and the
+  // history budget. Absent: a source without the route, and no budget control.
+  getCompaction?(): Promise<Versioned<Compaction>>;
+  putCompaction?(c: Compaction, etag: string): Promise<Versioned<Compaction>>;
+}
+
+// GET /api/v0/settings/compaction, every field filled: each vendor's
+// compaction point, and budget, AgentBus's own history budget. Each is a share
+// of the model's window in (0, 1].
+export interface Compaction {
+  claude?: number;
+  codex?: number;
+  opencode?: number;
+  gemini?: number;
+  budget?: number;
 }

@@ -41,6 +41,7 @@ export const closeStalled = (askedMs: number, now: number) => {
 // copies again shows again.
 export function useWorkspaces(api?: WorkspacesApi): {
   rows: WorkspaceRow[] | null | undefined;
+  closedRows: WorkspaceRow[];
   error: string | null;
   closing: ReadonlySet<string>;
   stalled: ReadonlyMap<string, number>;
@@ -104,6 +105,11 @@ export function useWorkspaces(api?: WorkspacesApi): {
   const open = rows
     ?.filter((w) => w.sandbox && !w.closed && !done.has(w.workspace))
     .sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
+  // The copies removed (Close, or AgentBus putting them away), newest removal
+  // first; one whose close outcome came before the list says so counts too.
+  const closedRows = (rows ?? [])
+    .filter((w) => w.sandbox && (!!w.closed || done.has(w.workspace)))
+    .sort((a, b) => Date.parse(b.closed ?? '') - Date.parse(a.closed ?? '') || Date.parse(b.created) - Date.parse(a.created));
   const onClosing = useCallback((id: string) => {
     const at = Date.now();
     setNow(at);
@@ -126,8 +132,25 @@ export function useWorkspaces(api?: WorkspacesApi): {
     if (now - at > CLOSE_STALL_MS) stalled.set(id, at);
     else closing.add(id);
   }
-  return { rows: rows === null ? null : open, error, closing, stalled, onClosing, onClosed };
+  return { rows: rows === null ? null : open, closedRows, error, closing, stalled, onClosing, onClosed };
 }
+
+// A workspace's state on the Runners page: open (its copy is there), closing
+// (a Close asked here has not run yet), closed (Close removed the copy), or put
+// away (AgentBus removed it itself once its work was settled and quiet: its
+// last action is that workspace.closed, which carries put_away).
+export type WorkspaceState = 'open' | 'closing' | 'closed' | 'put away';
+export function workspaceState(w: WorkspaceRow, closing = false): WorkspaceState {
+  if (!w.closed) return closing ? 'closing' : 'open';
+  const last = w.last_action as { kind?: string; put_away?: unknown } | undefined;
+  return last?.kind === 'workspace.closed' && last.put_away ? 'put away' : 'closed';
+}
+const STATE_TIP: Record<WorkspaceState, string> = {
+  open: 'Its copy is on the machine.',
+  closing: CLOSE_WAITING,
+  closed: 'Close removed its copy. The next turn makes a fresh one.',
+  'put away': 'AgentBus removed its copy once its work was applied or discarded and it sat quiet. The next turn makes a fresh one.',
+};
 
 // A workspace has changes not applied when its latest turn with changes is
 // not the one its latest apply went up to.
@@ -156,6 +179,10 @@ function folderNames(w: WorkspaceRow, known: FolderInfo[]): { names: string; pat
 // refusal or a failed close shows under the row in the API's words.
 export const WorkspacesTable: React.FC<{
   rows: WorkspaceRow[];
+  // The machine's closed and put-away copies, behind "Show closed".
+  closedRows?: WorkspaceRow[];
+  // The title of the session (or sessions) whose turns run in a workspace.
+  taskOf?: (workspace: string) => string | undefined;
   folders?: FolderInfo[];
   close?: (workspace: string) => Promise<CloseState>;
   closing?: ReadonlySet<string>;
@@ -163,10 +190,11 @@ export const WorkspacesTable: React.FC<{
   onClosing: (workspace: string) => void;
   outcome?: (workspace: string, event: string) => Promise<WorkspaceOutcome>;
   onClosed?: (workspace: string, ok: boolean) => void;
-}> = ({ rows, folders = [], close, closing, stalled, onClosing, outcome, onClosed }) => {
+}> = ({ rows, closedRows = [], taskOf, folders = [], close, closing, stalled, onClosing, outcome, onClosed }) => {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<{ id: string; text: string } | null>(null);
-  if (rows.length === 0) return null;
+  const [showClosed, setShowClosed] = useState(false);
+  if (rows.length === 0 && closedRows.length === 0) return null;
   const doClose = (id: string) => {
     if (!close) return;
     setBusy(id);
@@ -198,73 +226,86 @@ export const WorkspacesTable: React.FC<{
       }
     );
   };
-  const cols = close ? 4 : 3;
+  const cols = close ? 5 : 4;
+  const row = (w: WorkspaceRow, gone: boolean) => {
+    const { names, paths } = folderNames(w, folders);
+    const waiting = !!closing?.has(w.workspace) || busy === w.workspace;
+    const stalledAt = stalled?.get(w.workspace);
+    // One whose close outcome came before the list says closed reads closed.
+    const state = gone && !w.closed ? 'closed' : workspaceState(w, waiting);
+    const task = taskOf?.(w.workspace);
+    return (
+      <React.Fragment key={w.workspace}>
+        <tr data-workspace={w.workspace} data-state={state} className={gone ? 'ws-gone' : undefined}>
+          <td className="ws-n">
+            <div className={`ws-task${task ? '' : ' dim'}`}>{task || 'No session yet'}</div>
+            <div className="ws-sub dim" title={paths || undefined}>
+              {names} · <code className="ws-id">{w.workspace}</code>
+            </div>
+          </td>
+          <td className="t ws-age" title={new Date(w.created).toLocaleString()}>
+            {formatAgo(w.created) || '—'}
+          </td>
+          <td className={`ws-state st-${state.replace(' ', '-')}`} title={STATE_TIP[state] + (w.closed ? ` (${new Date(w.closed).toLocaleString()})` : '')}>
+            {state}
+          </td>
+          <td>
+            {!gone && hasUnapplied(w) && (
+              <span className="s-ic ws-unapplied" title={UNAPPLIED} aria-label={UNAPPLIED}>
+                <UnappliedIcon />
+              </span>
+            )}
+          </td>
+          {close && (
+            <td className="ws-act">
+              {!gone && (
+                <Button kind="link" className="ws-close" disabled={busy === w.workspace} title={waiting ? CLOSE_WAITING : undefined} onClick={() => doClose(w.workspace)}>
+                  {waiting ? 'Closing…' : 'Close'}
+                </Button>
+              )}
+            </td>
+          )}
+        </tr>
+        {!gone && stalledAt !== undefined && err?.id !== w.workspace && (
+          <tr className="ws-err-row">
+            <td colSpan={cols} className="ws-err ws-stalled" role="status">
+              {closeStalled(stalledAt, Date.now())}
+            </td>
+          </tr>
+        )}
+        {err?.id === w.workspace && (
+          <tr className="ws-err-row">
+            <td colSpan={cols} className="bad ws-err">
+              {err.text}
+            </td>
+          </tr>
+        )}
+      </React.Fragment>
+    );
+  };
   return (
     <>
       <div className="sub-h">Workspaces</div>
       <table className="grid rn-workspaces" aria-label="Workspaces">
         <thead>
           <tr>
-            <th>Folder</th>
+            <th>Task</th>
             <th>Made</th>
+            <th>State</th>
             <th title={UNAPPLIED}>Not applied</th>
             {close && <th aria-label="Close" />}
           </tr>
         </thead>
         <tbody>
-          {rows.map((w) => {
-            const { names, paths } = folderNames(w, folders);
-            const waiting = !!closing?.has(w.workspace);
-            const stalledAt = stalled?.get(w.workspace);
-            return (
-              <React.Fragment key={w.workspace}>
-                <tr data-workspace={w.workspace}>
-                  <td className="ws-n" title={paths || undefined}>
-                    {names}
-                  </td>
-                  <td className="t ws-age" title={new Date(w.created).toLocaleString()}>
-                    {formatAgo(w.created) || '—'}
-                  </td>
-                  <td>
-                    {hasUnapplied(w) && (
-                      <span className="s-ic ws-unapplied" title={UNAPPLIED} aria-label={UNAPPLIED}>
-                        <UnappliedIcon />
-                      </span>
-                    )}
-                  </td>
-                  {close && (
-                    <td className="ws-act">
-                      <Button
-                        kind="link"
-                        className="ws-close"
-                        disabled={busy === w.workspace}
-                        title={waiting ? CLOSE_WAITING : undefined}
-                        onClick={() => doClose(w.workspace)}
-                      >
-                        {busy === w.workspace || waiting ? 'Closing…' : 'Close'}
-                      </Button>
-                    </td>
-                  )}
-                </tr>
-                {stalledAt !== undefined && err?.id !== w.workspace && (
-                  <tr className="ws-err-row">
-                    <td colSpan={cols} className="ws-err ws-stalled" role="status">
-                      {closeStalled(stalledAt, Date.now())}
-                    </td>
-                  </tr>
-                )}
-                {err?.id === w.workspace && (
-                  <tr className="ws-err-row">
-                    <td colSpan={cols} className="bad ws-err">
-                      {err.text}
-                    </td>
-                  </tr>
-                )}
-              </React.Fragment>
-            );
-          })}
+          {rows.map((w) => row(w, false))}
+          {showClosed && closedRows.map((w) => row(w, true))}
         </tbody>
       </table>
+      {closedRows.length > 0 && (
+        <Button kind="link" className="ws-show-closed" onClick={() => setShowClosed((v) => !v)}>
+          {showClosed ? 'Hide closed' : `Show closed (${closedRows.length})`}
+        </Button>
+      )}
     </>
   );
 };

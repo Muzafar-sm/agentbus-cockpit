@@ -23,6 +23,31 @@ export interface AskedWork {
   state: 'queued' | 'running';
   // When the work started running (ms), when the turn list says.
   sinceMs?: number;
+  // The asked session's title, from the sessions list.
+  title?: string;
+  // Why queued work waits, from the turn's own fields: ahead is how many of
+  // the asked session's turns are before it, and behind the one directly
+  // before it (its number and state) when the turn list has it.
+  ahead?: number;
+  behind?: { turn: string; number?: number; state: string };
+}
+
+// The turn directly before a queued turn in its own session: the latest asked
+// of those still queued or running. Undefined when the list has none.
+export function blockerOf(t: ApiTurn, turns: ApiTurn[]): AskedWork['behind'] {
+  const when = (x: ApiTurn) => x.asked || x.started || '';
+  const before = turns
+    .filter((x) => x.id !== t.id && (x.state === 'running' || x.state === 'queued') && (!when(t) || when(x) <= when(t)))
+    .sort((a, b) => when(a).localeCompare(when(b)));
+  const last = before[before.length - 1];
+  return last ? { turn: last.id, number: last.number, state: last.state } : undefined;
+}
+
+// Why a queued turn waits, from its fields and its session's turns.
+function waitOf(t: ApiTurn | undefined, turns: ApiTurn[]): Pick<AskedWork, 'ahead' | 'behind'> {
+  if (!t || t.state !== 'queued') return {};
+  const ahead = typeof t.ahead === 'number' && t.ahead > 0 ? t.ahead : undefined;
+  return ahead ? { ahead, behind: blockerOf(t, turns) } : {};
 }
 
 // The work `session` waits on that is queued or running, oldest first.
@@ -45,25 +70,31 @@ export function askedWork(
   ons?: ApiOn[] | null,
   turnById?: (turn: string) => ApiTurn | undefined
 ): AskedWork[] {
-  if (ons && turnById) return waitedOn(sessions, session, ons, turnById);
+  if (ons && turnById) return waitedOn(sessions, session, ons, turnById, turnsOf);
   const out: AskedWork[] = [];
   for (const s of sessions) {
     if (s.origin?.kind !== 'asked' || s.origin.session !== session) continue;
     const turns = turnsOf?.(s.id) ?? [];
     const running = turns.find((t) => t.state === 'running');
-    const base = { id: s.id, agent: s.first_agent_id ?? running?.agent_id ?? turns[0]?.agent_id ?? s.agent, by: s.origin.turn };
+    const base = { id: s.id, agent: s.first_agent_id ?? running?.agent_id ?? turns[0]?.agent_id ?? s.agent, by: s.origin.turn, title: s.title || undefined };
     if (running || s.open) {
       const at = running?.started ? Date.parse(running.started) : NaN;
       out.push({ ...base, state: 'running', sinceMs: isNaN(at) ? undefined : at });
     } else if (turns.some((t) => t.state === 'queued')) {
-      out.push({ ...base, state: 'queued' });
+      out.push({ ...base, state: 'queued', ...waitOf(turns.find((t) => t.state === 'queued'), turns) });
     }
   }
   return out.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 // The turns the ons say `session` waits on: see askedWork.
-function waitedOn(sessions: SessionSummary[], session: string, ons: ApiOn[], turnById: (turn: string) => ApiTurn | undefined): AskedWork[] {
+function waitedOn(
+  sessions: SessionSummary[],
+  session: string,
+  ons: ApiOn[],
+  turnById: (turn: string) => ApiTurn | undefined,
+  turnsOf?: (session: string) => ApiTurn[]
+): AskedWork[] {
   const out: AskedWork[] = [];
   const seen = new Set<string>();
   for (const on of ons) {
@@ -81,6 +112,8 @@ function waitedOn(sessions: SessionSummary[], session: string, ons: ApiOn[], tur
       review: t.kind === 'review' || undefined,
       state: t.state === 'running' ? 'running' : 'queued',
       sinceMs: isNaN(at) ? undefined : at,
+      title: row?.title || undefined,
+      ...waitOf(t, turnsOf?.(t.session) ?? []),
     });
   }
   return out.sort((a, b) => a.id.localeCompare(b.id) || (a.turn ?? '').localeCompare(b.turn ?? ''));
@@ -129,6 +162,12 @@ export function queuedWaitMs(id: string, at = steadyNow()): number {
 export function askedLine(w: AskedWork, name: string, review: boolean, askerRunning: boolean, now: number, waitedMs?: number): string {
   if (w.state === 'queued') {
     if (askerRunning) return `${name}${review ? ' review' : ''} queued · starts when this turn ends`;
+    // Behind its own session's earlier turns: says which, from the turn list.
+    if (w.ahead) {
+      const b = w.behind;
+      const which = b ? `behind ${b.number ? `turn ${b.number}` : 'its earlier turn'}${b.state === 'running' ? ', running' : ', queued'}` : `behind ${w.ahead === 1 ? '1 earlier turn' : `${w.ahead} earlier turns`}`;
+      return `${name}${review ? ' review' : ''} queued · ${which}`;
+    }
     if (waitedMs !== undefined && waitedMs < RUNNER_WAIT_MS) return review ? `Waiting for the ${name} review` : `Waiting for ${name}`;
     return `${name}${review ? ' review' : ''} queued · waiting for a runner`;
   }

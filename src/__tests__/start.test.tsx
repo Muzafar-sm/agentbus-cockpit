@@ -4,6 +4,7 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
+import { TOO_LATE } from '../components/ConvoColumn';
 import { checkConnection } from '../data/connection';
 import { LiveDataSource } from '../data/LiveDataSource';
 import { buildTurns } from '../data/turns';
@@ -115,6 +116,8 @@ function fakeService(opts: {
   makeSession?: (body: { workspace?: string; title?: string }) => Response | Promise<Response>;
   // POST /turns with session: a session's next turn.
   messages?: (id: string, body: unknown) => Response | Promise<Response>;
+  // POST /turns/<id>/stop. Without it the service answers 404.
+  stop?: (turn: string) => Response | Promise<Response>;
   // Turns per page of GET /turns.
   turnPage?: number;
   // PATCH /sessions/<id>: a rename. Without it the row's title changes.
@@ -191,6 +194,8 @@ function fakeService(opts: {
       const b = body as { workspace?: string; title?: string };
       return opts.makeSession ? opts.makeSession(b) : json({ session: 'new1', workspace: b.workspace, title: b.title }, 201);
     }
+    const stopAt = /^\/api\/v0\/turns\/([^/]+)\/stop$/.exec(p);
+    if (stopAt && method === 'POST' && opts.stop) return opts.stop(decodeURIComponent(stopAt[1]));
     if (p === '/api/v0/turns' && method === 'POST') {
       // The freshly created session is 'new1'; its first turn is 'Tn'. An
       // existing session's next turn is 'Tnext' (or the messages hook).
@@ -373,6 +378,39 @@ describe('New session', () => {
     await settle();
     expect(r.container.querySelector('#sessions .sess.on code')?.textContent).toBe('new1');
     expect(r.container.querySelector('.tb .bubble')?.textContent).toBe('read the README');
+    r.unmount();
+  });
+
+  it('a queued first message shows in the new session at once, and stays until its turn starts', async () => {
+    const svc = fakeService({
+      sessions: [row('s1')],
+      events: { s1: oneTurn('s1', 'hi') },
+      agents: AGENTS,
+      runs: () => json({ session: 'new1', turn: 'Tq', state: 'queued', ahead: 0 }, 202),
+    });
+    const r = await mount(svc);
+    await click(r.container.querySelector('#sessions button.new-session'));
+    await settle();
+    const dialog = r.container.querySelector('.new-dialog')!;
+    await setValue(dialog.querySelector('input[name="folder"]'), '/Users/ana/x');
+    await setValue(dialog.querySelector('textarea[name="prompt"]'), 'fix the build');
+    await submitForm(dialog);
+    await settle();
+    // Not listed yet, no turn started: the message is already there, queued.
+    const queued = () => r.container.querySelector('#convo .tb.pending.queued');
+    expect(queued()?.querySelector('.bubble')?.textContent).toBe('fix the build');
+    // The session is listed; its turn is still queued (left out of the turn
+    // list): the same message stays, queued.
+    svc.state.sessions = [row('new1', { open: true, resumable: true, last: '2026-11-05T10:00:00Z' }), row('s1')];
+    await svc.push(ev({ session: 'new1', kind: 'session.registered', agent: 'claude', folder: '/Users/ana/x' }));
+    await settle();
+    expect(r.container.querySelector('#convo')?.getAttribute('data-session')).toBe('new1');
+    expect(queued()?.querySelector('.bubble')?.textContent).toBe('fix the build');
+    // Its turn starts: the turn shows the message, and the queued copy goes.
+    await svc.push(ev({ session: 'new1', kind: 'turn.started', turn: 'Tq', exchange: 'xq', text: 'fix the build' }));
+    await settle();
+    expect(queued()).toBeNull();
+    expect([...r.container.querySelectorAll('#convo .bubble')].map((b) => b.textContent)).toEqual(['fix the build']);
     r.unmount();
   });
 
@@ -1329,6 +1367,57 @@ describe('The prompt box', () => {
     });
     expect(state()).toBe('queued · waiting for a runner');
     r.unmount();
+  });
+
+  describe('a message still queued', () => {
+    const queuedSvc = (stop: (turn: string) => Response) =>
+      fakeService({
+        sessions: [row('s1', { resumable: true })],
+        events: { s1: oneTurn('s1', 'first') },
+        messages: (id) => json({ session: id, turn: 't_q', state: 'queued', ahead: 1 }, 202),
+        stop,
+      });
+    const sendQueued = async (svc: ReturnType<typeof fakeService>) => {
+      const r = await mount(svc);
+      await setValue(box(r), 'make it blue');
+      await submitForm(r.container.querySelector('#c-reply form'));
+      await settle();
+      return r;
+    };
+    const row_ = (r: { container: HTMLElement }) => r.container.querySelector('.tb.pending.queued');
+    const stops = (svc: ReturnType<typeof fakeService>) => svc.reqs.filter((q) => q.method === 'POST' && q.path.endsWith('/stop')).map((q) => q.path);
+
+    it('Cancel stops its turn before it starts, and the message goes', async () => {
+      const svc = queuedSvc(() => json({}, 202));
+      const r = await sendQueued(svc);
+      expect(row_(r)!.querySelector('.bubble')!.textContent).toBe('make it blue');
+      await click(row_(r)!.querySelector('.pend-cancel'));
+      await settle();
+      expect(stops(svc)).toEqual(['/api/v0/turns/t_q/stop']);
+      expect(row_(r)).toBeNull();
+      expect(box(r).value).toBe('');
+      r.unmount();
+    });
+
+    it('Edit stops it and puts its text back in the box, to send again as a new turn', async () => {
+      const svc = queuedSvc(() => json({}, 202));
+      const r = await sendQueued(svc);
+      await click(row_(r)!.querySelector('.pend-edit'));
+      await settle();
+      expect(stops(svc)).toEqual(['/api/v0/turns/t_q/stop']);
+      expect(row_(r)).toBeNull();
+      expect(box(r).value).toBe('make it blue');
+      r.unmount();
+    });
+
+    it('a Cancel that comes after the turn started leaves the message and says so', async () => {
+      const svc = queuedSvc(() => json({ error: 'the turn has ended' }, 409));
+      const r = await sendQueued(svc);
+      await click(row_(r)!.querySelector('.pend-cancel'));
+      await settle();
+      expect(row_(r)!.textContent).toContain(TOO_LATE);
+      r.unmount();
+    });
   });
 
   it('what was typed stays in its own session’s box across a switch and back', async () => {

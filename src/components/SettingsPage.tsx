@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   addFound,
+  Compaction,
   changeOf,
   flatPolicy,
   isEmpty,
@@ -632,6 +633,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ api, onBack, onApps,
               <fieldset className="pg-edit pg-ctls" disabled={!!busy}>
                 {group.controls.map((c) => control(c, errors[c.key]))}
               </fieldset>
+              {group.id === "limits" && api.getCompaction && api.putCompaction && (
+                <HistoryBudget get={api.getCompaction} put={api.putCompaction} />
+              )}
             </>
           )}
         </div>
@@ -886,3 +890,96 @@ export function shortWhen(iso: string): string {
   const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   return `${day}, ${time}`;
 }
+
+// The history budget (budget on /api/v0/settings/compaction): the share of a
+// model's window AgentBus keeps each turn's carried history within. Shown and
+// typed as a percent; saved on its own, with the version it read, every other
+// field sent back as read (a field left out goes back to its default).
+export const BUDGET_LINE =
+  "AgentBus keeps the history it carries into each turn under this share of the model's window, shortening older turns step by step. 100% turns it off.";
+
+export const HistoryBudget: React.FC<{
+  get: () => Promise<Versioned<Compaction>>;
+  put: (c: Compaction, etag: string) => Promise<Versioned<Compaction>>;
+}> = ({ get, put }) => {
+  const [read, setRead] = useState<Versioned<Compaction> | null>(null);
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const pctOf = (b?: number) => (b === undefined ? "" : String(Math.round(b * 1000) / 10));
+  const load = useCallback(() => {
+    get().then(
+      (v) => {
+        setRead(v);
+        setText(pctOf(v.value.budget));
+        setError(null);
+      },
+      (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+    );
+  }, [get]);
+  useEffect(load, [load]);
+  const n = Number(text.trim());
+  const bad = text.trim() === "" || !isFinite(n) || n <= 0 || n > 100 ? "A share from 1 to 100." : null;
+  const changed = !!read && text !== pctOf(read.value.budget);
+  const save = async () => {
+    if (!read || bad) return;
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const v = await put({ ...read.value, budget: Math.round(n * 10) / 1000 }, read.etag);
+      setRead(v);
+      setText(pctOf(v.value.budget));
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      // Changed elsewhere meanwhile: read it again.
+      load();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="pg-ctls pg-budget">
+      <div className="pg-ctl-h">History</div>
+      <div className="pg-ctl" data-key="compaction.budget">
+        <span className="pg-ctl-n">History budget</span>
+        <span className="pg-note">{BUDGET_LINE}</span>
+        {read ? (
+          <span className="pg-budget-in">
+            <input
+              type="text"
+              inputMode="decimal"
+              name="compaction.budget"
+              className="pg-num"
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                setSaved(false);
+              }}
+              aria-label="History budget, percent of the window"
+            />
+            <span className="pg-unit">% of the window</span>
+            <Button kind="secondary" small className="pg-budget-save" disabled={busy || !changed || !!bad} onClick={save}>
+              {busy ? "Saving…" : "Save"}
+            </Button>
+            {saved && !changed && <span className="nd-note ok" role="status">Saved. The next turn keeps to it.</span>}
+          </span>
+        ) : (
+          !error && <Loading />
+        )}
+        {changed && bad && (
+          <Notice kind="error" inline>
+            {bad}
+          </Notice>
+        )}
+        {error && (
+          <Notice kind="error" inline>
+            {error}
+          </Notice>
+        )}
+      </div>
+    </div>
+  );
+};
