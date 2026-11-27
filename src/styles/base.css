@@ -53,6 +53,9 @@
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
   --serif: "Charter", "Iowan Old Style", Georgia, "Times New Roman", serif;
   --ease: cubic-bezier(.22, .8, .24, 1);
+  /* Every chat bubble's corners: the person's message (sent, pending or a
+     delivered result) and the message box. One value, all four corners. */
+  --bubble-radius: 0.85em;
   /* The type scale for small text: every size under the body's steps is one of these three. Nothing below 12px. */
   --fs-xs: max(12px, 0.75rem);
   --fs-s: max(12px, 0.78rem);
@@ -127,7 +130,7 @@ button:focus { outline: none; }
 .msg-wrap { max-width: 45rem; margin: 0 auto; padding: 0 2rem; }
 #composer { padding: 0 2rem 1.75rem; max-width: 49rem; width: 100%; margin: 0 auto; }
 #hello { display: none; font-size: 2.1875rem; line-height: 1.15; font-weight: 600; letter-spacing: -.01em; text-align: center; margin: 0 0 1.75rem; }
-.box { position: relative; background: var(--panel); border: 1.5px solid var(--line2); border-radius: 1rem; padding: 1rem 4.5rem 1rem 1.25rem; box-shadow: 0 0.3125rem 1.25rem var(--shadow); transition: border-color .15s, box-shadow .15s; }
+.box { position: relative; background: var(--panel); border: 1.5px solid var(--line2); border-radius: var(--bubble-radius); padding: 1rem 4.5rem 1rem 1.25rem; box-shadow: 0 0.3125rem 1.25rem var(--shadow); transition: border-color .15s, box-shadow .15s; }
 .box:focus-within { border-color: var(--ink3); box-shadow: 0 0.375rem 1.5rem var(--shadow); }
 #input { width: 100%; border: 0; outline: 0; resize: none; font: inherit; font-size: 1.1875rem; line-height: 1.35; background: none; color: var(--ink); display: block; max-height: 8rem; }
 #input::placeholder { color: var(--ink3); }
@@ -148,7 +151,7 @@ button:focus { outline: none; }
 .m.enter { animation: rise .35s var(--ease) both; }
 @keyframes rise { from { opacity: 0; transform: translateY(0.375rem); } to { opacity: 1; transform: none; } }
 .m-user { display: flex; flex-direction: column; align-items: flex-end; }
-.m-user .bubble { background: var(--user); padding: 0.625rem 1rem; border-radius: 1rem; max-width: 88%; font-size: 1.0625rem; white-space: pre-wrap; }
+.m-user .bubble { background: var(--user); padding: 0.625rem 1rem; border-radius: var(--bubble-radius); max-width: 88%; font-size: 1.0625rem; white-space: pre-wrap; }
 .m-user .chip { margin: 0 0 0.375rem; }
 .m-agent { font-size: 1.0625rem; line-height: 1.5; }
 .m-agent p { margin: 0 0 0.625rem; overflow-wrap: anywhere; }
@@ -177,7 +180,7 @@ button:focus { outline: none; }
 #app.revealed #input { font-size: 1rem; }
 #app.revealed .m-user .bubble, #app.revealed .m-agent { font-size: 0.9375rem; }
 #app.revealed .lines { font-size: 0.9062rem; }
-#app.revealed .box { padding: 0.625rem 3.75rem 0.625rem 1rem; border-radius: 1rem; }
+#app.revealed .box { padding: 0.625rem 3.75rem 0.625rem 1rem; border-radius: var(--bubble-radius); }
 #app.revealed .go { height: 2rem; padding: 0 0.75rem; font-size: var(--fs-m); right: 0.5rem; bottom: 0.5rem; border-radius: 0.5rem; }
 #app.revealed #msgs { padding-top: 1.75rem; }
 

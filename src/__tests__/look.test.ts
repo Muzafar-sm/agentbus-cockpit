@@ -188,4 +188,12 @@ describe('the apply panel', () => {
     const fixed = rules(css).filter(([sel, body]) => /\.bus-card\b/.test(sel) && !/:root/.test(sel) && /#[0-9a-fA-F]{3,6}\b/.test(body));
     expect(fixed).toEqual([]);
   });
+
+  it('every chat bubble and the message box use the one bubble radius', () => {
+    const bubble = /(\.bubble\b|(^|[\s,])\.box\b)/;
+    const radii = rules(css).filter(([sel, body]) => bubble.test(sel) && /border-radius\s*:/.test(body));
+    expect(radii.length).toBeGreaterThan(0);
+    for (const [sel, body] of radii) expect([sel, /border-radius\s*:\s*([^;]+)/.exec(body)![1].trim()]).toEqual([sel, 'var(--bubble-radius)']);
+    expect(css).toMatch(/--bubble-radius:\s*0\.85em;/);
+  });
 });
