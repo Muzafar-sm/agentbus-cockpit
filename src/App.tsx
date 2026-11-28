@@ -65,6 +65,19 @@ function ownPageShown(page: string, d: DataSource): boolean {
 
 // No pending messages, the same array each time.
 const NO_PENDING: Pending[] = [];
+// The texts read when a session's turns are read: its newest turns, which the
+// chat opens on. Older ones are read as the chat scrolls near them.
+const TEXT_EAGER = 20;
+// At most this many turn texts are read at once.
+const TEXT_AT_ONCE = 4;
+// Runs work over items, at most n at a time.
+async function inBatches<T>(items: T[], n: number, work: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const lane = async () => {
+    while (next < items.length) await work(items[next++]);
+  };
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, lane));
+}
 // A session with no first message yet, open in the conversation: its workspace
 // is made, and session is set once its first message started one.
 interface Draft {
@@ -418,23 +431,32 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   // text is read once; a running turn is read again, as its reply grows. A
   // recorded source has no getTurnText and carries the text on its rows.
   const turnTexts = useRef<Record<string, TurnText>>({});
+  //
+  // Only the text of a turn on screen, or about to be, is read: the newest
+  // TEXT_EAGER turns and every running one when the list is read (the chat
+  // opens at its end), and an older turn when the chat scrolls near it
+  // (loadNear). At most TEXT_AT_ONCE reads run at once. Every text already
+  // cached is used, wherever its turn is.
   const loadTexts = useCallback(
-    async (sessionId: string, rows: Turn[]): Promise<Record<string, TurnText>> => {
+    async (sessionId: string, rows: Turn[], want?: ReadonlySet<string>): Promise<Record<string, TurnText>> => {
       const load = dataSource.getTurnText?.bind(dataSource);
       const cache = turnTexts.current;
       const out: Record<string, TurnText> = {};
       const missing: { id: string; ended: boolean }[] = [];
+      const eager = new Set(rows.slice(-TEXT_EAGER).map((t) => t.id));
       for (const t of rows) {
         // A running turn is never read from the cache: its reply is still
         // growing. Only an ended turn's text is final and cacheable.
         const ended = t.state !== 'running';
         const hit = ended ? cache[`${sessionId}\n${t.id}`] : undefined;
         if (hit) out[t.id] = hit;
-        else if (load) missing.push({ id: t.id, ended });
+        else if (load && (want ? want.has(t.id) : eager.has(t.id) || !ended)) missing.push({ id: t.id, ended });
       }
       if (load && missing.length > 0) {
-        await Promise.all(
-          missing.map(async ({ id, ended }) => {
+        await inBatches(
+          missing,
+          TEXT_AT_ONCE,
+          async ({ id, ended }) => {
             try {
               const text = await load(sessionId, id);
               out[id] = text;
@@ -445,12 +467,31 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
             } catch (err) {
               console.warn(`Reading turn ${id} text failed:`, err);
             }
-          })
+          }
         );
       }
       return out;
     },
     [dataSource]
+  );
+  // The chat scrolled near these turns: read the text of those not read yet,
+  // once each, and show it.
+  const nearReads = useRef<Set<string>>(new Set());
+  const loadNear = useCallback(
+    (sessionId: string, ids: string[]) => {
+      const s = shownRef.current;
+      if (!s || s.session.id !== sessionId) return;
+      const want = new Set(ids.filter((id) => !s.texts[id] && !nearReads.current.has(`${sessionId}\n${id}`)));
+      if (want.size === 0) return;
+      for (const id of want) nearReads.current.add(`${sessionId}\n${id}`);
+      const rows = s.session.turnsList.filter((t) => want.has(t.id));
+      loadTexts(sessionId, rows, want)
+        .then((texts) => setShown((cur) => (cur && cur.session.id === sessionId ? { ...cur, texts: { ...cur.texts, ...texts } } : cur)))
+        .finally(() => {
+          for (const id of want) nearReads.current.delete(`${sessionId}\n${id}`);
+        });
+    },
+    [loadTexts]
   );
 
   const turnReads = useRef<Map<string, boolean>>(new Map());
@@ -1783,6 +1824,7 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           queuedTurn={queuedTurn}
           keyed={!!dataSource.queuedTurn}
           pending={pendingBySession[pendingKey(sessionView.id)] ?? NO_PENDING}
+          onNearTurns={dataSource.getTurnText ? (ids: string[]) => loadNear(sessionView.id, ids) : undefined}
           onPending={onPending}
           onStop={stopTurn}
           onCancelQueued={cancelQueued}

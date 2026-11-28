@@ -71,6 +71,9 @@ interface ConvoColumnProps {
   // text back in the box to send again. not-running: it started or ended
   // first. Absent: a queued message offers neither.
   onCancelQueued?: (turn: string) => Promise<'stopping' | 'not-running'>;
+  // Told which turns are on screen or near it, as the chat scrolls, so their
+  // text is read only then.
+  onNearTurns?: (turns: string[]) => void;
   // The turns the person asked to stop that have not ended yet.
   stopping?: ReadonlySet<string>;
   // Turns whose file changes a Discard dropped: each carries a small
@@ -272,6 +275,9 @@ export function shortTitle(t: string): string {
   return `${(space > ASKED_TITLE_MAX / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
+// How far off screen a turn's text is read ahead of it, in px.
+const NEAR_PX = 800;
+
 // A queued message whose Cancel came after its turn started.
 export const TOO_LATE = 'It had already started, so it was not cancelled.';
 
@@ -326,6 +332,7 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   onSend,
   onStop,
   onCancelQueued,
+  onNearTurns,
   stopping,
   discardedTurns,
   live,
@@ -750,6 +757,48 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
       clearInterval(id);
     };
   }, [waiting, queuedTurn, sessionId]);
+
+  // The turns on screen or within NEAR_PX of it, told as the chat scrolls.
+  // A browser without IntersectionObserver is told every turn.
+  const nearRef = useRef(onNearTurns);
+  nearRef.current = onNearTurns;
+  const turnIdList = session.turnsList.map((t) => t.id).join('\n');
+  useEffect(() => {
+    if (!nearRef.current || turnIdList === '') return;
+    const ids = turnIdList.split('\n');
+    if (typeof IntersectionObserver === 'undefined') {
+      nearRef.current(ids);
+      return;
+    }
+    const idOf = new Map<Element, string>();
+    for (const id of ids) {
+      const el = turnEls.current.get(id);
+      if (el) idOf.set(el, id);
+    }
+    const seen = new Set<string>();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const id = idOf.get(e.target);
+          if (e.isIntersecting && id) seen.add(id);
+        }
+        if (seen.size > 0 && !timer)
+          timer = setTimeout(() => {
+            timer = null;
+            const batch = [...seen];
+            seen.clear();
+            nearRef.current?.(batch);
+          }, 50);
+      },
+      { root: msgsRef.current, rootMargin: `${NEAR_PX}px 0px` }
+    );
+    for (const el of idOf.keys()) io.observe(el);
+    return () => {
+      io.disconnect();
+      if (timer) clearTimeout(timer);
+    };
+  }, [turnIdList, session.id]);
 
   // One message not yet a turn. A refused one carries the service's words,
   // Edit (back to the box) and Dismiss.

@@ -143,6 +143,8 @@ function fakeService(opts: {
   // Stored events have a seq: number the ones the test gave in order.
   let stored = 0;
   for (const list of Object.values(state.events)) for (const e of list) e.seq ??= ++stored;
+  // As a real store's, a later event's seq is above every stored one.
+  seq = Math.max(seq, stored);
   const fn = vi.fn(async (input: string, init?: RequestInit) => {
     const url = new URL(input);
     const method = init?.method ?? 'GET';
@@ -2537,3 +2539,62 @@ describe('Several folders', () => {
     r.unmount();
   });
 });
+
+describe('what the cockpit asks the service for (performance, 2026-11-28)', () => {
+  // A 200-turn session opened after a restart (no text cached), then a running
+  // turn whose stream makes the list be read again every 2 s for 60 s.
+  it('a 200-turn session after a restart, then 60 s of a running turn', async () => {
+    // The browser tells the chat which turns are near the screen; here the
+    // test does, as a scroll would.
+    const observed: { cb: IntersectionObserverCallback; els: Element[] }[] = [];
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        els: Element[] = [];
+        constructor(public cb: IntersectionObserverCallback) {
+          observed.push(this);
+        }
+        observe(el: Element) {
+          this.els.push(el);
+        }
+        disconnect() {}
+      }
+    );
+    const events: CockpitEvent[] = [];
+    for (let n = 1; n <= 200; n++) events.push(...oneTurn('s1', `message ${n}`, n));
+    const svc = fakeService({ sessions: [row('s1', { turns: 200, resumable: true })], events: { s1: events } });
+    const r = await mount(svc);
+    await settle();
+    const lists = () => svc.reqs.filter((q) => q.method === 'GET' && q.path === '/api/v0/turns' && (q.query ?? '').includes('session=s1')).length;
+    const texts = () => svc.reqs.filter((q) => q.method === 'GET' && /^\/api\/v0\/turns\/[^/]+$/.test(q.path)).length;
+    // Opened: both pages of the list once, and the text of the newest 20 turns.
+    expect({ lists: lists(), texts: texts() }).toEqual(CALLS.open);
+    const bubbles = () => [...r.container.querySelectorAll('#convo .tb')].map((t) => t.querySelector('.m-user .bubble')?.textContent ?? '');
+    expect(bubbles().length).toBe(200);
+    expect(bubbles().slice(-20)).toEqual(Array.from({ length: 20 }, (_, i) => `message ${181 + i}`));
+    // Scrolled to the top: the first turns come near the screen, and their text is read.
+    const io = observed[observed.length - 1];
+    await act(async () => {
+      io.cb(io.els.slice(0, 3).map((target) => ({ target, isIntersecting: true }) as unknown as IntersectionObserverEntry), io as never);
+      await new Promise((done) => setTimeout(done, 80));
+    });
+    await settle();
+    expect(bubbles().slice(0, 3)).toEqual(['message 1', 'message 2', 'message 3']);
+    expect(texts()).toBe(CALLS.open.texts + 3);
+    const before = { lists: lists(), texts: texts() };
+    // 60 s of a running turn: one stream event every 2 s, each re-reading the list.
+    await svc.push(ev({ session: 's1', kind: 'turn.started', turn: 'T201-s1', exchange: 'x201', text: 'message 201' }));
+    for (let i = 0; i < 29; i++) {
+      await svc.push(ev({ session: 's1', kind: i % 2 ? 'model.responded' : 'model.requested', turn: 'T201-s1', exchange: 'x201', status: 200, text: 'ok' }));
+      await settle();
+    }
+    await settle();
+    expect({ lists: lists() - before.lists, texts: texts() - before.texts }).toEqual(CALLS.poll);
+    expect(r.container.querySelector('#convo')!.textContent).toContain('message 201');
+    r.unmount();
+  }, 30_000);
+});
+
+// What the counting test above measured. Before (0.6.7): opening read 2 list
+// pages and 200 texts; 60 s of a running turn read 90 list pages and 32 texts.
+const CALLS = { open: { lists: 2, texts: 20 }, poll: { lists: 30, texts: 32 } };

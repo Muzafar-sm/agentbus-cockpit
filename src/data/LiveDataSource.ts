@@ -214,37 +214,56 @@ export class LiveDataSource implements DataSource {
   // GET /api/v0/turns?session=<id>: one session's turns, newest first, a page
   // at a time. The first page starts with the turns still queued: they are
   // left out here, since the conversation shows a queued message as its own
-  // pending copy until its turn starts. Every page is read (before = next_before until it is null), so
-  // the turns can be numbered from the oldest. The list's cursor is the first
-  // page's: later pages are computed at that seq or after it. A page from
-  // another store means the store changed mid-read: read the list again once.
+  // pending copy until its turn starts. The turns are numbered from the oldest.
+  //
+  // The older pages are read once per session (every page, before =
+  // next_before until it is null), and kept. A read after that asks for the
+  // first page only: every running or new turn is on it, and a turn that left
+  // it had ended long before. The kept rows fill in the rest; a row on the
+  // first page replaces its kept copy. The list's cursor is the first page's.
+  // A page from another store means the store changed: everything is read
+  // again, once.
+  private olderRows = new Map<string, { store: string; rows: ApiTurn[] }>();
+
   async getTurns(sessionId: string): Promise<TurnList> {
+    const page = async (before: number | null) => {
+      const params = new URLSearchParams({ session: sessionId });
+      if (before !== null) params.set('before', String(before));
+      const res = await fetch(`${this.baseUrl}/api/v0/turns?${params}`, { headers: this.headers() });
+      if (!res.ok) throw new Error(`Failed to fetch turns: ${await apiError(res)}`);
+      return res.json() as Promise<{ store: string; seq: number; turns?: ApiTurn[]; next_before?: number | null }>;
+    };
+    const list = (store: string, seq: number, rows: ApiTurn[]): TurnList => {
+      const started = rows.filter((t) => t.state !== 'queued');
+      this.olderRows.set(sessionId, { store, rows: started });
+      return { store, seq, turns: [...started].reverse().map((t, i) => turnRow(t, i + 1)) };
+    };
     for (let attempt = 0; attempt < 2; attempt++) {
-      const rows: ApiTurn[] = [];
-      let first: { store: string; seq: number } | null = null;
-      let before: number | null = null;
+      const first = await page(null);
+      const rows: ApiTurn[] = [...(first.turns || [])];
+      const kept = this.olderRows.get(sessionId);
+      const more = first.next_before !== null && first.next_before !== undefined;
+      if (!more) return list(first.store, first.seq, rows);
+      if (kept && kept.store === first.store) {
+        const onFirst = new Set(rows.map((t) => t.id));
+        return list(first.store, first.seq, [...rows, ...kept.rows.filter((t) => !onFirst.has(t.id))]);
+      }
+      let before: number | null = first.next_before!;
       let restart = false;
-      for (;;) {
-        const params = new URLSearchParams({ session: sessionId });
-        if (before !== null) params.set('before', String(before));
-        const res = await fetch(`${this.baseUrl}/api/v0/turns?${params}`, { headers: this.headers() });
-        if (!res.ok) throw new Error(`Failed to fetch turns: ${await apiError(res)}`);
-        const data = await res.json();
-        if (first === null) first = { store: data.store, seq: data.seq };
-        else if (data.store !== first.store) {
+      while (before !== null && before !== undefined) {
+        const data = await page(before);
+        if (data.store !== first.store) {
           restart = true;
           break;
         }
         rows.push(...(data.turns || []));
-        if (data.next_before === null || data.next_before === undefined) break;
-        before = data.next_before;
+        before = data.next_before ?? null;
       }
-      if (restart) continue;
-      const turns = rows
-        .filter((t) => t.state !== 'queued')
-        .reverse()
-        .map((t, i) => turnRow(t, i + 1));
-      return { store: first!.store, seq: first!.seq, turns };
+      if (restart) {
+        this.olderRows.delete(sessionId);
+        continue;
+      }
+      return list(first.store, first.seq, rows);
     }
     throw new Error(`Store changed while reading the turns of ${sessionId}; try again`);
   }
