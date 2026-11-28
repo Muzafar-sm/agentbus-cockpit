@@ -1,3 +1,6 @@
+import { CommandsTable } from './CommandLine';
+import { commandEnded } from '../data/commands';
+import { ApiCommand } from '../data/jobs';
 import type { WorkspaceOutcome } from '../data/outcome';
 import React, { useEffect, useState } from 'react';
 import { ApiTurn } from '../data/jobs';
@@ -47,6 +50,10 @@ interface RunnersPageProps extends RunnersState {
   folders?: FolderInfo[];
   // The title of the session whose turns run in a workspace: its task.
   taskOf?: (workspace: string) => string | undefined;
+  // The commands agents handed to AgentBus, found through their ons; each
+  // machine lists its queued and running ones. onStopCommand: absent, no Stop.
+  commands?: ApiCommand[];
+  onStopCommand?: (id: string) => Promise<'stopping' | 'not-running'>;
 }
 
 const Sep = () => <span className="sep">·</span>;
@@ -55,7 +62,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 // The runners page (/runners), in the mockup's three columns: every machine,
 // one runner each, with the machines waiting for approval on top; the picked
 // one, with what it reported; and the queue.
-export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pending, reload, onBack, onApps, onRunners, onSettings, runnersOnline, version, sourceLabel, streamUp, onDisconnect, disconnectLabel, queue, actions, workspaces, folders, taskOf }) => {
+export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pending, reload, onBack, onApps, onRunners, onSettings, runnersOnline, version, sourceLabel, streamUp, onDisconnect, disconnectLabel, queue, actions, workspaces, folders, taskOf, commands, onStopCommand }) => {
   const [picked, setPicked] = useState<string | null>(null);
   const ws = useWorkspaces(workspaces);
   const waiting = pending ?? [];
@@ -72,6 +79,11 @@ export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pendin
   const home = runners?.find((r) => r.role !== 'connector' && r.machine);
   const onMachine = (r: RunnerInfo) => (w: WorkspaceRow) => (w.machine ? w.machine === r.machine : r.id === home?.id);
   const wsOf = (r: RunnerInfo): WorkspaceRow[] => (ws.rows ?? []).filter(onMachine(r));
+  // A machine's queued and running commands: those whose workspace is on it.
+  const cmdsOf = (r: RunnerInfo): ApiCommand[] => {
+    const here = new Set([...(ws.rows ?? []), ...ws.closedRows].filter(onMachine(r)).map((w) => w.workspace));
+    return (commands ?? []).filter((c) => !commandEnded(c) && here.has(c.workspace));
+  };
   const after = () => {
     setPicked(null);
     reload?.();
@@ -107,6 +119,7 @@ export const RunnersPage: React.FC<RunnersPageProps> = ({ runners, error, pendin
             r={shown}
             actions={actions}
             onDone={after}
+            commands={commands && { list: cmdsOf(shown), taskOf, stop: onStopCommand }}
             workspaces={
               workspaces && { rows: wsOf(shown), closedRows: ws.closedRows.filter(onMachine(shown)), taskOf, error: ws.error, folders, close: workspaces.close, closing: ws.closing, stalled: ws.stalled, onClosing: ws.onClosing, outcome: workspaces.outcome, onClosed: ws.onClosed }
             }
@@ -255,12 +268,13 @@ interface RunnerWorkspaces {
   onClosed?: (workspace: string, ok: boolean) => void;
 }
 
-const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: () => void; workspaces?: RunnerWorkspaces }> = ({
-  r,
-  actions,
-  onDone,
-  workspaces,
-}) => {
+const RunnerDetail: React.FC<{
+  r: RunnerInfo;
+  actions?: RunnerActions;
+  onDone: () => void;
+  workspaces?: RunnerWorkspaces;
+  commands?: { list: ApiCommand[]; taskOf?: (workspace: string) => string | undefined; stop?: (id: string) => Promise<'stopping' | 'not-running'> };
+}> = ({ r, actions, onDone, workspaces, commands }) => {
   const connector = r.role === 'connector';
   // Remove asks first: its sessions take no more turns after it.
   const [asking, setAsking] = useState(false);
@@ -367,6 +381,7 @@ const RunnerDetail: React.FC<{ r: RunnerInfo; actions?: RunnerActions; onDone: (
         {workspaces && (
           <>
             {workspaces.error && <Notice kind="error">{workspaces.error}</Notice>}
+            {commands && <CommandsTable commands={commands.list} taskOf={commands.taskOf} onStop={commands.stop} />}
             <WorkspacesTable rows={workspaces.rows} closedRows={workspaces.closedRows} taskOf={workspaces.taskOf} folders={workspaces.folders} close={workspaces.close} closing={workspaces.closing} stalled={workspaces.stalled} onClosing={workspaces.onClosing} outcome={workspaces.outcome} onClosed={workspaces.onClosed} />
           </>
         )}

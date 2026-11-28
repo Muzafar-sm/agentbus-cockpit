@@ -12,6 +12,8 @@ import { LiveLine } from './LiveLine';
 import { AskedWork, askedLine, askedReview, queuedWaitMs } from '../data/askedWork';
 import { PencilIcon, TitleEdit } from './TitleEdit';
 import { SessionStatus } from './Icons';
+import { CommandLine } from './CommandLine';
+import { ApiCommand } from '../data/jobs';
 import { ShellEntry } from './ShellEntry';
 import { Button, Select } from './Controls';
 import { Notice } from './Notice';
@@ -74,6 +76,11 @@ interface ConvoColumnProps {
   // Told which turns are on screen or near it, as the chat scrolls, so their
   // text is read only then.
   onNearTurns?: (turns: string[]) => void;
+  // The commands this session's turns handed to AgentBus (run_command): each
+  // shows under the turn that asked, or at the foot when that turn is not on
+  // screen. onStopCommand: absent, no Stop.
+  agentCommands?: ApiCommand[];
+  onStopCommand?: (id: string) => Promise<'stopping' | 'not-running'>;
   // The turns the person asked to stop that have not ended yet.
   stopping?: ReadonlySet<string>;
   // Turns whose file changes a Discard dropped: each carries a small
@@ -333,6 +340,8 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
   onStop,
   onCancelQueued,
   onNearTurns,
+  agentCommands,
+  onStopCommand,
   stopping,
   discardedTurns,
   live,
@@ -1119,10 +1128,18 @@ export const ConvoColumn: React.FC<ConvoColumnProps> = ({
                   </div>
                 </div>
                 {placed.get(ti)?.map((r) => <ShellEntry key={r.id} run={r} />)}
+                {(agentCommands ?? []).filter((c) => c.turn === turn.id).map((c) => (
+                  <CommandLine key={c.id} c={c} onStop={onStopCommand} />
+                ))}
                 {refusedAfter(ti + 1).map(pendingRow)}
               </React.Fragment>
             );
           })}
+          {(agentCommands ?? [])
+            .filter((c) => !session.turnsList.some((t) => t.id === c.turn))
+            .map((c) => (
+              <CommandLine key={c.id} c={c} onStop={onStopCommand} />
+            ))}
           {pending.filter((p) => !(p.state === 'failed' && p.turnsAtSend < turnCount)).map(pendingRow)}
           {askedLines.map(({ w, line }) => (
             <div key={w.turn ?? w.id} className="m-live m-asked" role="status" data-asked={w.id} data-state={w.state}>

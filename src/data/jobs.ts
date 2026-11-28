@@ -96,6 +96,33 @@ export interface QueueSource {
   // The ons still waiting (GET /api/v0/ons); null on a service without the
   // route, so the cockpit falls back to the asked session's origin.
   listOns?(): Promise<ApiOn[] | null>;
+  // A command an agent handed to AgentBus (run_command): GET
+  // /api/v0/commands/{id}; null when the service has no such command.
+  getCommand?(id: string): Promise<ApiCommand | null>;
+  // POST /api/v0/commands/{id}/stop: stopping (202), or not-running when it
+  // had ended (409).
+  stopCommand?(id: string): Promise<'stopping' | 'not-running'>;
+}
+
+// One command (GET /api/v0/commands/{id}). The API lists none: the cockpit
+// finds them through their delivery ons (an on whose turn is the command's id).
+export interface ApiCommand {
+  id: string;
+  line: string;
+  state: 'queued' | 'running' | 'finished' | 'failed' | 'stopped' | string;
+  reason?: string;
+  session: string;
+  turn: string;
+  workspace: string;
+  exit_code?: number;
+  timed_out?: boolean;
+  output?: string;
+  output_bytes?: number;
+  duration_ms?: number;
+  error?: string;
+  timeout_minutes?: number;
+  created: string;
+  ended?: string;
 }
 
 export const ENDED: ReadonlySet<QueueState> = new Set(['finished', 'failed', 'stopped']);
@@ -142,6 +169,25 @@ export class TurnsClient implements QueueSource {
 
   async stop(turnId: string): Promise<void> {
     await this.call('POST', `/api/v0/turns/${encodeURIComponent(turnId)}/stop`);
+  }
+
+  async getCommand(id: string): Promise<ApiCommand | null> {
+    const res = await fetch(`${this.address}/api/v0/commands/${encodeURIComponent(id)}`, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${this.token}` },
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(await apiError(res));
+    return res.json();
+  }
+
+  async stopCommand(id: string): Promise<'stopping' | 'not-running'> {
+    const res = await fetch(`${this.address}/api/v0/commands/${encodeURIComponent(id)}/stop`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${this.token}` },
+    });
+    if (res.status === 409) return 'not-running';
+    if (!res.ok) throw new Error(await apiError(res));
+    return 'stopping';
   }
 
   async listOns(): Promise<ApiOn[] | null> {

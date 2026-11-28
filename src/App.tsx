@@ -31,6 +31,7 @@ import { refreshNow } from './utils/useNow';
 import { versionLabel } from './utils/format';
 import { QueueSource } from './data/jobs';
 import { useQueue } from './data/useJobs';
+import { useCommands } from './data/commands';
 import { addRun } from './data/shell';
 import { addStreamedCost, addTurnEvents, createEmptyUsage, turnDetail } from './data/turns';
 import {
@@ -211,6 +212,8 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
   );
   // The turn list, read again every few seconds while the service keeps a queue.
   const queueView = useQueue(queue);
+  // The commands agents handed to AgentBus, found through their ons.
+  const commands = useCommands(queue, queueView?.ons);
   const refreshQueue = queueView?.refresh;
   const refreshQueueRef = useRef(refreshQueue);
   refreshQueueRef.current = refreshQueue;
@@ -1659,6 +1662,8 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
     return (
       <RunnersPage
         taskOf={taskOfWorkspace}
+        commands={commands?.all}
+        onStopCommand={commands?.stop}
         runners={runners.runners}
         error={runners.error}
         pending={runners.pending}
@@ -1840,6 +1845,8 @@ export const App: React.FC<AppProps> = ({ dataSource: propDataSource, sourceLabe
           onAddAgent={canKeepAgents ? () => setAgentsDialog({}) : undefined}
           agentDot={agentDot}
           asked={askedOf(sessionView.id)}
+          agentCommands={commands?.ofSession(sessionView.id)}
+          onStopCommand={commands?.stop}
           onOpenSession={openSession}
           onRename={renameSession}
           applyBar={
