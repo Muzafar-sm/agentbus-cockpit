@@ -53,7 +53,8 @@ function waitOf(t: ApiTurn | undefined, turns: ApiTurn[]): Pick<AskedWork, 'ahea
 // The work `session` waits on that is queued or running, oldest first.
 //
 // With the ons (GET /api/v0/ons), that is every turn an on delivers to this
-// session, whoever registered it: several sessions may wait on one turn, and a
+// session, whoever registered it -- the turn an on names, or each queued or
+// running turn of the session an on's filter names: several sessions may wait on one turn, and a
 // coordinator that took over another's work shows it, while the one it replaced
 // does not. One line per watched turn. A turn the list does not have, or one
 // that ended (its result is on its way), is left out, and so is the session's
@@ -97,11 +98,9 @@ function waitedOn(
 ): AskedWork[] {
   const out: AskedWork[] = [];
   const seen = new Set<string>();
-  for (const on of ons) {
-    if (on.event !== 'turn.completed' || on.session !== session || seen.has(on.turn)) continue;
-    seen.add(on.turn);
-    const t = turnById(on.turn);
-    if (!t || t.session === session || (t.state !== 'queued' && t.state !== 'running')) continue;
+  const add = (on: ApiOn, t: ApiTurn | undefined) => {
+    if (!t || seen.has(t.id) || t.session === session || (t.state !== 'queued' && t.state !== 'running')) return;
+    seen.add(t.id);
     const row = sessions.find((s) => s.id === t.session);
     const at = t.state === 'running' && t.started ? Date.parse(t.started) : NaN;
     out.push({
@@ -115,6 +114,13 @@ function waitedOn(
       title: row?.title || undefined,
       ...waitOf(t, turnsOf?.(t.session) ?? []),
     });
+  };
+  for (const on of ons) {
+    if (on.event !== 'turn.completed' || on.session !== session) continue;
+    // An on over one turn: that turn.
+    if (on.turn) add(on, turnById(on.turn));
+    // An on over a whole session: each of its turns still queued or running.
+    else if (on.filter?.session) for (const t of turnsOf?.(on.filter.session) ?? []) add(on, t);
   }
   return out.sort((a, b) => a.id.localeCompare(b.id) || (a.turn ?? '').localeCompare(b.turn ?? ''));
 }

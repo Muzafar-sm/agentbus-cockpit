@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RunnersPage } from '../components/RunnersPage';
 import { ConvoColumn } from '../components/ConvoColumn';
 import { CLOSE_STALL_MS, WorkspacesApi } from '../components/Workspaces';
-import { askedWork } from '../data/askedWork';
+import { askedLine, askedWork } from '../data/askedWork';
 import { ApiOn, ApiTurn, TurnsClient } from '../data/jobs';
 import { LiveDataSource } from '../data/LiveDataSource';
 import { createEmptyUsage } from '../data/turns';
@@ -162,5 +162,51 @@ describe('Close with a 202 reply', () => {
     await flush();
     expect(r.container.querySelector('.ws-close')!.textContent).toBe('Closing…');
     expect(r.container.querySelector('.ws-stalled')).toBeNull();
+  });
+});
+
+describe('asked work from an on over a whole session (0.6.8)', () => {
+  const sessions = [
+    sess('c1', { title: 'coordinator' }),
+    sess('b1', { title: 'Build the export button' }),
+    sess('k1', { title: 'nightly' }),
+  ];
+  const turns = [
+    apiTurn('tb1', 'b1', 'finished', { number: 1, asked: '2026-11-27T09:00:00Z' }),
+    apiTurn('tb2', 'b1', 'running', { number: 2, asked: '2026-11-27T10:00:00Z', started: '2026-11-27T10:00:01Z' }),
+    apiTurn('tb3', 'b1', 'queued', { number: 3, asked: '2026-11-27T10:01:00Z', ahead: 1 }),
+    apiTurn('tk1', 'k1', 'running', { started: '2026-11-27T10:02:00Z' }),
+  ];
+  const byId = (id: string) => turns.find((t) => t.id === id);
+  const ofSession = (s: string) => turns.filter((t) => t.session === s);
+
+  it('shows each queued or running turn of the watched session, with its title and why it waits', () => {
+    const ons: ApiOn[] = [{ id: 'on_s', event: 'turn.completed', filter: { session: 'b1' }, session: 'c1', by: { session: 'c1', turn: 'T1' } }];
+    const work = askedWork(sessions, 'c1', ofSession, ons, byId);
+    expect(work.map((w) => [w.id, w.turn, w.state])).toEqual([
+      ['b1', 'tb2', 'running'],
+      ['b1', 'tb3', 'queued'],
+    ]);
+    expect(work.every((w) => w.title === 'Build the export button' && w.by === 'T1')).toBe(true);
+    expect(work[1].behind).toEqual({ turn: 'tb2', number: 2, state: 'running' });
+    expect(askedLine(work[1], 'Codex', false, false, Date.now())).toBe('Codex queued · behind turn 2, running');
+    // Another session waits on nothing.
+    expect(askedWork(sessions, 'k1', ofSession, ons, byId)).toEqual([]);
+  });
+
+  it('takes both shapes in one list, a turn once even when two ons cover it', () => {
+    const ons: ApiOn[] = [
+      { id: 'on_s', event: 'turn.completed', filter: { session: 'b1' }, session: 'c1' },
+      { id: 'on_t', event: 'turn.completed', turn: 'tb2', session: 'c1' },
+      // A command on (run_command) keeps its turn.
+      { id: 'on_k', event: 'turn.completed', turn: 'tk1', session: 'c1' },
+    ];
+    expect(askedWork(sessions, 'c1', ofSession, ons, byId).map((w) => w.turn)).toEqual(['tb2', 'tb3', 'tk1']);
+  });
+
+  it('a session whose turns have all ended shows nothing', () => {
+    const ons: ApiOn[] = [{ id: 'on_s', event: 'turn.completed', filter: { session: 'b1' }, session: 'c1' }];
+    const ended = (s: string): ApiTurn[] => ofSession(s).map((t) => ({ ...t, state: 'finished' }) as ApiTurn);
+    expect(askedWork(sessions, 'c1', ended, ons, byId)).toEqual([]);
   });
 });

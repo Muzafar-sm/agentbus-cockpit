@@ -68,10 +68,16 @@ export interface QueueStarted {
 // reply goes to `session` as that session's next turn. by is the turn that
 // registered it, absent for one the main token registered. Only ons still
 // waiting are listed.
+//
+// Two shapes: an on over one turn names it (turn), as command ons
+// (run_command) and every on of an older service do; an on over a whole
+// session (0.6.8, what ask_agent and review_turn register) has no turn and
+// names the session in filter.
 export interface ApiOn {
   id: string;
   event: string;
-  turn: string;
+  turn?: string;
+  filter?: { session?: string };
   session: string;
   by?: { session: string; turn: string };
 }
